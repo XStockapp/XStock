@@ -5,7 +5,7 @@ import streamlit as st
 
 from core import data, store
 from core.scanner import scan
-from core.ui import AMBER, DISCLAIMER, GREEN, RED, kpi
+from core.ui import AMBER, DISCLAIMER, GREEN, NEUTRAL, RED, kpi, kpi_row
 
 cfg = st.session_state.cfg
 st.markdown("## Watchlist")
@@ -95,13 +95,13 @@ for t, w in wl.items():
     })
 df = pd.DataFrame(rows).sort_values("Prob. ganancia", ascending=False, na_position="last")
 
-k = st.columns(4)
-kpi(k[0], "Acciones en seguimiento", f"{len(df)}")
-kpi(k[1], "Con señal de compra", f"{df['Señal actual'].isin(['COMPRA FUERTE', 'COMPRA']).sum()}", "", GREEN)
-kpi(k[2], "En zona de entrada", f"{(df['Estado'] == '🎯 En zona de entrada').sum()}", "", AMBER)
 avg = df["Desde que se agregó %"].mean()
-kpi(k[3], "Rendimiento medio", "—" if pd.isna(avg) else f"{avg:+.1f}%", "desde que se agregaron",
-    GREEN if (avg or 0) >= 0 else RED)
+st.markdown(kpi_row([
+    ("Acciones en seguimiento", f"{len(df)}", "", "#e5e7eb"),
+    ("Con señal de compra", f"{df['Señal actual'].isin(['COMPRA FUERTE', 'COMPRA']).sum()}", "", GREEN),
+    ("En zona de entrada", f"{(df['Estado'] == '🎯 En zona de entrada').sum()}", "", NEUTRAL),
+    ("Rendimiento medio", "—" if pd.isna(avg) else f"{avg:+.1f}%", "desde que se agregaron", GREEN if (avg or 0) >= 0 else RED),
+]), unsafe_allow_html=True)
 st.write("")
 
 money = st.column_config.NumberColumn(format="$%.2f")
@@ -109,7 +109,7 @@ ed = st.data_editor(
     df, hide_index=True, use_container_width=True, height=min(80 + 36 * len(df), 620), key="wl_editor",
     disabled=[c for c in df.columns if c != "Notas"],
     column_config={
-        "Prob. ganancia": st.column_config.ProgressColumn(format="percent", min_value=0, max_value=1),
+        "Prob. ganancia": st.column_config.NumberColumn(format="percent"),
         "EV (R)": st.column_config.NumberColumn(format="%+.2f"),
         "Score técnico": st.column_config.NumberColumn(format="%+.0f"),
         "Precio": money, "Entrada": money, "Stop": money, "Objetivo 1": money, "Objetivo 2": money,

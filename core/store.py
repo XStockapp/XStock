@@ -75,7 +75,20 @@ def _write(p: Path, obj):
 
 
 # ---- Watchlist ------------------------------------------------------------
+def _user_email():
+    try:
+        import streamlit as st
+        p = st.session_state.get("profile")
+        return p["email"] if p and p.get("email") not in (None, "owner@local") else None
+    except Exception:
+        return None
+
+
 def watchlist() -> dict:
+    em = _user_email()
+    if em:
+        from . import db
+        return db.watchlist_get(em)
     if cloud_enabled():
         try:
             r = requests.get(f"https://api.github.com/gists/{_gist_id()}", headers=_gist_headers(), timeout=15)
@@ -88,7 +101,15 @@ def watchlist() -> dict:
     return _read(WL, {})
 
 
-def _save_wl(wl: dict):
+def _save_wl(wl: dict, changed: list | None = None, removed: list | None = None):
+    em = _user_email()
+    if em:
+        from . import db
+        for t in changed or []:
+            db.watchlist_put(em, t, wl[t])
+        for t in removed or []:
+            db.watchlist_del(em, t)
+        return
     if cloud_enabled():
         try:
             r = requests.patch(f"https://api.github.com/gists/{_gist_id()}", headers=_gist_headers(), timeout=15,
@@ -101,7 +122,7 @@ def _save_wl(wl: dict):
 
 def add_to_watchlist(rows: list[dict]) -> int:
     wl = watchlist()
-    n = 0
+    n, added = 0, []
     for r in rows:
         t = r["Ticker"]
         if t in wl:
@@ -117,7 +138,8 @@ def add_to_watchlist(rows: list[dict]) -> int:
             "notas": "",
         }
         n += 1
-    _save_wl(wl)
+        added.append(t)
+    _save_wl(wl, changed=added)
     return n
 
 
@@ -125,14 +147,14 @@ def remove_from_watchlist(tickers: list[str]):
     wl = watchlist()
     for t in tickers:
         wl.pop(t, None)
-    _save_wl(wl)
+    _save_wl(wl, removed=list(tickers))
 
 
 def update_watch(ticker: str, **fields):
     wl = watchlist()
     if ticker in wl:
         wl[ticker].update(fields)
-        _save_wl(wl)
+        _save_wl(wl, changed=[ticker])
 
 
 # ---- Escaneo --------------------------------------------------------------

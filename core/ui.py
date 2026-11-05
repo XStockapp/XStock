@@ -9,6 +9,7 @@ from plotly.subplots import make_subplots
 BG, PANEL, BORDER = "#0b0f17", "#111827", "#1f2937"
 TXT, MUTED = "#e5e7eb", "#8b95a7"
 GREEN, RED, AMBER, BLUE, VIOLET = "#22c55e", "#ef4444", "#f59e0b", "#3b82f6", "#a78bfa"
+NEUTRAL = "#60a5fa"  # azul: mercado indeciso / pronóstico neutro
 
 CSS = f"""
 <style>
@@ -71,6 +72,26 @@ table.qt-tab td.n {{ font-family: 'JetBrains Mono', monospace; white-space: nowr
 .verdict h2 {{ margin: 0 0 4px 0; font-size: 1.3rem; }}
 .disclaimer {{ color: {MUTED}; font-size: .68rem; border-top: 1px solid {BORDER}; padding-top: 6px; margin-top: 16px; }}
 div[data-testid="stDataFrame"] {{ border: 1px solid {BORDER}; border-radius: 8px; }}
+.kpi-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }}
+/* ---------- celular ---------- */
+@media (max-width: 700px) {{
+  html {{ font-size: 13px; }}
+  .block-container {{ padding: 3.2rem 0.55rem 1rem 0.55rem !important; }}
+  .qhead {{ gap: 6px; }}
+  .qhead .qt {{ font-size: 1.2rem; }}
+  .qhead .qpx {{ font-size: 1.1rem; }}
+  .qhead .muted {{ width: 100%; font-size: .72rem; }}
+  .kpi {{ padding: 6px 8px; }}
+  .kpi .val {{ font-size: .98rem; }}
+  .mp {{ padding: 4px 8px 6px; }}
+  .mp-cols {{ display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }}
+  .mp-cols .mp-h {{ grid-column: 1 / -1; }}
+  .rep p.lead {{ font-size: .88rem; }}
+  table.qt-tab {{ display: block; overflow-x: auto; white-space: nowrap; }}
+  div[data-testid="stHorizontalBlock"] {{ gap: .45rem !important; }}
+  .stTabs [data-baseweb="tab-list"] {{ overflow-x: auto; flex-wrap: nowrap; }}
+  .bias-top {{ flex-wrap: wrap; gap: 2px 10px; }}
+}}
 </style>
 """
 
@@ -80,7 +101,7 @@ def inject_css():
 
 
 def color_for(v: float, good=0, bad=0) -> str:
-    return GREEN if v > good else (RED if v < bad else AMBER)
+    return GREEN if v > good else (RED if v < bad else NEUTRAL)
 
 
 def kpi(col, label: str, value: str, sub: str = "", color: str = TXT):
@@ -94,19 +115,21 @@ def pill(text: str, color: str) -> str:
 
 
 SIGNAL_COLORS = {"COMPRA FUERTE": GREEN, "COMPRA": "#4ade80", "REBOTE (contratendencia)": AMBER,
-                 "NEUTRAL": MUTED, "EVITAR / VENTA": RED, "COMPRAR": GREEN, "ESPERAR": AMBER,
+                 "NEUTRAL": NEUTRAL, "EVITAR / VENTA": RED, "COMPRAR": GREEN, "ESPERAR": NEUTRAL,
+                 "VENTA FUERTE": RED, "VENTA": "#f87171",
                  "EVITAR": RED, "VENDER EN CORTO": RED}
 
 
-def _tag(fig, y, text, color, row=1):
+def _tag(fig, y, text, color, row=1, size=10.5):
     """Etiqueta de precio estilo TradingView en el eje derecho."""
     fig.add_annotation(xref="paper", x=1.0, xanchor="left", yref="y" if row == 1 else f"y{row}", y=y,
-                       text=f"<b>{text}</b>", showarrow=False, font=dict(color="#0b0f17", size=10.5),
+                       text=f"<b>{text}</b>", showarrow=False, font=dict(color="#0b0f17", size=size),
                        bgcolor=color, borderpad=2, opacity=0.95)
 
 
 def price_chart(d: pd.DataFrame, plan: dict | None = None, vp: dict | None = None, verdict: dict | None = None,
-                bars: int = 180, times: dict | None = None, show_bb: bool = False, show_vp: bool = True) -> go.Figure:
+                bars: int = 180, times: dict | None = None, show_bb: bool = False, show_vp: bool = True,
+                mobile: bool = False) -> go.Figure:
     import numpy as np
     d = d.tail(bars)
     x = d.index
@@ -144,7 +167,7 @@ def price_chart(d: pd.DataFrame, plan: dict | None = None, vp: dict | None = Non
         # zona de compra (±0.3 ATR alrededor de la entrada)
         fig.add_shape(type="rect", x0=x0, x1=x_end, y0=e - 0.3 * atr, y1=e + 0.3 * atr,
                       fillcolor="rgba(96,165,250,0.18)", line=dict(color="rgba(96,165,250,0.5)", width=1), row=1, col=1)
-        fig.add_annotation(x=x0, y=e + 0.3 * atr, xanchor="left", yanchor="bottom", text="ZONA DE ENTRADA", showarrow=False,
+        fig.add_annotation(x=x0, y=e + 0.3 * atr, xanchor="left", yanchor="bottom", text="" if mobile else "ZONA DE ENTRADA", showarrow=False,
                            font=dict(size=10, color="#93c5fd"), row=1, col=1)
         # trayectoria proyectada
         px_path = [last_px] + ([e] if abs(e - last_px) > 0.15 * atr else []) + [t1, t2]
@@ -159,10 +182,11 @@ def price_chart(d: pd.DataFrame, plan: dict | None = None, vp: dict | None = Non
         fig.add_annotation(x=xs[-1], y=t2, text=f"TP2 ~{int(s2)} ses.", showarrow=False, yshift=12,
                            font=dict(size=10, color="#86efac"), row=1, col=1)
         # líneas horizontales + etiquetas de precio
-        for y, lbl, c, dash, wdt in ((e, "ENTRADA", "#60a5fa", "solid", 1.6), (sl, "STOP", "#ef4444", "solid", 1.6),
+        for y, lbl, c, dash, wdt in ((e, "E" if mobile else "ENTRADA", "#60a5fa", "solid", 1.6),
+                                     (sl, "SL" if mobile else "STOP", "#ef4444", "solid", 1.6),
                                      (t1, "TP1", "#22c55e", "dash", 1.3), (t2, "TP2", "#22c55e", "dash", 1.3)):
             fig.add_hline(y=y, line=dict(color=c, width=wdt, dash=dash), row=1, col=1)
-            _tag(fig, y, f"{lbl} {y:,.2f}", c)
+            _tag(fig, y, f"{lbl} {y:,.2f}", c, size=9 if mobile else 10.5)
         for lv, n in plan.get("soportes", [])[:3]:
             fig.add_hline(y=lv, line=dict(color="rgba(38,166,154,0.45)", width=1, dash="dot"), row=1, col=1)
         for lv, n in plan.get("resistencias", [])[:3]:
@@ -215,9 +239,11 @@ def price_chart(d: pd.DataFrame, plan: dict | None = None, vp: dict | None = Non
     fig.add_hline(y=25, line=dict(color="rgba(148,163,184,.5)", width=1, dash="dot"), row=4, col=1)
 
     pad = (hi - lo) * 0.05
-    fig.update_layout(template="plotly_dark", paper_bgcolor="#0f141f", plot_bgcolor="#0f141f", height=820,
-                      margin=dict(l=6, r=92, t=26, b=6), xaxis_rangeslider_visible=False, barmode="overlay",
-                      hovermode="x unified", dragmode="pan", bargap=0.15,
+    fig.update_layout(template="plotly_dark", paper_bgcolor="#0f141f", plot_bgcolor="#0f141f",
+                      height=640 if mobile else 820,
+                      margin=dict(l=2, r=86 if mobile else 92, t=26 if not mobile else 6, b=6), xaxis_rangeslider_visible=False, barmode="overlay",
+                      showlegend=not mobile,
+                      hovermode="x unified", dragmode=False if mobile else "pan", bargap=0.15,
                       legend=dict(orientation="h", y=1.035, x=0, font=dict(size=10), bgcolor="rgba(0,0,0,0)"),
                       font=dict(family="Inter", color=TXT, size=11))
     for r_ in (1, 2, 3, 4):
@@ -254,7 +280,7 @@ DISCLAIMER = ("<div class='disclaimer'>Herramienta de apoyo al análisis. Las pr
 # --------------------------------------------------------------------------
 # Mapa de calor de oportunidades (treemap por sector) y barra de sesgo
 # --------------------------------------------------------------------------
-def opportunity_treemap(df: pd.DataFrame, side: str, height: int = 560) -> go.Figure:
+def opportunity_treemap(df: pd.DataFrame, side: str, height: int = 560) -> go.Figure:  # noqa: C901
     """df con columnas Ticker, Sector, prob, ev, chg, size. side: 'LONG' | 'SHORT'."""
     import numpy as np
     total = float(df["size"].sum()) or 1.0
@@ -275,9 +301,9 @@ def opportunity_treemap(df: pd.DataFrame, side: str, height: int = 560) -> go.Fi
             texts.append(f"<b>{r.Ticker}</b><br>{r.prob * 100:.0f}% · {r.ev:+.2f}R<br>{r.chg:+.2f}%")
             custom.append([r.prob, r.ev, r.chg, 1])
     if side == "LONG":
-        scale = [[0, "#3b1d24"], [0.33, "#1e2633"], [0.6, "#15803d"], [1, "#22c55e"]]
+        scale = [[0, "#3b1d24"], [0.33, "#1c2c4a"], [0.6, "#15803d"], [1, "#22c55e"]]
     else:
-        scale = [[0, "#173326"], [0.33, "#1e2633"], [0.6, "#b91c1c"], [1, "#ef4444"]]
+        scale = [[0, "#173326"], [0.33, "#1c2c4a"], [0.6, "#b91c1c"], [1, "#ef4444"]]
     fig = go.Figure(go.Treemap(
         ids=ids, labels=labels, parents=parents, values=values, branchvalues="total",
         text=texts, texttemplate="%{text}", textposition="middle center",
@@ -299,16 +325,94 @@ def bias_bar(n_long: int, n_short: int, strong_long: int = 0, strong_short: int 
     elif pl >= 52:
         lab, c = "LIGERAMENTE ALCISTA", "#4ade80"
     elif pl > 48:
-        lab, c = "NEUTRAL / MIXTO", AMBER
+        lab, c = "NEUTRAL / INDECISO", NEUTRAL
     elif pl > 40:
         lab, c = "LIGERAMENTE BAJISTA", "#f87171"
     else:
         lab, c = "BAJISTA", RED
     return (f"<div style='margin:2px 0 6px'>"
-            f"<div style='display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:3px'>"
+            f"<div class='bias-top' style='display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:3px'>"
             f"<span style='color:{GREEN}'><b>▲ LONG {pl:.0f}%</b> · {n_long} acciones · {strong_long} fuertes</span>"
             f"<span>Sesgo del mercado: <b style='color:{c}'>{lab}</b></span>"
             f"<span style='color:{RED}'>{strong_short} fuertes · {n_short} acciones · <b>SHORT {100 - pl:.0f}% ▼</b></span></div>"
             f"<div style='display:flex;height:9px;border-radius:5px;overflow:hidden;background:{BORDER}'>"
             f"<div style='width:{pl:.1f}%;background:linear-gradient(90deg,#15803d,{GREEN})'></div>"
             f"<div style='width:{100 - pl:.1f}%;background:linear-gradient(90deg,{RED},#b91c1c)'></div></div></div>")
+
+
+# --------------------------------------------------------------------------
+# Estilo de tablas: verde = compra/alcista, rojo = venta/bajista, azul = indeciso.
+# La intensidad del fondo crece con la probabilidad.
+# --------------------------------------------------------------------------
+def _rgba(hex_, a):
+    h = hex_.lstrip("#")
+    return f"rgba({int(h[0:2], 16)},{int(h[2:4], 16)},{int(h[4:6], 16)},{a:.2f})"
+
+
+def prob_css(p, p_opp, side: int) -> str:
+    """Fondo de la celda de probabilidad. side 1 = long (verde), -1 = short (rojo)."""
+    try:
+        p = float(p)
+    except (TypeError, ValueError):
+        return ""
+    if p_opp is not None and abs(p - float(p_opp)) <= 0.05:
+        base = NEUTRAL
+    else:
+        base = GREEN if side > 0 else RED
+    a = max(0.06, min(0.9, (p - 0.33) / 0.32 * 0.9))
+    return f"background-color: {_rgba(base, a)}; color: #f8fafc; font-weight: 600"
+
+
+def signed_css(v, good=0.1, bad=0.0, invert=False) -> str:
+    """Color de texto: verde si favorable, rojo si desfavorable, azul si cerca de cero."""
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return ""
+    if invert:
+        v = -v
+    c = GREEN if v > good else (RED if v < bad else NEUTRAL)
+    return f"color: {c}; font-weight: 600"
+
+
+def rs_css(v) -> str:
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return ""
+    if 45 <= v <= 55:
+        return f"background-color: {_rgba(NEUTRAL, 0.25)}"
+    base = GREEN if v > 55 else RED
+    a = min(0.75, abs(v - 50) / 50 * 0.8 + 0.08)
+    return f"background-color: {_rgba(base, a)}"
+
+
+def signal_css(s) -> str:
+    return f"color: {SIGNAL_COLORS.get(str(s), MUTED)}; font-weight: 600"
+
+
+# --------------------------------------------------------------------------
+# Celular (navegador web): se detecta por el User-Agent
+# --------------------------------------------------------------------------
+def is_mobile() -> bool:
+    import re as _re
+    try:
+        ua = st.context.headers.get("User-Agent", "") or ""
+    except Exception:
+        ua = ""
+    if st.session_state.get("force_mobile") is not None:
+        return bool(st.session_state["force_mobile"])
+    return bool(_re.search(r"Mobi|Android|iPhone|iPod|Windows Phone", ua))
+
+
+def plot_config(mobile: bool) -> dict:
+    return ({"displayModeBar": False, "scrollZoom": False, "responsive": True} if mobile
+            else {"displaylogo": False, "scrollZoom": False})
+
+
+def kpi_row(items: list[tuple]) -> str:
+    """Fila de KPIs en una cuadrícula que se acomoda sola (2 por fila en celular)."""
+    cells = "".join(
+        f"<div class='kpi'><div class='lbl'>{lbl}</div><div class='val' style='color:{c}'>{val}</div>"
+        f"<div class='sub'>{sub}</div></div>" for lbl, val, sub, c in items)
+    return f"<div class='kpi-grid'>{cells}</div>"

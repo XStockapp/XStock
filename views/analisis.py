@@ -4,13 +4,15 @@ import math
 import pandas as pd
 import streamlit as st
 
-from core import ai, store
+from core import ai, db, store
 from core.analysis import full_analysis
 from core.fundamental import BLOCK_W
-from core.ui import (AMBER, DISCLAIMER, GREEN, MUTED, RED, SIGNAL_COLORS, color_for, equity_chart, pill, price_chart)
+from core.ui import (AMBER, DISCLAIMER, GREEN, MUTED, NEUTRAL, RED, SIGNAL_COLORS, color_for, equity_chart, is_mobile,
+                     pill, plot_config, price_chart)
 
 cfg = st.session_state.cfg
 E = html.escape
+MOBILE = is_mobile()
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -47,7 +49,7 @@ def sfmt(v):
 
 
 def col_score(v, g=15, b=-15):
-    return MUTED if not ok(v) else (GREEN if v > g else RED if v < b else AMBER)
+    return MUTED if not ok(v) else (GREEN if v > g else RED if v < b else NEUTRAL)
 
 
 # ---------------------------------------------------------------- barra superior
@@ -67,6 +69,11 @@ except Exception as e:
     st.stop()
 
 d, tech, prob, plan, m, fs = A["df"], A["tech"], A["prob"], A["plan"], A["metrics"], A["fscore"]
+_prof = st.session_state.get("profile") or {}
+_seen = st.session_state.setdefault("_logged_analysis", set())
+if _prof and ticker not in _seen:
+    db.log_event(_prof["email"], "analysis", ticker)
+    _seen.add(ticker)
 last, prev = d.iloc[-1], d.iloc[-2]
 chg = last["Close"] / prev["Close"] - 1
 times = ai.time_estimates(plan, prob, cfg["tp_atr"])
@@ -87,7 +94,8 @@ st.markdown(
 
 # ---------------------------------------------------------------- gráfico + panel vertical
 cc1, cc2, cc3, _ = st.columns([2.2, 1, 1, 3])
-rng = cc1.segmented_control("Rango", ["3M", "6M", "1A", "2A"], default="6M", label_visibility="collapsed") or "6M"
+rng = cc1.segmented_control("Rango", ["3M", "6M", "1A", "2A"], default="3M" if MOBILE else "6M",
+                            label_visibility="collapsed") or "6M"
 show_vp = cc2.toggle("VRVP", value=True)
 show_bb = cc3.toggle("Bollinger", value=False)
 bars = {"3M": 63, "6M": 126, "1A": 252, "2A": 504}[rng]
@@ -95,12 +103,14 @@ bars = {"3M": 63, "6M": 126, "1A": 252, "2A": 504}[rng]
 akey = f"ai_{ticker}_{d.index[-1]:%Y%m%d}_{cfg['tp_atr']}_{cfg['sl_atr']}"
 V = st.session_state.get(akey)
 
-left, right = st.columns([4.1, 1.15], gap="small")
-with left:
-    from core.technical import volume_profile
-    vp = volume_profile(d.tail(bars)) if show_vp else None
-    st.plotly_chart(price_chart(d, plan, vp, V, bars=bars, times=times, show_bb=show_bb, show_vp=show_vp),
-                    use_container_width=True, config={"displaylogo": False, "scrollZoom": False})
+from core.technical import volume_profile
+_vp = volume_profile(d.tail(bars)) if show_vp else None
+_fig = price_chart(d, plan, _vp, V, bars=bars, times=times, show_bb=show_bb, show_vp=show_vp, mobile=MOBILE)
+if MOBILE:
+    right = st.container()  # en celular: métricas primero, luego el gráfico
+    chart_box = st.container()
+else:
+    chart_box, right = st.columns([4.1, 1.15], gap="small")
 
 ts, fsc, comb = tech["score"], fs["score"], A["combinado"]
 p, ev = prob["probabilidad"], prob["valor_esperado_R"]
@@ -111,8 +121,8 @@ risk_pct = abs(plan["entrada"] - plan["stop"]) / plan["entrada"]
 
 
 def row(label, val, color="#e5e7eb", sub=""):
-    return (f"<div class='mp-r'><span>{label}</span><b style='color:{color}'>{val}</b></div>"
-            + (f"<div class='mp-s'>{sub}</div>" if sub else ""))
+    return (f"<div class='mp-i'><div class='mp-r'><span>{label}</span><b style='color:{color}'>{val}</b></div>"
+            + (f"<div class='mp-s'>{sub}</div>" if sub else "") + "</div>")
 
 
 panel = "<div class='mp'>"
@@ -120,11 +130,11 @@ panel += "<div class='mp-h'>Puntajes</div>"
 panel += row("Score técnico", f"{ts:+.0f}", col_score(ts))
 panel += row("Score fundamental", "—" if fsc is None else f"{fsc:+.0f}", col_score(fsc))
 panel += row("Score combinado", f"{comb:+.0f}", col_score(comb), "60% técnico · 40% fundamental")
-panel += row("Prob. de ganancia", f"{p * 100:.1f}%", GREEN if p > be + 0.05 else (RED if p < be else AMBER),
+panel += row("Prob. de ganancia", f"{p * 100:.1f}%", GREEN if p > be + 0.05 else (RED if p < be else NEUTRAL),
              f"{prob['casos_similares']} casos · equilibrio {be * 100:.0f}%")
-panel += row("Valor esperado", f"{ev:+.2f} R", GREEN if ev > 0.1 else (RED if ev < 0 else AMBER))
+panel += row("Valor esperado", f"{ev:+.2f} R", GREEN if ev > 0.1 else (RED if ev < 0 else NEUTRAL))
 panel += row("Piotroski", f"{pio['score']}/{pio['max']}" if pio else "—",
-             (GREEN if pio["score"] >= 7 else RED if pio["score"] <= 3 else AMBER) if pio else MUTED)
+             (GREEN if pio["score"] >= 7 else RED if pio["score"] <= 3 else NEUTRAL) if pio else MUTED)
 panel += f"<div class='mp-h'>Plan · {E(plan['direccion'])}</div>"
 panel += row("Entrada", money(plan["entrada"]), "#60a5fa", E(plan["tipo_entrada"]))
 panel += row("Stop-loss", money(plan["stop"]), RED, f"−{risk_pct * 100:.1f}% · {E(plan['tipo_stop'])}")
@@ -145,16 +155,27 @@ if plan["resistencias"]:
     panel += row("Resistencia cercana", money(plan["resistencias"][0][0]), "#ef5350")
 panel += row("ATR (14)", f"{money(plan['atr'])} · {plan['atr'] / last['Close'] * 100:.1f}%", "#e5e7eb")
 panel += "</div>"
+if MOBILE:
+    panel = panel.replace("<div class='mp'>", "<div class='mp mp-cols'>", 1)
 right.markdown(panel, unsafe_allow_html=True)
+chart_box.plotly_chart(_fig, use_container_width=True, config=plot_config(MOBILE))
 
 # ---------------------------------------------------------------- informe IA + fundamentales clave
-la, lb = st.columns([1.55, 1], gap="small")
+la, lb = (st.container(), st.container()) if MOBILE else st.columns([1.55, 1], gap="small")
 with la:
     with st.container(border=True):
         h1, h2 = st.columns([3, 1.3])
         h1.markdown("<div class='sec'>Informe del analista (IA)</div>", unsafe_allow_html=True)
         has_key = bool(cfg["anthropic_key"])
-        go = h2.button("Generar con Claude" if has_key else "Generar síntesis", type="primary", use_container_width=True)
+        _left = db.ai_remaining(_prof) if _prof else None
+        no_quota = has_key and _left is not None and _left <= 0
+        use_ai = has_key and not no_quota
+        go = h2.button("Generar con Claude" if use_ai else "Generar síntesis", type="primary", use_container_width=True)
+        if use_ai and _left is not None:
+            h1.caption(f"Te quedan {_left} informes de IA")
+        if no_quota:
+            st.warning("Usaste todos tus informes de IA. Puedes generar la síntesis cuantitativa (sin IA) o pedir más "
+                       "informes al administrador.")
         payload = ai.build_payload(ticker, tech, m, fs, pio, prob, A["bt"], plan, A["news"], A.get("finviz"),
                                    A.get("finviz_items"), A.get("vprofile"), cfg["tp_atr"],
                                    {"max_52s": hi52, "min_52s": lo52,
@@ -163,18 +184,20 @@ with la:
         if go:
             try:
                 with st.spinner("Claude está redactando el informe…"):
-                    V = (ai.analyze(payload, cfg["anthropic_key"], ai.MODELOS[cfg["modelo"]]) if has_key
+                    V = (ai.analyze(payload, cfg["anthropic_key"], ai.MODELOS[cfg["modelo"]]) if use_ai
                          else ai.rule_based(payload))
+                if use_ai and _prof:
+                    st.session_state["profile"] = db.consume_ai(_prof, ticker)
             except Exception as e:
                 st.error(f"Error con la IA: {e}. Se usa la síntesis por reglas.")
                 V = ai.rule_based(payload)
             st.session_state[akey] = V
             st.rerun()
-        if not has_key:
+        if not has_key and (_prof or {}).get("role") == "admin":
             st.caption("Sin Anthropic API key se genera una síntesis por reglas. Agrega `ANTHROPIC_API_KEY` en los "
                        "Secrets de Streamlit para el informe completo de Claude.")
         if V:
-            col = SIGNAL_COLORS.get(V.get("veredicto"), AMBER)
+            col = SIGNAL_COLORS.get(V.get("veredicto"), NEUTRAL)
             pa = V.get("probabilidad_ajustada")
             st.markdown(
                 f"<div class='rep'>{pill(E(str(V.get('veredicto', ''))), col)} "
@@ -242,7 +265,7 @@ with lb:
         st.markdown(out or "<div class='muted small'>Sin datos fundamentales.</div>", unsafe_allow_html=True)
         if neu:
             with st.expander(f"Neutrales ({len(neu)})"):
-                st.markdown("".join(frow(i, MUTED) for i in neu), unsafe_allow_html=True)
+                st.markdown("".join(frow(i, NEUTRAL) for i in neu), unsafe_allow_html=True)
         bl = fs.get("bloques", {})
         st.markdown("<div class='sec2'>Puntaje por bloque (peso)</div>" + "".join(
             f"<div class='mp-r'><span>{E(b)} <span class='muted'>×{BLOCK_W[b]}</span></span>"
@@ -257,7 +280,7 @@ with t1:
     sig["Aporte"] = sig["Señal"] * sig["Peso"]
     sig["Sesgo"] = sig["Señal"].map(lambda v: "▲ Alcista" if v > 0.15 else ("▼ Bajista" if v < -0.15 else "● Neutral"))
     sig = sig[["Indicador", "Sesgo", "Señal", "Peso", "Aporte", "Lectura"]]
-    colr = lambda v: f"color: {GREEN if v > 0.15 else RED if v < -0.15 else AMBER}; font-weight: 600"
+    colr = lambda v: f"color: {GREEN if v > 0.15 else RED if v < -0.15 else NEUTRAL}; font-weight: 600"
     sty = (sig.style.format({"Señal": "{:+.2f}", "Aporte": "{:+.2f}", "Peso": "{:.1f}"})
            .map(colr, subset=["Señal", "Aporte"])
            .map(lambda s: colr(1 if s.startswith("▲") else -1 if s.startswith("▼") else 0), subset=["Sesgo"]))
@@ -281,7 +304,7 @@ with t6:
             fdf = pd.DataFrame([{"Métrica": i["metrica"], "Valor": i["valor"], "Impacto": i["impacto"],
                                  "Efecto": "▲ Suma" if i["impacto"] > 0.15 else ("▼ Resta" if i["impacto"] < -0.15 else "● Neutro"),
                                  "Lectura": i["lectura"]} for i in fitems])
-            colr2 = lambda v: f"color: {GREEN if v > 0.15 else RED if v < -0.15 else AMBER}; font-weight: 600"
+            colr2 = lambda v: f"color: {GREEN if v > 0.15 else RED if v < -0.15 else NEUTRAL}; font-weight: 600"
             st.dataframe(fdf.style.format({"Impacto": "{:+.2f}"}).map(colr2, subset=["Impacto"])
                          .map(lambda s: colr2(1 if s.startswith("▲") else -1 if s.startswith("▼") else 0), subset=["Efecto"]),
                          hide_index=True, use_container_width=True)

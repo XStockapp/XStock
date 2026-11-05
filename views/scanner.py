@@ -3,10 +3,11 @@ import streamlit as st
 
 from core import data, store
 from core.scanner import scan
-from core.ui import (BG, BORDER, DISCLAIMER, GREEN, RED, AMBER, MUTED, SIGNAL_COLORS, bias_bar, kpi,
-                     opportunity_treemap)
+from core.ui import (BG, BORDER, DISCLAIMER, GREEN, RED, AMBER, MUTED, NEUTRAL, SIGNAL_COLORS, bias_bar, kpi,
+                     is_mobile, kpi_row, opportunity_treemap, plot_config, prob_css, rs_css, signal_css, signed_css)
 
 cfg = st.session_state.cfg
+MOBILE = is_mobile()
 
 st.markdown("## Escáner de mercado")
 st.markdown("<div class='muted'>Ranking por <b>valor esperado</b> y <b>probabilidad histórica</b> de alcanzar el "
@@ -65,6 +66,10 @@ if run:
             status.update(label="Ninguna acción pasó los filtros", state="error")
         else:
             store.save_scan(res, {"universo": uni, "n_universo": len(tickers), "n_validas": len(res)})
+            _pf = st.session_state.get("profile")
+            if _pf:
+                from core import db as _db
+                _db.log_event(_pf["email"], "scan", f"{uni} · {len(res)} acciones")
             status.update(label=f"Escaneo completo: {len(res)} acciones evaluadas", state="complete", expanded=False)
 
 res, meta = store.load_scan()
@@ -83,18 +88,19 @@ if only_up:
 
 # ---------------- KPIs ----------------
 n_l, n_s = int((res["Lado"] == "LONG").sum()), int((res["Lado"] == "SHORT").sum())
-k = st.columns(5)
-kpi(k[0], "Acciones evaluadas", f"{len(res):,}", f"{meta.get('universo', '')} · {meta.get('fecha', '')}")
-kpi(k[1], "Señales de compra", f"{int(res['Señal'].isin(['COMPRA FUERTE', 'COMPRA']).sum())}",
-    f"{int((res['Señal'] == 'COMPRA FUERTE').sum())} fuertes", GREEN)
-kpi(k[2], "Señales de venta en corto", f"{int(res['Señal corto'].isin(['VENTA FUERTE', 'VENTA']).sum())}",
-    f"{int((res['Señal corto'] == 'VENTA FUERTE').sum())} fuertes", RED)
 pct_up = res["Sobre SMA200"].mean() * 100
-kpi(k[3], "Amplitud de mercado", f"{pct_up:.0f}%", "acciones sobre su SMA200",
-    GREEN if pct_up > 55 else RED if pct_up < 40 else AMBER)
 best = base.sort_values("Ranking score", ascending=False).iloc[0] if len(base) else None
-kpi(k[4], "Mejor compra", best["Ticker"] if best is not None else "—",
-    f"{best['Prob. ganancia'] * 100:.0f}% · EV {best['Valor esperado (R)']:+.2f}R" if best is not None else "", GREEN)
+st.markdown(kpi_row([
+    ("Acciones evaluadas", f"{len(res):,}", f"{meta.get('universo', '')} · {meta.get('fecha', '')}", "#e5e7eb"),
+    ("Señales de compra", f"{int(res['Señal'].isin(['COMPRA FUERTE', 'COMPRA']).sum())}",
+     f"{int((res['Señal'] == 'COMPRA FUERTE').sum())} fuertes", GREEN),
+    ("Señales de venta en corto", f"{int(res['Señal corto'].isin(['VENTA FUERTE', 'VENTA']).sum())}",
+     f"{int((res['Señal corto'] == 'VENTA FUERTE').sum())} fuertes", RED),
+    ("Amplitud de mercado", f"{pct_up:.0f}%", "acciones sobre su SMA200",
+     GREEN if pct_up > 55 else RED if pct_up < 40 else NEUTRAL),
+    ("Mejor compra", best["Ticker"] if best is not None else "—",
+     f"{best['Prob. ganancia'] * 100:.0f}% · EV {best['Valor esperado (R)']:+.2f}R" if best is not None else "", GREEN),
+]), unsafe_allow_html=True)
 
 # ---------------- Mapa de oportunidades ----------------
 st.write("")
@@ -110,16 +116,18 @@ if mode == "Mapa de calor":
     L = hm[hm["Lado"] == "LONG"].assign(prob=lambda x: x["Prob. ganancia"], ev=lambda x: x["Valor esperado (R)"])
     S = hm[hm["Lado"] == "SHORT"].assign(prob=lambda x: x["Prob. corto"], ev=lambda x: x["EV corto (R)"])
     wl_ = max(0.22, n_l / max(1, n_l + n_s))
-    cL, cS = st.columns([wl_, max(0.22, 1 - wl_)], gap="small")
+    cL, cS = (st.container(), st.container()) if MOBILE else st.columns([wl_, max(0.22, 1 - wl_)], gap="small")
     with cL:
         st.markdown(f"<div class='sec2' style='color:{GREEN}'>▲ Candidatas a compra (long) · color = valor esperado</div>",
                     unsafe_allow_html=True)
         if len(L):
-            st.plotly_chart(opportunity_treemap(L, "LONG"), use_container_width=True, config={"displaylogo": False})
+            st.plotly_chart(opportunity_treemap(L, "LONG", 420 if MOBILE else 560), use_container_width=True,
+                            config=plot_config(MOBILE))
     with cS:
         st.markdown(f"<div class='sec2' style='color:{RED}'>▼ Candidatas a venta en corto (short)</div>", unsafe_allow_html=True)
         if len(S):
-            st.plotly_chart(opportunity_treemap(S, "SHORT"), use_container_width=True, config={"displaylogo": False})
+            st.plotly_chart(opportunity_treemap(S, "SHORT", 420 if MOBILE else 560), use_container_width=True,
+                            config=plot_config(MOBILE))
     st.caption("Cada acción va al lado con mayor valor esperado histórico. Verde o rojo intenso = mayor ventaja; gris = sin ventaja "
                "(valor esperado ≤ 0). Tamaño = " + ("capitalización" if size_by == "Market cap" else "volumen negociado en $") + ".")
 else:
@@ -138,9 +146,11 @@ side = r1.segmented_control("Ranking", ["Compras (long)", "Ventas en corto"], de
 is_long = side.startswith("Compras")
 if is_long:
     view = base.sort_values("Ranking score", ascending=False).copy()
+    view["_p_opp"] = view["Prob. corto"]
     sig_opts, sig_def = ["COMPRA FUERTE", "COMPRA", "REBOTE (contratendencia)", "NEUTRAL", "EVITAR / VENTA"], ["COMPRA FUERTE", "COMPRA"]
 else:
     view = base.sort_values("Ranking corto", ascending=False).copy()
+    view["_p_opp"] = view["Prob. ganancia"]
     view["Señal"] = view["Señal corto"]
     view["Prob. ganancia"] = view["Prob. corto"]
     view["Valor esperado (R)"] = view["EV corto (R)"]
@@ -160,29 +170,37 @@ view["dir"] = 1 if is_long else -1
 cols = ["#", "Ticker", "Sector", "Señal", "Prob. ganancia", "Valor esperado (R)", "Score técnico", "Fuerza relativa 3m",
         "Precio", "Var. 1d %", "Ret. 3m %", "RSI", "ADX", "Vol. relativo", "ATR %", "Entrada", "Stop",
         "Objetivo 1", "Objetivo 2", "Casos similares"]
+if MOBILE:  # tabla compacta en celular
+    cols = ["#", "Ticker", "Señal", "Prob. ganancia", "Valor esperado (R)", "Precio", "Entrada", "Stop", "Objetivo 1"]
 st.markdown(f"##### Ranking de {'compras' if is_long else 'ventas en corto'} · selecciona filas para enviarlas a tu watchlist o analizarlas")
+sgn = 1 if is_long else -1
+vt = view[cols].rename(columns={"Fuerza relativa 3m": "RS 3m"})
+opp = view["_p_opp"]
+_rs = ["RS 3m"] if "RS 3m" in vt.columns else []
+_chg = [c for c in ("Var. 1d %", "Ret. 3m %") if c in vt.columns]
+_sc = [c for c in ("Score técnico",) if c in vt.columns]
+_obj = [c for c in ("Objetivo 1", "Objetivo 2") if c in vt.columns]
+sty = (vt.style
+       .format({k_: v_ for k_, v_ in {"Prob. ganancia": "{:.1%}", "Valor esperado (R)": "{:+.2f} R", "Score técnico": "{:+.0f}", "RS 3m": "{:.0f}",
+                "Precio": "${:,.2f}", "Var. 1d %": "{:+.2f}%", "Ret. 3m %": "{:+.1f}%", "RSI": "{:.0f}", "ADX": "{:.0f}",
+                "Vol. relativo": "{:.1f}x", "ATR %": "{:.1f}%", "Entrada": "${:,.2f}", "Stop": "${:,.2f}",
+                "Objetivo 1": "${:,.2f}", "Objetivo 2": "${:,.2f}"}.items() if k_ in vt.columns}, na_rep="—")
+       .apply(lambda col: [prob_css(v, opp.loc[i], sgn) for i, v in col.items()], subset=["Prob. ganancia"])
+       .map(lambda v: signed_css(v, 0.1, 0.0, invert=False).replace(GREEN, GREEN if sgn > 0 else RED), subset=["Valor esperado (R)"])
+       .map(lambda v: signed_css(v, 15, -15), subset=_sc)
+       .map(lambda v: signed_css(v, 0.0, 0.0), subset=_chg)
+       .map(rs_css, subset=_rs)
+       .map(signal_css, subset=["Señal"])
+       .map(lambda v: f"color: {NEUTRAL}", subset=["Entrada"])
+       .map(lambda v: f"color: {RED}", subset=["Stop"])
+       .map(lambda v: f"color: {GREEN}", subset=_obj))
 sel = st.dataframe(
-    view[cols], hide_index=True, use_container_width=True, height=560,
+    sty, hide_index=True, use_container_width=True, height=460 if MOBILE else 560,
     on_select="rerun", selection_mode="multi-row", key=f"scan_table_{is_long}",
-    column_config={
-        "#": st.column_config.NumberColumn(width="small"),
-        "Prob. ganancia": st.column_config.ProgressColumn(format="percent", min_value=0, max_value=1, width="medium"),
-        "Valor esperado (R)": st.column_config.NumberColumn(format="%+.2f R"),
-        "Score técnico": st.column_config.NumberColumn(format="%+.0f"),
-        "Fuerza relativa 3m": st.column_config.ProgressColumn("RS 3m", format="%.0f", min_value=0, max_value=100),
-        "Precio": st.column_config.NumberColumn(format="$%.2f"),
-        "Var. 1d %": st.column_config.NumberColumn(format="%+.2f%%"),
-        "Ret. 3m %": st.column_config.NumberColumn(format="%+.1f%%"),
-        "RSI": st.column_config.NumberColumn(format="%.0f"),
-        "ADX": st.column_config.NumberColumn(format="%.0f"),
-        "Vol. relativo": st.column_config.NumberColumn(format="%.1fx"),
-        "ATR %": st.column_config.NumberColumn(format="%.1f%%"),
-        "Entrada": st.column_config.NumberColumn(format="$%.2f"),
-        "Stop": st.column_config.NumberColumn(format="$%.2f"),
-        "Objetivo 1": st.column_config.NumberColumn(format="$%.2f"),
-        "Objetivo 2": st.column_config.NumberColumn(format="$%.2f"),
-    },
+    column_config={"#": st.column_config.NumberColumn(width="small")},
 )
+st.caption("Probabilidad: verde = ventaja de compra · rojo = ventaja de venta en corto · azul = indeciso (compra y venta "
+           "difieren ≤ 5 puntos). Más intenso = mayor probabilidad.")
 picked = view.iloc[sel.selection.rows] if sel and sel.selection.rows else view.iloc[0:0]
 
 b1, b2, b3 = st.columns([1.3, 1.3, 3])
