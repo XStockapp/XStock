@@ -50,23 +50,27 @@ for t, w in wl.items():
     t1 = w.get("objetivo_1") or (float(L["Objetivo 1"]) if L is not None else None)
     t2 = w.get("objetivo_2") or (float(L["Objetivo 2"]) if L is not None else None)
     estado = "Sin datos"
+    sg = int(w.get("dir") or 1)  # 1 = compra (long), -1 = venta en corto
     if px and entry and stop and t1 and t in prices:
         h = prices[t]
         since = h[h.index >= pd.Timestamp(str(w.get("agregado", "1900-01-01"))[:10])]
         if since.empty:
             since = h.tail(1)
         p_add = w.get("precio_agregado") or px
-        touched = (since["Low"] <= entry * 1.002)
-        filled = p_add <= entry * 1.005 or touched.any()
+        touched = (since["Low"] <= entry * 1.002) if sg > 0 else (since["High"] >= entry * 0.998)
+        filled = ((p_add - entry * (1.005 if sg > 0 else 0.995)) * sg <= 0) or touched.any()
         if not filled:
-            estado = "🎯 En zona de entrada" if px <= entry * 1.01 else "⏳ Esperando retroceso a la entrada"
+            estado = "🎯 En zona de entrada" if abs(px / entry - 1) <= 0.01 else "⏳ Esperando retroceso a la entrada"
         else:
             after = since.loc[touched.idxmax():] if touched.any() else since
-            if (after["Low"] <= stop).any() or px <= stop:
+            hit_stop = ((after["Low"] <= stop).any() if sg > 0 else (after["High"] >= stop).any()) or (px - stop) * sg <= 0
+            hit_t2 = t2 and ((after["High"] >= t2).any() if sg > 0 else (after["Low"] <= t2).any())
+            hit_t1 = (after["High"] >= t1).any() if sg > 0 else (after["Low"] <= t1).any()
+            if hit_stop:
                 estado = "⛔ Stop alcanzado"
-            elif t2 and (after["High"] >= t2).any():
+            elif hit_t2:
                 estado = "🏁 Objetivo 2 alcanzado"
-            elif (after["High"] >= t1).any():
+            elif hit_t1:
                 estado = "✅ Objetivo 1 alcanzado"
             elif abs(px / entry - 1) <= 0.01:
                 estado = "🎯 En zona de entrada"
@@ -75,6 +79,7 @@ for t, w in wl.items():
     p0 = w.get("precio_agregado")
     rows.append({
         "Ticker": t,
+        "Lado": "▲ Long" if sg > 0 else "▼ Short",
         "Estado": estado,
         "Señal actual": L["Señal"] if L is not None else "—",
         "Prob. ganancia": float(L["Prob. ganancia"]) if L is not None else None,
@@ -82,7 +87,7 @@ for t, w in wl.items():
         "Score técnico": float(L["Score técnico"]) if L is not None else None,
         "Precio": px,
         "Var. 1d %": float(L["Var. 1d %"]) if L is not None else None,
-        "Desde que se agregó %": (px / p0 - 1) * 100 if px and p0 else None,
+        "Desde que se agregó %": (px / p0 - 1) * 100 * sg if px and p0 else None,
         "Entrada": entry, "Stop": stop, "Objetivo 1": t1, "Objetivo 2": t2,
         "Señal al agregar": w.get("señal_agregado") or "—",
         "Agregado": w.get("agregado"),

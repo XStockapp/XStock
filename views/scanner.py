@@ -3,7 +3,8 @@ import streamlit as st
 
 from core import data, store
 from core.scanner import scan
-from core.ui import BG, BORDER, DISCLAIMER, GREEN, RED, AMBER, MUTED, SIGNAL_COLORS, kpi
+from core.ui import (BG, BORDER, DISCLAIMER, GREEN, RED, AMBER, MUTED, SIGNAL_COLORS, bias_bar, kpi,
+                     opportunity_treemap)
 
 cfg = st.session_state.cfg
 
@@ -14,7 +15,7 @@ st.markdown("<div class='muted'>Ranking por <b>valor esperado</b> y <b>probabili
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _universe(name, custom, av_key):
-    return data.get_universe(name, custom, av_key)
+    return data.universe_with_meta(name, custom, av_key)
 
 
 def _prices(tickers: tuple):
@@ -52,13 +53,13 @@ with st.container(border=True):
     run = st.button("🔍  Escanear mercado", type="primary", use_container_width=True)
 
 if run:
-    tickers = _universe(uni, custom, cfg["alphavantage_key"])
+    tickers, umeta = _universe(uni, custom, cfg["alphavantage_key"])
     with st.status(f"Escaneando {len(tickers)} acciones de «{uni}»…", expanded=True) as status:
         prices = _prices(tuple(tickers))
         st.write(f"Precios recibidos: {len(prices)} acciones")
         bar = st.progress(0.0)
         res = scan(prices, min_px, min_dv * 1e6, cfg["tp_atr"], cfg["sl_atr"], int(cfg["horizonte"]),
-                   progress=lambda p, m: bar.progress(min(p, 1.0), m))
+                   progress=lambda p, m: bar.progress(min(p, 1.0), m), meta=umeta)
         bar.empty()
         if res.empty:
             status.update(label="Ninguna acción pasó los filtros", state="error")
@@ -72,41 +73,97 @@ if res is None or res.empty:
     st.markdown(DISCLAIMER, unsafe_allow_html=True)
     st.stop()
 
-view = res.copy()
+if "Lado" not in res.columns:
+    st.warning("Este escaneo es de una versión anterior. Vuelve a pulsar **Escanear mercado** para ver el lado corto y el mapa de calor.")
+    st.stop()
+
+base = res.copy()
 if only_up:
-    view = view[view["Sobre SMA200"]]
+    base = base[base["Sobre SMA200"]]
 
 # ---------------- KPIs ----------------
+n_l, n_s = int((res["Lado"] == "LONG").sum()), int((res["Lado"] == "SHORT").sum())
 k = st.columns(5)
-buys = view[view["Señal"].isin(["COMPRA FUERTE", "COMPRA"])]
 kpi(k[0], "Acciones evaluadas", f"{len(res):,}", f"{meta.get('universo', '')} · {meta.get('fecha', '')}")
-kpi(k[1], "Señales de compra", f"{len(buys)}", f"{len(view[view['Señal'] == 'COMPRA FUERTE'])} fuertes", GREEN)
-kpi(k[2], "Prob. media (top 20)", f"{view.head(20)['Prob. ganancia'].mean() * 100:.1f}%",
-    f"Universo: {res['Prob. ganancia'].mean() * 100:.1f}%")
+kpi(k[1], "Señales de compra", f"{int(res['Señal'].isin(['COMPRA FUERTE', 'COMPRA']).sum())}",
+    f"{int((res['Señal'] == 'COMPRA FUERTE').sum())} fuertes", GREEN)
+kpi(k[2], "Señales de venta en corto", f"{int(res['Señal corto'].isin(['VENTA FUERTE', 'VENTA']).sum())}",
+    f"{int((res['Señal corto'] == 'VENTA FUERTE').sum())} fuertes", RED)
 pct_up = res["Sobre SMA200"].mean() * 100
 kpi(k[3], "Amplitud de mercado", f"{pct_up:.0f}%", "acciones sobre su SMA200",
     GREEN if pct_up > 55 else RED if pct_up < 40 else AMBER)
-top = view.iloc[0] if len(view) else None
-kpi(k[4], "Mejor oportunidad", top["Ticker"] if top is not None else "—",
-    f"{top['Prob. ganancia'] * 100:.0f}% · EV {top['Valor esperado (R)']:+.2f}R" if top is not None else "", GREEN)
+best = base.sort_values("Ranking score", ascending=False).iloc[0] if len(base) else None
+kpi(k[4], "Mejor compra", best["Ticker"] if best is not None else "—",
+    f"{best['Prob. ganancia'] * 100:.0f}% · EV {best['Valor esperado (R)']:+.2f}R" if best is not None else "", GREEN)
 
+# ---------------- Mapa de oportunidades ----------------
 st.write("")
-f1, f2, f3 = st.columns([2, 1, 1])
-sig_filter = f1.multiselect("Filtrar señal", list(SIGNAL_COLORS)[:5], default=["COMPRA FUERTE", "COMPRA"])
+m1, m2, m3 = st.columns([1.6, 1.4, 3])
+mode = m1.segmented_control("Visualización", ["Mapa de calor", "Dispersión"], default="Mapa de calor") or "Mapa de calor"
+size_by = m2.segmented_control("Tamaño", ["Volumen $", "Market cap"], default="Volumen $",
+                               help="Market cap solo está disponible en los universos de Finviz") or "Volumen $"
+st.markdown(bias_bar(n_l, n_s, int((res["Señal"] == "COMPRA FUERTE").sum()), int((res["Señal corto"] == "VENTA FUERTE").sum())),
+            unsafe_allow_html=True)
+if mode == "Mapa de calor":
+    sz = res["Market cap"] if (size_by == "Market cap" and res["Market cap"].notna().mean() > 0.8) else res["Vol. $ prom (M)"]
+    hm = res.assign(size=sz.fillna(res["Vol. $ prom (M)"]).clip(lower=0.01), chg=res["Var. 1d %"])
+    L = hm[hm["Lado"] == "LONG"].assign(prob=lambda x: x["Prob. ganancia"], ev=lambda x: x["Valor esperado (R)"])
+    S = hm[hm["Lado"] == "SHORT"].assign(prob=lambda x: x["Prob. corto"], ev=lambda x: x["EV corto (R)"])
+    wl_ = max(0.22, n_l / max(1, n_l + n_s))
+    cL, cS = st.columns([wl_, max(0.22, 1 - wl_)], gap="small")
+    with cL:
+        st.markdown(f"<div class='sec2' style='color:{GREEN}'>▲ Candidatas a compra (long) · color = valor esperado</div>",
+                    unsafe_allow_html=True)
+        if len(L):
+            st.plotly_chart(opportunity_treemap(L, "LONG"), use_container_width=True, config={"displaylogo": False})
+    with cS:
+        st.markdown(f"<div class='sec2' style='color:{RED}'>▼ Candidatas a venta en corto (short)</div>", unsafe_allow_html=True)
+        if len(S):
+            st.plotly_chart(opportunity_treemap(S, "SHORT"), use_container_width=True, config={"displaylogo": False})
+    st.caption("Cada acción va al lado con mayor valor esperado histórico. Verde o rojo intenso = mayor ventaja; gris = sin ventaja "
+               "(valor esperado ≤ 0). Tamaño = " + ("capitalización" if size_by == "Market cap" else "volumen negociado en $") + ".")
+else:
+    fig = px.scatter(res, x="Score técnico", y="Prob. ganancia", color="Señal", hover_name="Ticker",
+                     size=res["Vol. $ prom (M)"].clip(upper=res["Vol. $ prom (M)"].quantile(0.95)),
+                     color_discrete_map=SIGNAL_COLORS, template="plotly_dark", height=460)
+    fig.update_layout(paper_bgcolor=BG, plot_bgcolor=BG, margin=dict(l=10, r=10, t=10, b=10))
+    fig.update_xaxes(gridcolor=BORDER)
+    fig.update_yaxes(gridcolor=BORDER, tickformat=".0%")
+    st.plotly_chart(fig, use_container_width=True)
+
+# ---------------- Ranking ----------------
+st.write("")
+r1, f1, f2, f3 = st.columns([1.6, 2, 1, 1])
+side = r1.segmented_control("Ranking", ["Compras (long)", "Ventas en corto"], default="Compras (long)") or "Compras (long)"
+is_long = side.startswith("Compras")
+if is_long:
+    view = base.sort_values("Ranking score", ascending=False).copy()
+    sig_opts, sig_def = ["COMPRA FUERTE", "COMPRA", "REBOTE (contratendencia)", "NEUTRAL", "EVITAR / VENTA"], ["COMPRA FUERTE", "COMPRA"]
+else:
+    view = base.sort_values("Ranking corto", ascending=False).copy()
+    view["Señal"] = view["Señal corto"]
+    view["Prob. ganancia"] = view["Prob. corto"]
+    view["Valor esperado (R)"] = view["EV corto (R)"]
+    view["Entrada"], view["Stop"] = view["Entrada corto"], view["Stop corto"]
+    view["Objetivo 1"], view["Objetivo 2"] = view["Obj. corto 1"], view["Obj. corto 2"]
+    view["Casos similares"] = view["Casos similares corto"]
+    sig_opts, sig_def = ["VENTA FUERTE", "VENTA", "NEUTRAL"], ["VENTA FUERTE", "VENTA"]
+sig_filter = f1.multiselect("Filtrar señal", sig_opts, default=sig_def)
 min_prob = f2.slider("Prob. mínima", 0, 90, 0, 5) / 100
 top_n = f3.selectbox("Mostrar", [25, 50, 100, 250, 1000], index=1)
 if sig_filter:
     view = view[view["Señal"].isin(sig_filter)]
 view = view[view["Prob. ganancia"] >= min_prob].head(top_n)
+view["#"] = range(1, len(view) + 1)
+view["dir"] = 1 if is_long else -1
 
-cols = ["#", "Ticker", "Señal", "Prob. ganancia", "Valor esperado (R)", "Score técnico", "Fuerza relativa 3m",
+cols = ["#", "Ticker", "Sector", "Señal", "Prob. ganancia", "Valor esperado (R)", "Score técnico", "Fuerza relativa 3m",
         "Precio", "Var. 1d %", "Ret. 3m %", "RSI", "ADX", "Vol. relativo", "ATR %", "Entrada", "Stop",
         "Objetivo 1", "Objetivo 2", "Casos similares"]
-
-st.markdown("##### Ranking · selecciona filas para enviarlas a tu watchlist o analizarlas")
+st.markdown(f"##### Ranking de {'compras' if is_long else 'ventas en corto'} · selecciona filas para enviarlas a tu watchlist o analizarlas")
 sel = st.dataframe(
     view[cols], hide_index=True, use_container_width=True, height=560,
-    on_select="rerun", selection_mode="multi-row", key="scan_table",
+    on_select="rerun", selection_mode="multi-row", key=f"scan_table_{is_long}",
     column_config={
         "#": st.column_config.NumberColumn(width="small"),
         "Prob. ganancia": st.column_config.ProgressColumn(format="percent", min_value=0, max_value=1, width="medium"),
@@ -138,15 +195,6 @@ if b2.button("📊 Analizar selección", disabled=len(picked) != 1, use_containe
     st.switch_page("views/analisis.py")
 b3.download_button("⬇️ Exportar ranking (CSV)", view[cols].to_csv(index=False).encode("utf-8"),
                    "ranking_quantdesk.csv", "text/csv")
-
-with st.expander("Mapa de oportunidades: probabilidad vs. puntaje técnico"):
-    fig = px.scatter(res, x="Score técnico", y="Prob. ganancia", color="Señal", hover_name="Ticker",
-                     size=res["Vol. $ prom (M)"].clip(upper=res["Vol. $ prom (M)"].quantile(0.95)),
-                     color_discrete_map=SIGNAL_COLORS, template="plotly_dark", height=460)
-    fig.update_layout(paper_bgcolor=BG, plot_bgcolor=BG, margin=dict(l=10, r=10, t=10, b=10))
-    fig.update_xaxes(gridcolor=BORDER)
-    fig.update_yaxes(gridcolor=BORDER, tickformat=".0%")
-    st.plotly_chart(fig, use_container_width=True)
 
 with st.expander("¿Cómo se calcula la probabilidad?"):
     st.markdown(f"""
