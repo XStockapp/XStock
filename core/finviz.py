@@ -24,19 +24,37 @@ UNIVERSOS_FINVIZ = {
 }
 
 
-def screener(signal: str = "", filters: dict | None = None, limit: int = 2000) -> list[str]:
+def screener_df(signal: str = "", filters: dict | None = None, limit: int = 2000):
     from finvizfinance.screener.overview import Overview
     ov = Overview()
     ov.set_filter(signal=signal, filters_dict=filters or {})
-    df = ov.screener_view(order="Market Cap.", ascend=False, limit=limit, verbose=0, sleep_sec=1)
+    return ov.screener_view(order="Market Cap.", ascend=False, limit=limit, verbose=0, sleep_sec=1)
+
+
+def screener(signal: str = "", filters: dict | None = None, limit: int = 2000) -> list[str]:
+    df = screener_df(signal, filters, limit)
     if df is None or df.empty:
         return []
     return [str(t).replace(".", "-") for t in df["Ticker"].dropna()]
 
 
-def universe(name: str) -> list[str]:
+def universe_meta(name: str):
+    """(tickers, {ticker: {sector, cap}}) desde el screener de Finviz."""
     signal, filters = UNIVERSOS_FINVIZ[name]
-    return screener(signal, filters)
+    df = screener_df(signal, filters)
+    if df is None or df.empty:
+        return [], {}
+    meta = {}
+    for r in df.to_dict("records"):
+        t = str(r.get("Ticker", "")).replace(".", "-")
+        cap = r.get("Market Cap")
+        cap = cap if isinstance(cap, (int, float)) else _num(cap)
+        meta[t] = {"sector": r.get("Sector"), "cap": cap}
+    return list(meta), meta
+
+
+def universe(name: str) -> list[str]:
+    return universe_meta(name)[0]
 
 
 # ---------------------------------------------------------------------------

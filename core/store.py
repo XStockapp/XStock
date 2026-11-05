@@ -113,6 +113,7 @@ def add_to_watchlist(rows: list[dict]) -> int:
             "prob_agregado": r.get("Prob. ganancia"),
             "entrada": r.get("Entrada"), "stop": r.get("Stop"),
             "objetivo_1": r.get("Objetivo 1"), "objetivo_2": r.get("Objetivo 2"),
+            "dir": int(r.get("dir") or 1),
             "notas": "",
         }
         n += 1

@@ -43,21 +43,33 @@ def _demo() -> bool:
 # --------------------------------------------------------------------------
 # Universos
 # --------------------------------------------------------------------------
-def _wiki_table(url: str, col_candidates: list[str]) -> list[str]:
+SECTOR_ES = {"Information Technology": "Tecnología", "Technology": "Tecnología", "Health Care": "Salud",
+             "Healthcare": "Salud", "Financials": "Finanzas", "Financial": "Finanzas", "Consumer Discretionary": "Consumo discrecional",
+             "Consumer Cyclical": "Consumo discrecional", "Consumer Staples": "Consumo básico", "Consumer Defensive": "Consumo básico",
+             "Communication Services": "Comunicaciones", "Industrials": "Industria", "Energy": "Energía",
+             "Utilities": "Servicios públicos", "Real Estate": "Inmobiliario", "Materials": "Materiales",
+             "Basic Materials": "Materiales"}
+
+
+def _wiki_table(url: str, col_candidates: list[str]):
+    """(tickers, meta) de una tabla de Wikipedia con columna de sector GICS."""
     html = requests.get(url, headers=UA, timeout=20).text
     for t in pd.read_html(io.StringIO(html)):
         for c in col_candidates:
             if c in t.columns:
-                return [str(s).strip().replace(".", "-") for s in t[c].dropna()]
+                tick = [str(s).strip().replace(".", "-") for s in t[c]]
+                sec = t["GICS Sector"].tolist() if "GICS Sector" in t.columns else [None] * len(tick)
+                meta = {k: {"sector": SECTOR_ES.get(v, v)} for k, v in zip(tick, sec) if k and k != "nan"}
+                return list(meta), meta
     raise ValueError("tabla no encontrada")
 
 
 def sp500() -> list[str]:
-    return _wiki_table("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies", ["Symbol"])
+    return _wiki_table("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies", ["Symbol"])[0]
 
 
 def nasdaq100() -> list[str]:
-    return _wiki_table("https://en.wikipedia.org/wiki/Nasdaq-100", ["Ticker", "Symbol"])
+    return _wiki_table("https://en.wikipedia.org/wiki/Nasdaq-100", ["Ticker", "Symbol"])[0]
 
 
 def all_us_listed() -> list[str]:
@@ -81,6 +93,32 @@ def all_us_listed() -> list[str]:
             continue
         clean.append(s.replace(".", "-"))
     return sorted(set(clean))
+
+
+def universe_with_meta(name: str, custom: str = "", av_key: str = ""):
+    """Devuelve (tickers, {ticker: {sector, cap}}). El sector alimenta el mapa de calor."""
+    if _demo():
+        secs = list(SECTOR_ES.values())
+        return FALLBACK_LARGE_CAPS, {t: {"sector": secs[zlib.crc32(t.encode()) % 11]} for t in FALLBACK_LARGE_CAPS}
+    try:
+        if name == "S&P 500":
+            return _wiki_table("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies", ["Symbol"])
+        if name == "Nasdaq 100":
+            return _wiki_table("https://en.wikipedia.org/wiki/Nasdaq-100", ["Ticker", "Symbol"])
+        if name == "S&P 500 + Nasdaq 100":
+            t1, m1 = _wiki_table("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies", ["Symbol"])
+            t2, m2 = _wiki_table("https://en.wikipedia.org/wiki/Nasdaq-100", ["Ticker", "Symbol"])
+            m = {**m2, **m1}
+            return list(m), m
+        if name.startswith("Finviz"):
+            from .finviz import universe_meta
+            for k, v in (mm := universe_meta(name)[1]).items():
+                v["sector"] = SECTOR_ES.get(v.get("sector"), v.get("sector"))
+            if mm:
+                return list(mm), mm
+    except Exception:
+        pass
+    return get_universe(name, custom, av_key), {}
 
 
 def get_universe(name: str, custom: str = "", av_key: str = "") -> list[str]:

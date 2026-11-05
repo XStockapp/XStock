@@ -249,3 +249,66 @@ def equity_chart(trades: pd.DataFrame) -> go.Figure:
 DISCLAIMER = ("<div class='disclaimer'>Herramienta de apoyo al análisis. Las probabilidades son frecuencias históricas "
               "y no garantizan resultados futuros. No es asesoría financiera. Datos: Yahoo Finance (gratuito, puede tener "
               "retraso de ~15 min), Finviz y Alpha Vantage.</div>")
+
+
+# --------------------------------------------------------------------------
+# Mapa de calor de oportunidades (treemap por sector) y barra de sesgo
+# --------------------------------------------------------------------------
+def opportunity_treemap(df: pd.DataFrame, side: str, height: int = 560) -> go.Figure:
+    """df con columnas Ticker, Sector, prob, ev, chg, size. side: 'LONG' | 'SHORT'."""
+    import numpy as np
+    total = float(df["size"].sum()) or 1.0
+    ids, labels, parents, values, colors, texts, custom = [], [], [], [], [], [], []
+    root = "LONG" if side == "LONG" else "SHORT"
+    ids.append(root); labels.append(root); parents.append(""); values.append(total)
+    w_ev = float(np.average(df["ev"], weights=df["size"])) if total else 0.0
+    colors.append(w_ev); texts.append(""); custom.append([np.nan, w_ev, np.nan, len(df)])
+    for sec, g in df.groupby("Sector"):
+        sid = f"{root}/{sec}"
+        sv = float(g["size"].sum())
+        sev = float(np.average(g["ev"], weights=g["size"])) if sv else 0.0
+        ids.append(sid); labels.append(sec); parents.append(root); values.append(sv)
+        colors.append(sev); texts.append(f"{sec}"); custom.append([np.nan, sev, np.nan, len(g)])
+        for r in g.itertuples(index=False):
+            ids.append(f"{sid}/{r.Ticker}"); labels.append(r.Ticker); parents.append(sid); values.append(float(r.size))
+            colors.append(float(r.ev))
+            texts.append(f"<b>{r.Ticker}</b><br>{r.prob * 100:.0f}% · {r.ev:+.2f}R<br>{r.chg:+.2f}%")
+            custom.append([r.prob, r.ev, r.chg, 1])
+    if side == "LONG":
+        scale = [[0, "#3b1d24"], [0.33, "#1e2633"], [0.6, "#15803d"], [1, "#22c55e"]]
+    else:
+        scale = [[0, "#173326"], [0.33, "#1e2633"], [0.6, "#b91c1c"], [1, "#ef4444"]]
+    fig = go.Figure(go.Treemap(
+        ids=ids, labels=labels, parents=parents, values=values, branchvalues="total",
+        text=texts, texttemplate="%{text}", textposition="middle center",
+        customdata=custom, marker=dict(colors=colors, colorscale=scale, cmin=-0.6, cmax=1.2, line=dict(width=1, color="#0b0f17"),
+                                       pad=dict(t=18, l=2, r=2, b=2)),
+        hovertemplate="<b>%{label}</b><br>Prob.: %{customdata[0]:.0%}<br>Valor esperado: %{customdata[1]:+.2f} R"
+                      "<br>Var. día: %{customdata[2]:+.2f}%<extra></extra>",
+        pathbar=dict(visible=False), tiling=dict(pad=2), insidetextfont=dict(color="#f8fafc", size=12),
+        outsidetextfont=dict(color=MUTED, size=11), root=dict(color=BG)))
+    fig.update_layout(paper_bgcolor=BG, margin=dict(l=0, r=0, t=0, b=0), height=height, font=dict(family="Inter"))
+    return fig
+
+
+def bias_bar(n_long: int, n_short: int, strong_long: int = 0, strong_short: int = 0) -> str:
+    tot = max(1, n_long + n_short)
+    pl = n_long / tot * 100
+    if pl >= 60:
+        lab, c = "ALCISTA", GREEN
+    elif pl >= 52:
+        lab, c = "LIGERAMENTE ALCISTA", "#4ade80"
+    elif pl > 48:
+        lab, c = "NEUTRAL / MIXTO", AMBER
+    elif pl > 40:
+        lab, c = "LIGERAMENTE BAJISTA", "#f87171"
+    else:
+        lab, c = "BAJISTA", RED
+    return (f"<div style='margin:2px 0 6px'>"
+            f"<div style='display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:3px'>"
+            f"<span style='color:{GREEN}'><b>▲ LONG {pl:.0f}%</b> · {n_long} acciones · {strong_long} fuertes</span>"
+            f"<span>Sesgo del mercado: <b style='color:{c}'>{lab}</b></span>"
+            f"<span style='color:{RED}'>{strong_short} fuertes · {n_short} acciones · <b>SHORT {100 - pl:.0f}% ▼</b></span></div>"
+            f"<div style='display:flex;height:9px;border-radius:5px;overflow:hidden;background:{BORDER}'>"
+            f"<div style='width:{pl:.1f}%;background:linear-gradient(90deg,#15803d,{GREEN})'></div>"
+            f"<div style='width:{100 - pl:.1f}%;background:linear-gradient(90deg,{RED},#b91c1c)'></div></div></div>")
