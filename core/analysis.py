@@ -5,7 +5,7 @@ from . import data
 from . import fundamental as F
 from . import probability as P
 from .levels import trade_plan
-from .technical import compute_all, explain_last, score_series
+from .technical import compute_all, explain_last, score_series, volume_profile
 
 
 def full_analysis(ticker: str, tp=3.0, sl=1.5, horizon=20, account=10_000.0, risk_pct=1.0,
@@ -29,6 +29,7 @@ def full_analysis(ticker: str, tp=3.0, sl=1.5, horizon=20, account=10_000.0, ris
         "tasa_base_accion": cs["base_rate"],
         "R_promedio_similares": cs["avg_R"],
         "dias_promedio_salida": cs["dias_prom"],
+        "sesiones_tipicas_a_objetivo": cs["dias_obj_mediana"],
         "parametros": f"Objetivo {tp}×ATR, stop {sl}×ATR, horizonte {horizon} sesiones",
     }
     bt = P.backtest_signal(d, s, 40.0, tp, sl, horizon, direction)
@@ -46,7 +47,9 @@ def full_analysis(ticker: str, tp=3.0, sl=1.5, horizon=20, account=10_000.0, ris
         if v is not None and info.get(k) is None:
             info[k] = v
     metrics = F.extract_metrics(info)
-    fscore = F.score_fundamentals(metrics)
+    from .finviz import score_items
+    fv_items = score_items(fv.get("extras") or {}, horizon)
+    fscore = F.score_fundamentals(metrics, fv_items)
     pio = F.piotroski(*data.statements(ticker))
     plan = trade_plan(d, direction, sl, tp, account, risk_pct)
     news = data.news(ticker, av_key=av_key or "")
@@ -55,4 +58,4 @@ def full_analysis(ticker: str, tp=3.0, sl=1.5, horizon=20, account=10_000.0, ris
     comb = 0.6 * cur + 0.4 * (fscore["score"] if fscore["score"] is not None else 0)
     return {"ticker": ticker, "df": d, "tech": tech, "prob": prob, "bt": bt, "metrics": metrics,
             "fscore": fscore, "piotroski": pio, "plan": plan, "news": news, "combinado": comb,
-            "finviz": fv}
+            "finviz": fv, "finviz_items": fv_items, "vprofile": volume_profile(d.tail(180))}

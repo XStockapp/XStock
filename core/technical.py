@@ -265,3 +265,40 @@ def explain_last(df: pd.DataFrame) -> dict:
             rows.append({"Indicador": k_, "Señal": float(v), "Peso": WEIGHTS[k_], "Lectura": txt.get(k_, "")})
     sc = score_series(df).iloc[-1]
     return {"score": float(sc) if pd.notna(sc) else 0.0, "señales": rows}
+
+
+# --------------------------------------------------------------------------
+# Perfil de volumen del rango visible (VRVP): POC, VAH, VAL
+# --------------------------------------------------------------------------
+def volume_profile(df: pd.DataFrame, bins: int = 48, value_area: float = 0.70) -> dict:
+    lo, hi = float(df["Low"].min()), float(df["High"].max())
+    if hi <= lo:
+        return {}
+    edges = np.linspace(lo, hi, bins + 1)
+    up = np.zeros(bins)
+    dn = np.zeros(bins)
+    for h, l, o, c, v in df[["High", "Low", "Open", "Close", "Volume"]].itertuples(index=False):
+        if not np.isfinite(v) or v <= 0:
+            continue
+        rng = max(h - l, 1e-9)
+        ov = np.clip(np.minimum(edges[1:], h) - np.maximum(edges[:-1], l), 0, None) / rng
+        if ov.sum() == 0:
+            ov[min(bins - 1, int((c - lo) / (hi - lo) * bins))] = 1
+        (up if c >= o else dn)[:] += v * ov / ov.sum()
+    tot = up + dn
+    poc_i = int(tot.argmax())
+    # área de valor: expandir desde el POC hasta cubrir el 70% del volumen
+    lo_i = hi_i = poc_i
+    acc, target = tot[poc_i], tot.sum() * value_area
+    while acc < target and (lo_i > 0 or hi_i < bins - 1):
+        a = tot[lo_i - 1] if lo_i > 0 else -1
+        b = tot[hi_i + 1] if hi_i < bins - 1 else -1
+        if b >= a:
+            hi_i += 1
+            acc += tot[hi_i]
+        else:
+            lo_i -= 1
+            acc += tot[lo_i]
+    mid = (edges[:-1] + edges[1:]) / 2
+    return {"precios": mid, "up": up, "down": dn, "alto_bin": edges[1] - edges[0],
+            "poc": float(mid[poc_i]), "vah": float(edges[hi_i + 1]), "val": float(edges[lo_i])}

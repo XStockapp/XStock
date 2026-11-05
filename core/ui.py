@@ -14,22 +14,63 @@ CSS = f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
 html, body, [class*="css"], .stMarkdown, .stText {{ font-family: 'Inter', sans-serif; }}
-.block-container {{ padding-top: 1.6rem; padding-bottom: 2rem; max-width: 1500px; }}
+html {{ font-size: 14px; }}
+.block-container {{ padding: 2.2rem 1.2rem 1.5rem 1.2rem; max-width: 100%; }}
 h1, h2, h3 {{ letter-spacing: -0.02em; }}
+h2 {{ font-size: 1.35rem !important; }}
 [data-testid="stSidebar"] {{ background: #0d1320; border-right: 1px solid {BORDER}; }}
-.kpi {{ background: {PANEL}; border: 1px solid {BORDER}; border-radius: 10px; padding: 14px 16px; height: 100%; }}
-.kpi .lbl {{ color: {MUTED}; font-size: 0.72rem; text-transform: uppercase; letter-spacing: .08em; }}
-.kpi .val {{ font-family: 'JetBrains Mono', monospace; font-size: 1.45rem; font-weight: 600; margin-top: 4px; }}
-.kpi .sub {{ color: {MUTED}; font-size: 0.78rem; margin-top: 2px; }}
-.pill {{ display:inline-block; padding: 3px 10px; border-radius: 999px; font-size: .75rem; font-weight: 600; }}
-.bigpx {{ font-family: 'JetBrains Mono', monospace; font-size: 1.8rem; font-weight: 600; }}
-.brand {{ font-weight: 700; font-size: 1.15rem; letter-spacing: -.01em; }}
+[data-testid="stVerticalBlock"] {{ gap: 0.55rem; }}
+div[data-testid="stVerticalBlockBorderWrapper"] > div {{ padding: 0.15rem 0.1rem; }}
+/* botones primarios en el color de la marca (independiente de config.toml) */
+.stButton button[kind="primary"], .stDownloadButton button[kind="primary"], button[data-testid="stBaseButton-primary"] {{
+  background: #16a34a !important; border-color: #16a34a !important; color: #fff !important; }}
+.stButton button[kind="primary"]:hover, button[data-testid="stBaseButton-primary"]:hover {{ background: #15803d !important; }}
+.kpi {{ background: {PANEL}; border: 1px solid {BORDER}; border-radius: 8px; padding: 8px 10px; height: 100%; }}
+.kpi .lbl {{ color: {MUTED}; font-size: 0.66rem; text-transform: uppercase; letter-spacing: .07em; }}
+.kpi .val {{ font-family: 'JetBrains Mono', monospace; font-size: 1.1rem; font-weight: 600; margin-top: 2px; }}
+.kpi .sub {{ color: {MUTED}; font-size: 0.7rem; margin-top: 1px; }}
+.pill {{ display:inline-block; padding: 2px 9px; border-radius: 999px; font-size: .72rem; font-weight: 600; margin-right: 4px; }}
+.brand {{ font-weight: 700; font-size: 1.1rem; letter-spacing: -.01em; }}
 .brand span {{ color: {GREEN}; }}
-.muted {{ color: {MUTED}; font-size: .85rem; }}
-.verdict {{ border-radius: 12px; padding: 18px 20px; border: 1px solid {BORDER}; background: {PANEL}; }}
-.verdict h2 {{ margin: 0 0 4px 0; font-size: 1.6rem; }}
-.disclaimer {{ color: {MUTED}; font-size: .72rem; border-top: 1px solid {BORDER}; padding-top: 8px; margin-top: 24px; }}
-div[data-testid="stDataFrame"] {{ border: 1px solid {BORDER}; border-radius: 10px; }}
+.muted {{ color: {MUTED}; font-size: .8rem; }}
+.small {{ font-size: .78rem; }}
+.bigpx {{ font-family: 'JetBrains Mono', monospace; font-size: 1.4rem; font-weight: 600; }}
+/* encabezado de la acción */
+.qhead {{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin: 2px 0 4px; }}
+.qhead .qt {{ font-size: 1.45rem; font-weight: 700; letter-spacing: -.02em; }}
+.qhead .qpx {{ font-family: 'JetBrains Mono', monospace; font-size: 1.3rem; font-weight: 600; }}
+.qhead .qch {{ font-family: 'JetBrains Mono', monospace; font-size: .95rem; }}
+/* panel vertical de métricas */
+.mp {{ background: {PANEL}; border: 1px solid {BORDER}; border-radius: 8px; padding: 6px 10px 8px; }}
+.mp-h {{ color: {MUTED}; font-size: .64rem; text-transform: uppercase; letter-spacing: .08em; margin: 8px 0 2px;
+         border-bottom: 1px solid {BORDER}; padding-bottom: 2px; }}
+.mp-h:first-child {{ margin-top: 2px; }}
+.mp-r {{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size: .8rem; padding: 2px 0; }}
+.mp-r b {{ font-family: 'JetBrains Mono', monospace; font-size: .88rem; white-space: nowrap; }}
+.mp-s {{ color: {MUTED}; font-size: .68rem; margin: -2px 0 3px; line-height: 1.25; }}
+/* informe IA */
+.sec {{ font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: {MUTED}; font-weight: 600; padding-top: 6px; }}
+.sec2 {{ font-size: .7rem; text-transform: uppercase; letter-spacing: .07em; color: {MUTED}; font-weight: 600; margin: 8px 0 3px; }}
+.rep p.lead {{ font-size: .92rem; margin: 6px 0 4px; line-height: 1.45; }}
+.rep-b {{ background: #0f1626; border: 1px solid {BORDER}; border-radius: 6px; padding: 7px 9px; font-size: .8rem; line-height: 1.45; height: 100%; }}
+ul.tl {{ margin: 0; padding-left: 16px; font-size: .8rem; line-height: 1.45; }}
+ul.tl li {{ margin: 2px 0; }}
+table.qt-tab {{ width: 100%; border-collapse: collapse; font-size: .78rem; }}
+table.qt-tab th {{ text-align: left; color: {MUTED}; font-weight: 500; font-size: .66rem; text-transform: uppercase; letter-spacing: .05em;
+                  border-bottom: 1px solid {BORDER}; padding: 4px 6px; }}
+table.qt-tab td {{ border-bottom: 1px solid {BORDER}; padding: 4px 6px; vertical-align: top; }}
+table.qt-tab td.n {{ font-family: 'JetBrains Mono', monospace; white-space: nowrap; }}
+/* fundamentales clave */
+.fr {{ display:grid; grid-template-columns: 10px 1fr auto; gap: 0 8px; align-items: baseline; padding: 3px 0; border-bottom: 1px dashed {BORDER}; }}
+.fr .dot {{ width: 8px; height: 8px; border-radius: 50%; display: inline-block; }}
+.fr .fm {{ font-size: .8rem; font-weight: 600; }}
+.fr .fv {{ font-family: 'JetBrains Mono', monospace; font-size: .8rem; }}
+.fr .fl {{ grid-column: 2 / 4; color: {MUTED}; font-size: .7rem; line-height: 1.3; }}
+.fr .fb {{ opacity: .7; }}
+.verdict {{ border-radius: 10px; padding: 12px 14px; border: 1px solid {BORDER}; background: {PANEL}; }}
+.verdict h2 {{ margin: 0 0 4px 0; font-size: 1.3rem; }}
+.disclaimer {{ color: {MUTED}; font-size: .68rem; border-top: 1px solid {BORDER}; padding-top: 6px; margin-top: 16px; }}
+div[data-testid="stDataFrame"] {{ border: 1px solid {BORDER}; border-radius: 8px; }}
 </style>
 """
 
@@ -57,53 +98,140 @@ SIGNAL_COLORS = {"COMPRA FUERTE": GREEN, "COMPRA": "#4ade80", "REBOTE (contraten
                  "EVITAR": RED, "VENDER EN CORTO": RED}
 
 
-def price_chart(d: pd.DataFrame, plan: dict | None = None, bars: int = 180) -> go.Figure:
+def _tag(fig, y, text, color, row=1):
+    """Etiqueta de precio estilo TradingView en el eje derecho."""
+    fig.add_annotation(xref="paper", x=1.0, xanchor="left", yref="y" if row == 1 else f"y{row}", y=y,
+                       text=f"<b>{text}</b>", showarrow=False, font=dict(color="#0b0f17", size=10.5),
+                       bgcolor=color, borderpad=2, opacity=0.95)
+
+
+def price_chart(d: pd.DataFrame, plan: dict | None = None, vp: dict | None = None, verdict: dict | None = None,
+                bars: int = 180, times: dict | None = None, show_bb: bool = False, show_vp: bool = True) -> go.Figure:
+    import numpy as np
     d = d.tail(bars)
-    fig = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.02,
-                        row_heights=[0.56, 0.12, 0.16, 0.16])
-    fig.add_trace(go.Candlestick(x=d.index, open=d["Open"], high=d["High"], low=d["Low"], close=d["Close"],
-                                 name="Precio", increasing_line_color=GREEN, decreasing_line_color=RED,
-                                 increasing_fillcolor=GREEN, decreasing_fillcolor=RED), 1, 1)
-    for col, c, w in (("EMA21", AMBER, 1.2), ("SMA50", BLUE, 1.4), ("SMA200", VIOLET, 1.6)):
-        fig.add_trace(go.Scatter(x=d.index, y=d[col], name=col, line=dict(color=c, width=w)), 1, 1)
-    fig.add_trace(go.Scatter(x=d.index, y=d["BB_up"], name="Bollinger", line=dict(color="#64748b", width=0.8, dash="dot")), 1, 1)
-    fig.add_trace(go.Scatter(x=d.index, y=d["BB_low"], showlegend=False, line=dict(color="#64748b", width=0.8, dash="dot"),
-                             fill="tonexty", fillcolor="rgba(100,116,139,0.06)"), 1, 1)
-    if plan:
-        for key, lbl, c, dash in (("entrada", "Entrada", BLUE, "solid"), ("stop", "Stop", RED, "dash"),
-                                  ("objetivo_1", "Obj. 1", GREEN, "dash"), ("objetivo_2", "Obj. 2", GREEN, "dot")):
-            y = plan.get(key)
-            if y:
-                fig.add_hline(y=y, line=dict(color=c, width=1.4, dash=dash), row=1, col=1,
-                              annotation_text=f"{lbl} {y:,.2f}", annotation_position="right",
-                              annotation_font=dict(color=c, size=11))
-        for lv, n in plan.get("soportes", [])[:3] + plan.get("resistencias", [])[:3]:
-            fig.add_hline(y=lv, line=dict(color="rgba(148,163,184,0.25)", width=1), row=1, col=1)
+    x = d.index
+    fig = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.018,
+                        row_heights=[0.62, 0.12, 0.13, 0.13], specs=[[{"secondary_y": True}], [{}], [{}], [{}]])
+    # --- Volumen superpuesto (25% inferior del panel de precio) ---
+    vc = np.where(d["Close"] >= d["Open"], "rgba(38,166,154,0.28)", "rgba(239,83,80,0.28)")
+    fig.add_trace(go.Bar(x=x, y=d["Volume"], marker_color=vc, name="Volumen", showlegend=False,
+                         hovertemplate="Vol %{y:,.0f}<extra></extra>"), 1, 1, secondary_y=True)
+    # --- Velas y medias (EMA9 amarilla, EMA21 roja, SMA50 verde, SMA200 morada) ---
+    fig.add_trace(go.Candlestick(x=x, open=d["Open"], high=d["High"], low=d["Low"], close=d["Close"], name="Precio",
+                                 increasing=dict(line=dict(color="#26a69a", width=1), fillcolor="#26a69a"),
+                                 decreasing=dict(line=dict(color="#ef5350", width=1), fillcolor="#ef5350")), 1, 1)
+    for col, c, w in (("EMA9", "#facc15", 1.1), ("EMA21", "#ef4444", 1.4), ("SMA50", "#22c55e", 1.6), ("SMA200", "#a855f7", 2.2)):
+        fig.add_trace(go.Scatter(x=x, y=d[col], name=col, line=dict(color=c, width=w), hoverinfo="skip"), 1, 1)
+    if show_bb:
+        fig.add_trace(go.Scatter(x=x, y=d["BB_up"], name="Bollinger", line=dict(color="#64748b", width=0.8, dash="dot"), hoverinfo="skip"), 1, 1)
+        fig.add_trace(go.Scatter(x=x, y=d["BB_low"], showlegend=False, line=dict(color="#64748b", width=0.8, dash="dot"),
+                                 fill="tonexty", fillcolor="rgba(100,116,139,0.05)", hoverinfo="skip"), 1, 1)
+
+    last_x, last_px = x[-1], float(d["Close"].iloc[-1])
     lo, hi = float(d["Low"].min()), float(d["High"].max())
+    fut = pd.bdate_range(last_x, periods=2)[-1]
+    x_end = last_x
     if plan:
-        lv = [plan.get(k) for k in ("entrada", "stop", "objetivo_1", "objetivo_2") if plan.get(k)]
-        lo, hi = min([lo] + lv), max([hi] + lv)
-    pad = (hi - lo) * 0.04
-    fig.update_yaxes(range=[lo - pad, hi + pad], row=1, col=1)
-    vc = [GREEN if c >= o else RED for o, c in zip(d["Open"], d["Close"])]
-    fig.add_trace(go.Bar(x=d.index, y=d["Volume"], marker_color=vc, opacity=0.6, name="Volumen", showlegend=False), 2, 1)
-    fig.add_trace(go.Scatter(x=d.index, y=d["VOL_SMA20"], line=dict(color=AMBER, width=1), showlegend=False), 2, 1)
-    fig.add_trace(go.Scatter(x=d.index, y=d["RSI"], name="RSI", line=dict(color=VIOLET, width=1.3), showlegend=False), 3, 1)
-    for y, c in ((70, RED), (30, GREEN)):
-        fig.add_hline(y=y, line=dict(color=c, width=0.8, dash="dot"), row=3, col=1)
-    hc = [GREEN if v >= 0 else RED for v in d["MACD_hist"]]
-    fig.add_trace(go.Bar(x=d.index, y=d["MACD_hist"], marker_color=hc, opacity=0.6, showlegend=False), 4, 1)
-    fig.add_trace(go.Scatter(x=d.index, y=d["MACD"], line=dict(color=BLUE, width=1.2), name="MACD", showlegend=False), 4, 1)
-    fig.add_trace(go.Scatter(x=d.index, y=d["MACD_signal"], line=dict(color=AMBER, width=1.2), name="Señal", showlegend=False), 4, 1)
-    fig.update_layout(template="plotly_dark", paper_bgcolor=BG, plot_bgcolor=BG, height=760,
-                      margin=dict(l=10, r=90, t=10, b=10), xaxis_rangeslider_visible=False,
-                      legend=dict(orientation="h", y=1.02, x=0, font=dict(size=11)),
-                      font=dict(family="Inter", color=TXT))
-    fig.update_xaxes(gridcolor=BORDER, rangebreaks=[dict(bounds=["sat", "mon"])])
-    fig.update_yaxes(gridcolor=BORDER)
-    for i, t in enumerate(["", "Vol", "RSI", "MACD"], start=1):
-        if t:
-            fig.update_yaxes(title_text=t, title_font=dict(size=10, color=MUTED), row=i, col=1)
+        e, sl, t1, t2, atr = plan["entrada"], plan["stop"], plan["objetivo_1"], plan["objetivo_2"], plan["atr"]
+        s1 = (times or {}).get("sesiones_a_objetivo_1") or 10
+        s2 = (times or {}).get("sesiones_a_objetivo_2") or max(s1 + 5, 18)
+        x_end = pd.bdate_range(last_x, periods=int(s2) + 4)[-1]
+        x0 = x[max(0, len(x) - 6)]
+        # zonas sombreadas: beneficio (verde) y riesgo (rojo)
+        fig.add_shape(type="rect", x0=x0, x1=x_end, y0=e, y1=t2, fillcolor="rgba(34,197,94,0.10)", line_width=0, row=1, col=1)
+        fig.add_shape(type="rect", x0=x0, x1=x_end, y0=e, y1=t1, fillcolor="rgba(34,197,94,0.12)", line_width=0, row=1, col=1)
+        fig.add_shape(type="rect", x0=x0, x1=x_end, y0=sl, y1=e, fillcolor="rgba(239,68,68,0.16)", line_width=0, row=1, col=1)
+        # zona de compra (±0.3 ATR alrededor de la entrada)
+        fig.add_shape(type="rect", x0=x0, x1=x_end, y0=e - 0.3 * atr, y1=e + 0.3 * atr,
+                      fillcolor="rgba(96,165,250,0.18)", line=dict(color="rgba(96,165,250,0.5)", width=1), row=1, col=1)
+        fig.add_annotation(x=x0, y=e + 0.3 * atr, xanchor="left", yanchor="bottom", text="ZONA DE ENTRADA", showarrow=False,
+                           font=dict(size=10, color="#93c5fd"), row=1, col=1)
+        # trayectoria proyectada
+        px_path = [last_px] + ([e] if abs(e - last_px) > 0.15 * atr else []) + [t1, t2]
+        xs = [last_x] + ([pd.bdate_range(last_x, periods=3)[-1]] if len(px_path) == 4 else [])
+        xs += [pd.bdate_range(last_x, periods=int(s1) + 1)[-1], pd.bdate_range(last_x, periods=int(s2) + 1)[-1]]
+        fig.add_trace(go.Scatter(x=xs, y=px_path, mode="lines+markers", name="Proyección",
+                                 line=dict(color="#93c5fd", width=2, dash="dot"),
+                                 marker=dict(size=[4] * (len(xs) - 1) + [9], symbol=["circle"] * (len(xs) - 1) + ["triangle-up" if t2 > e else "triangle-down"]),
+                                 hovertemplate="%{x|%d-%b}: %{y:.2f}<extra>Proyección</extra>"), 1, 1)
+        fig.add_annotation(x=xs[-2], y=t1, text=f"TP1 ~{int(s1)} ses.", showarrow=False, yshift=12,
+                           font=dict(size=10, color="#86efac"), row=1, col=1)
+        fig.add_annotation(x=xs[-1], y=t2, text=f"TP2 ~{int(s2)} ses.", showarrow=False, yshift=12,
+                           font=dict(size=10, color="#86efac"), row=1, col=1)
+        # líneas horizontales + etiquetas de precio
+        for y, lbl, c, dash, wdt in ((e, "ENTRADA", "#60a5fa", "solid", 1.6), (sl, "STOP", "#ef4444", "solid", 1.6),
+                                     (t1, "TP1", "#22c55e", "dash", 1.3), (t2, "TP2", "#22c55e", "dash", 1.3)):
+            fig.add_hline(y=y, line=dict(color=c, width=wdt, dash=dash), row=1, col=1)
+            _tag(fig, y, f"{lbl} {y:,.2f}", c)
+        for lv, n in plan.get("soportes", [])[:3]:
+            fig.add_hline(y=lv, line=dict(color="rgba(38,166,154,0.45)", width=1, dash="dot"), row=1, col=1)
+        for lv, n in plan.get("resistencias", [])[:3]:
+            fig.add_hline(y=lv, line=dict(color="rgba(239,83,80,0.45)", width=1, dash="dot"), row=1, col=1)
+        # niveles de la IA si difieren
+        if verdict and verdict.get("entrada") and abs(float(verdict["entrada"]) / e - 1) > 0.003:
+            for key, lbl, c in (("entrada", "IA E", "#60a5fa"), ("stop", "IA SL", "#ef4444"), ("objetivo_1", "IA TP1", "#22c55e")):
+                if verdict.get(key):
+                    fig.add_hline(y=float(verdict[key]), line=dict(color=c, width=1, dash="dashdot"), row=1, col=1)
+        lv_all = [e, sl, t1, t2]
+        lo, hi = min([lo] + lv_all), max([hi] + lv_all)
+    # --- Perfil de volumen (VRVP) con POC y área de valor ---
+    vp_axis = None
+    if show_vp and vp and len(vp.get("precios", [])):
+        tot = vp["up"] + vp["down"]
+        fig.add_trace(go.Bar(y=vp["precios"], x=tot, orientation="h", width=vp["alto_bin"] * 0.92, xaxis="x5", yaxis="y",
+                             marker_color="rgba(59,91,219,0.30)", name="VRVP", hovertemplate="%{y:.2f}: %{x:,.0f}<extra>Vol. total</extra>"))
+        fig.add_trace(go.Bar(y=vp["precios"], x=vp["up"], orientation="h", width=vp["alto_bin"] * 0.92, xaxis="x5", yaxis="y",
+                             marker_color="rgba(212,160,23,0.45)", showlegend=False, hovertemplate="%{y:.2f}: %{x:,.0f}<extra>Vol. comprador</extra>"))
+        vp_axis = dict(overlaying="x", anchor="y", range=[float(tot.max()) * 4.5, 0], autorange=False,
+                       visible=False, fixedrange=True, showgrid=False)
+        fig.add_hline(y=vp["poc"], line=dict(color="#f59e0b", width=2), row=1, col=1)
+        fig.add_annotation(xref="paper", x=0.775, xanchor="right", yref="y", y=vp["poc"], text=f"<b>POC {vp['poc']:,.2f}</b>",
+                           showarrow=False, font=dict(size=10, color="#0b0f17"), bgcolor="#f59e0b", borderpad=2)
+        for k in ("vah", "val"):
+            fig.add_hline(y=vp[k], line=dict(color="rgba(245,158,11,0.5)", width=1, dash="dash"), row=1, col=1)
+            fig.add_annotation(xref="paper", x=0.775, xanchor="right", yref="y", y=vp[k], text=k.upper(), showarrow=False,
+                               font=dict(size=9, color="#fbbf24"), yshift=7)
+    if not plan or abs(plan["entrada"] - last_px) > 0.25 * plan["atr"]:
+        _tag(fig, last_px, f"{last_px:,.2f}", "#e5e7eb")
+
+    # --- RSI con banda 30-70 ---
+    fig.add_shape(type="rect", xref="x2 domain", x0=0, x1=1, yref="y3", y0=30, y1=70, fillcolor="rgba(167,139,250,0.08)", line_width=0)
+    fig.add_trace(go.Scatter(x=x, y=d["RSI"], name="RSI", line=dict(color="#c084fc", width=1.4), showlegend=False,
+                             hovertemplate="RSI %{y:.1f}<extra></extra>"), 2, 1)
+    for y, c in ((70, "rgba(239,68,68,.6)"), (50, "rgba(148,163,184,.35)"), (30, "rgba(34,197,94,.6)")):
+        fig.add_hline(y=y, line=dict(color=c, width=1, dash="dot"), row=2, col=1)
+    # --- MACD con histograma de 4 tonos ---
+    h = d["MACD_hist"].fillna(0)
+    hp = h.shift().fillna(0)
+    hc = np.where(h >= 0, np.where(h >= hp, "#26a69a", "#9adbd3"), np.where(h <= hp, "#ef5350", "#f4b6b5"))
+    fig.add_trace(go.Bar(x=x, y=h, marker_color=hc, showlegend=False, hovertemplate="Hist %{y:.2f}<extra></extra>"), 3, 1)
+    fig.add_trace(go.Scatter(x=x, y=d["MACD"], line=dict(color="#38bdf8", width=1.2), showlegend=False, name="MACD"), 3, 1)
+    fig.add_trace(go.Scatter(x=x, y=d["MACD_signal"], line=dict(color="#fb923c", width=1.2), showlegend=False, name="Señal"), 3, 1)
+    # --- ADX / DMI ---
+    fig.add_trace(go.Scatter(x=x, y=d["+DI"], line=dict(color="#22c55e", width=1), showlegend=False, name="+DI"), 4, 1)
+    fig.add_trace(go.Scatter(x=x, y=d["-DI"], line=dict(color="#ef4444", width=1), showlegend=False, name="−DI"), 4, 1)
+    fig.add_trace(go.Scatter(x=x, y=d["ADX"], line=dict(color="#e5e7eb", width=1.6), showlegend=False, name="ADX",
+                             fill="tozeroy", fillcolor="rgba(229,231,235,0.05)"), 4, 1)
+    fig.add_hline(y=25, line=dict(color="rgba(148,163,184,.5)", width=1, dash="dot"), row=4, col=1)
+
+    pad = (hi - lo) * 0.05
+    fig.update_layout(template="plotly_dark", paper_bgcolor="#0f141f", plot_bgcolor="#0f141f", height=820,
+                      margin=dict(l=6, r=92, t=26, b=6), xaxis_rangeslider_visible=False, barmode="overlay",
+                      hovermode="x unified", dragmode="pan", bargap=0.15,
+                      legend=dict(orientation="h", y=1.035, x=0, font=dict(size=10), bgcolor="rgba(0,0,0,0)"),
+                      font=dict(family="Inter", color=TXT, size=11))
+    for r_ in (1, 2, 3, 4):
+        fig.update_xaxes(gridcolor="#1c2433", rangebreaks=[dict(bounds=["sat", "mon"])], showspikes=True, spikecolor="#475569",
+                         spikethickness=1, range=[x[0], x_end + pd.Timedelta(days=3)], row=r_, col=1)
+    if vp_axis:
+        fig.update_layout(xaxis5=vp_axis)
+    fig.update_yaxes(gridcolor="#1c2433", side="right", tickfont=dict(size=10))
+    fig.update_yaxes(range=[lo - pad, hi + pad], row=1, col=1, secondary_y=False)
+    fig.update_yaxes(range=[0, float(d["Volume"].max()) * 4], visible=False, row=1, col=1, secondary_y=True)
+    fig.update_yaxes(range=[0, 100], tickvals=[30, 50, 70], row=2, col=1)
+    for i, t in ((2, "RSI 14"), (3, "MACD 12·26·9"), (4, "ADX/DMI 14")):
+        fig.add_annotation(xref="paper", x=0.002, xanchor="left", yref=f"y{i + 1 if i > 1 else i} domain", y=0.97,
+                           text=t, showarrow=False, font=dict(size=10, color=MUTED))
     return fig
 
 

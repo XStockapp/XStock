@@ -67,48 +67,88 @@ def _band(v, good, bad, reverse=False):
     return float(max(-1, min(1, x)))
 
 
-def score_fundamentals(m: dict) -> dict:
-    """Puntaje fundamental -100..+100 por bloques. Umbrales genéricos (no por sector)."""
-    pe = m["P/E forward"] or m["P/E (TTM)"]
-    blocks = {
-        "Valoración": [
-            ("P/E", _band(pe, 12, 40, reverse=True) if pe and pe > 0 else (-1.0 if pe is not None else None)),
-            ("PEG", _band(m["PEG"], 1.0, 3.0, reverse=True) if m["PEG"] and m["PEG"] > 0 else None),
-            ("EV/EBITDA", _band(m["EV/EBITDA"], 8, 30, reverse=True) if m["EV/EBITDA"] and m["EV/EBITDA"] > 0 else None),
-            ("FCF yield", _band(m["FCF yield"], 0.06, -0.01)),
-        ],
-        "Rentabilidad": [
-            ("ROE", _band(m["ROE"], 0.20, 0.0)),
-            ("ROA", _band(m["ROA"], 0.10, 0.0)),
-            ("Margen operativo", _band(m["Margen operativo"], 0.25, 0.0)),
-            ("Margen neto", _band(m["Margen neto"], 0.20, -0.05)),
-        ],
-        "Crecimiento": [
-            ("Ingresos", _band(m["Crec. ingresos (YoY)"], 0.20, -0.05)),
-            ("Utilidades", _band(m["Crec. utilidades (YoY)"], 0.25, -0.10)),
-        ],
-        "Salud financiera": [
-            ("Deuda/Patrimonio", _band(m["Deuda/Patrimonio"], 0.3, 2.0, reverse=True)),
-            ("Ratio corriente", _band(m["Ratio corriente"], 2.0, 0.8)),
-        ],
-        "Consenso": [
-            ("Recomendación", _band(m["Recomendación (1=Compra fuerte, 5=Venta)"], 1.5, 3.5, reverse=True)),
-            ("Upside a objetivo", _band(
-                (m["Precio objetivo analistas"] / m["Precio actual"] - 1)
-                if m["Precio objetivo analistas"] and m["Precio actual"] else None, 0.25, -0.10)),
-        ],
-    }
-    wts = {"Valoración": 1.2, "Rentabilidad": 1.2, "Crecimiento": 1.0, "Salud financiera": 0.8, "Consenso": 0.6}
+def _fmt(v, kind):
+    if v is None:
+        return "—"
+    if kind == "pct":
+        return f"{v * 100:.1f}%"
+    if kind == "x":
+        return f"{v:.2f}x"
+    return f"{v:,.2f}"
+
+
+# (bloque, métrica, clave, formato, bueno, malo, invertido, por qué es atractivo, por qué es riesgo)
+RULES = [
+    ("Valoración", "P/E", "_pe", "num", 12, 40, True,
+     "Valoración barata frente al mercado (P/E bajo)", "Valoración exigente: el precio descuenta mucho crecimiento"),
+    ("Valoración", "PEG", "PEG", "num", 1.0, 3.0, True,
+     "Crecimiento a precio razonable (PEG ≤ 1)", "Paga caro el crecimiento esperado (PEG alto)"),
+    ("Valoración", "EV/EBITDA", "EV/EBITDA", "num", 8, 30, True,
+     "Múltiplo operativo atractivo", "Múltiplo operativo elevado"),
+    ("Valoración", "FCF yield", "FCF yield", "pct", 0.06, -0.01, False,
+     "Genera mucha caja libre respecto a su valor", "Flujo de caja libre débil o negativo"),
+    ("Rentabilidad", "ROE", "ROE", "pct", 0.20, 0.0, False,
+     "Alta rentabilidad sobre el patrimonio", "Rentabilidad sobre patrimonio baja o negativa"),
+    ("Rentabilidad", "ROA", "ROA", "pct", 0.10, 0.0, False,
+     "Usa sus activos con eficiencia", "Baja eficiencia de los activos"),
+    ("Rentabilidad", "Margen operativo", "Margen operativo", "pct", 0.25, 0.0, False,
+     "Márgenes operativos de calidad (poder de precio)", "Márgenes operativos estrechos o negativos"),
+    ("Rentabilidad", "Margen neto", "Margen neto", "pct", 0.20, -0.05, False,
+     "Convierte bien las ventas en utilidad", "Margen neto débil"),
+    ("Crecimiento", "Crec. ingresos", "Crec. ingresos (YoY)", "pct", 0.20, -0.05, False,
+     "Ventas creciendo con fuerza", "Ventas estancadas o cayendo"),
+    ("Crecimiento", "Crec. utilidades", "Crec. utilidades (YoY)", "pct", 0.25, -0.10, False,
+     "Utilidades creciendo con fuerza", "Utilidades cayendo"),
+    ("Salud financiera", "Deuda/Patrimonio", "Deuda/Patrimonio", "num", 0.3, 2.0, True,
+     "Balance poco endeudado", "Apalancamiento alto: sensible a tasas y a una recesión"),
+    ("Salud financiera", "Ratio corriente", "Ratio corriente", "num", 2.0, 0.8, False,
+     "Liquidez holgada para el corto plazo", "Liquidez ajustada (ratio corriente < 1)"),
+    ("Consenso", "Recomendación analistas", "Recomendación (1=Compra fuerte, 5=Venta)", "num", 1.5, 3.5, True,
+     "Consenso de analistas en compra", "Consenso de analistas débil"),
+    ("Consenso", "Upside a precio objetivo", "_upside", "pct", 0.25, -0.10, False,
+     "Los analistas ven bastante recorrido al alza", "El precio ya supera el objetivo de los analistas"),
+]
+BLOCK_W = {"Valoración": 1.2, "Rentabilidad": 1.2, "Crecimiento": 1.0, "Salud financiera": 0.8, "Consenso": 0.6,
+           "Posicionamiento (Finviz)": 0.8}
+
+
+def score_fundamentals(m: dict, finviz_items: list | None = None) -> dict:
+    """
+    Puntaje fundamental -100..+100 por bloques y detalle por métrica con su lectura
+    (atractivo / neutral / riesgo). Umbrales generales de mercado (no por sector).
+    `finviz_items`: salida de finviz.score_items() → bloque de posicionamiento.
+    """
+    pe = m.get("P/E forward") or m.get("P/E (TTM)")
+    tgt, px = m.get("Precio objetivo analistas"), m.get("Precio actual")
+    vals = {**m, "_pe": pe, "_upside": (tgt / px - 1) if tgt and px else None}
+    items = []
+    for blk, name, key, kind, good, bad, rev, why_good, why_bad in RULES:
+        v = vals.get(key)
+        if key in ("_pe", "PEG", "EV/EBITDA") and v is not None and v <= 0:
+            sc = -1.0  # utilidades o EBITDA negativos
+            why_bad_ = "Utilidades/EBITDA negativos: no se puede valorar por múltiplos"
+        else:
+            sc = _band(v, good, bad, reverse=rev)
+            why_bad_ = why_bad
+        if sc is None:
+            continue
+        items.append({"bloque": blk, "metrica": name, "valor": _fmt(v, kind), "score": round(100 * sc),
+                      "peso": BLOCK_W[blk],
+                      "lectura": why_good if sc >= 0.35 else (why_bad_ if sc <= -0.35 else "Nivel neutral")})
+    for it in finviz_items or []:
+        items.append({"bloque": "Posicionamiento (Finviz)", "metrica": it["metrica"], "valor": it["valor"],
+                      "score": round(100 * it["impacto"]), "peso": BLOCK_W["Posicionamiento (Finviz)"],
+                      "lectura": it["lectura"]})
     detail, tot, wsum = {}, 0.0, 0.0
-    for b, items in blocks.items():
-        vals = [v for _, v in items if v is not None]
-        bs = float(np.mean(vals)) if vals else None
-        detail[b] = {"score": None if bs is None else round(100 * bs, 1),
-                     "items": {k: (None if v is None else round(100 * v)) for k, v in items}}
+    for blk in BLOCK_W:
+        bl = [i["score"] / 100 for i in items if i["bloque"] == blk]
+        bs = float(np.mean(bl)) if bl else None
+        detail[blk] = {"score": None if bs is None else round(100 * bs, 1),
+                       "items": {i["metrica"]: i["score"] for i in items if i["bloque"] == blk}}
         if bs is not None:
-            tot += bs * wts[b]
-            wsum += wts[b]
-    return {"score": round(100 * tot / wsum, 1) if wsum else None, "bloques": detail}
+            tot += bs * BLOCK_W[blk]
+            wsum += BLOCK_W[blk]
+    return {"score": round(100 * tot / wsum, 1) if wsum else None, "bloques": detail, "items": items}
 
 
 def piotroski(fin: pd.DataFrame | None, bs: pd.DataFrame | None, cf: pd.DataFrame | None) -> dict | None:

@@ -172,3 +172,79 @@ def bundle(ticker: str) -> dict:
     except Exception:
         pass
     return out
+
+
+# ---------------------------------------------------------------------------
+# Peso de Finviz en el pronóstico: cada métrica → impacto (-1..+1) y lectura
+# ---------------------------------------------------------------------------
+def _days_to_earnings(txt: str | None):
+    """'Jan 27 AMC' → días hasta el reporte (None si no se puede leer)."""
+    import datetime as dt
+    if not txt:
+        return None
+    m = re.match(r"([A-Za-z]{3})\s+(\d{1,2})", str(txt).strip())
+    if not m:
+        return None
+    try:
+        today = dt.date.today()
+        d = dt.datetime.strptime(f"{m.group(1)} {m.group(2)} {today.year}", "%b %d %Y").date()
+        if (d - today).days < -30:
+            d = d.replace(year=today.year + 1)
+        return (d - today).days
+    except ValueError:
+        return None
+
+
+def score_items(ex: dict, horizon_days: int = 20) -> list[dict]:
+    out = []
+
+    def add(metrica, valor, impacto, lectura):
+        out.append({"metrica": metrica, "valor": valor, "impacto": max(-1.0, min(1.0, impacto)), "lectura": lectura})
+
+    sf = ex.get("Short Float")
+    if sf is not None:
+        if sf >= 0.20:
+            add("Short float", f"{sf*100:.1f}%", -0.7, "Muchos vendidos en corto: volatilidad alta (posible squeeze, pero señal de desconfianza)")
+        elif sf >= 0.10:
+            add("Short float", f"{sf*100:.1f}%", -0.3, "Interés corto elevado")
+        elif sf <= 0.03:
+            add("Short float", f"{sf*100:.1f}%", 0.3, "Poca apuesta bajista del mercado")
+        else:
+            add("Short float", f"{sf*100:.1f}%", 0.0, "Interés corto normal")
+    it = ex.get("Insider Trans")
+    if it is not None:
+        add("Transacciones de insiders (6m)", f"{it*100:+.1f}%", 0.8 if it > 0.02 else (-0.5 if it < -0.05 else 0.0),
+            "Directivos comprando acciones" if it > 0.02 else ("Directivos vendiendo de forma relevante" if it < -0.05 else "Actividad de insiders normal"))
+    inst = ex.get("Inst Trans")
+    if inst is not None:
+        add("Transacciones institucionales (3m)", f"{inst*100:+.1f}%", 0.6 if inst > 0.02 else (-0.6 if inst < -0.02 else 0.0),
+            "Fondos aumentando posición (acumulación)" if inst > 0.02 else ("Fondos reduciendo posición (distribución)" if inst < -0.02 else "Posición institucional estable"))
+    io = ex.get("Inst Own")
+    if io is not None:
+        add("Propiedad institucional", f"{io*100:.0f}%", 0.3 if 0.5 <= io <= 0.9 else (-0.3 if io < 0.2 else 0.0),
+            "Respaldo institucional sólido" if 0.5 <= io <= 0.9 else ("Poco seguimiento institucional" if io < 0.2 else "Propiedad institucional muy concentrada o media"))
+    g = ex.get("EPS next Y Percentage")
+    if g is not None:
+        add("Crec. EPS esperado próximo año", f"{g*100:+.1f}%", (g - 0.05) / 0.15,
+            "Se espera fuerte crecimiento de utilidades" if g > 0.15 else ("Se esperan utilidades a la baja" if g < 0 else "Crecimiento esperado moderado"))
+    rv = ex.get("Rel Volume")
+    pw = ex.get("Perf Week")
+    if rv is not None and pw is not None and rv >= 1.5:
+        add("Volumen relativo", f"{rv:.1f}x", 0.4 if pw > 0 else -0.4,
+            "Volumen inusual con subida: entrada de dinero" if pw > 0 else "Volumen inusual con caída: salida de dinero")
+    s200 = ex.get("SMA200")
+    if s200 is not None:
+        if s200 > 0.35:
+            add("Distancia a SMA200", f"{s200*100:+.1f}%", -0.4, "Precio muy extendido sobre su media de 200: riesgo de reversión")
+        elif s200 > 0:
+            add("Distancia a SMA200", f"{s200*100:+.1f}%", 0.4, "Tendencia de largo plazo alcista y no sobreextendida")
+        else:
+            add("Distancia a SMA200", f"{s200*100:+.1f}%", -0.4, "Bajo su media de 200 sesiones: tendencia de largo plazo débil")
+    pq = ex.get("Perf Quarter")
+    if pq is not None:
+        add("Rendimiento trimestral", f"{pq*100:+.1f}%", pq / 0.25, "Momento positivo de mediano plazo" if pq > 0.05 else ("Momento negativo" if pq < -0.05 else "Momento lateral"))
+    dte = _days_to_earnings(ex.get("Earnings"))
+    if dte is not None and 0 <= dte <= horizon_days * 1.5:
+        add("Próximo reporte de resultados", f"en {dte} días ({ex.get('Earnings')})", -0.3,
+            "El reporte cae dentro del horizonte de la operación: riesgo de gap")
+    return out

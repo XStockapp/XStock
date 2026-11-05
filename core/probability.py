@@ -78,6 +78,8 @@ def conditional_stats(score: pd.Series, out: pd.DataFrame, current: float, band:
         "base_rate": float(allr["win"].mean()) if len(allr) else np.nan,
         "base_R": float(allr["R"].mean()) if len(allr) else np.nan,
         "dias_prom": float(sim["dias"].mean()) if len(sim) else np.nan,
+        # sesiones típicas hasta tocar el objetivo, solo en los casos ganadores
+        "dias_obj_mediana": float(sim.loc[sim["win"] == 1, "dias"].median()) if (sim["win"] == 1).any() else np.nan,
     }
 
 
