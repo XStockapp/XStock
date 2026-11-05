@@ -1,0 +1,10 @@
+streamlit>=1.40
+finvizfinance>=1.1
+pandas>=2.0
+numpy>=1.26
+plotly>=5.20
+yfinance>=0.2.50
+anthropic>=0.40
+requests>=2.31
+lxml>=5.0
+pyarrow>=15.0
