@@ -13,8 +13,8 @@ if not auth.is_admin():
 
 me = auth.current_profile()
 st.markdown("## Usuarios y uso")
-st.markdown("<div class='muted'>Último ingreso, uso de IA y actividad de cada usuario. Marca usuarios para ajustar su cuota, "
-            "expulsarlos (suspender) o eliminarlos.</div>", unsafe_allow_html=True)
+st.markdown("<div class='muted'>Último ingreso y actividad de cada usuario. Marca usuarios para expulsarlos (suspender), "
+            "eliminarlos o restablecer su contraseña.</div>", unsafe_allow_html=True)
 
 profiles = db.list_profiles()
 events = pd.DataFrame(db.events_since(90))
@@ -52,35 +52,26 @@ def fmt_dt(x):
 rows = []
 for p in profiles:
     em = p["email"]
-    rem = db.ai_remaining(p)
     rows.append({
         "Marcar": False,
         "Nombre": p.get("name") or "",
         "Correo": em,
         "Rol": "Admin" if p.get("role") == "admin" else "Usuario",
         "Estado": {"active": "Activo", "suspended": "Suspendido", "deleted": "Eliminado"}.get(p.get("status"), p.get("status")),
-        "Plan": p.get("plan") or "beta",
-        "Cuota IA": int(p.get("ai_quota") or 0),
-        "IA usada": int(p.get("ai_used") or 0),
-        "IA restante": "∞" if rem is None else rem,
         "Último ingreso": fmt_dt(p.get("last_login")),
         "Ingresos": int(p.get("login_count") or 0),
         "Análisis 30d": count(em, "analysis", 30),
         "Escaneos 30d": count(em, "scan", 30),
-        "Informes IA 30d": count(em, "ai_report", 30),
-        "Último informe IA": fmt_dt(last(em, "ai_report")),
         "Registrado": str(p.get("created_at") or "")[:10],
-        "Acceso con": p.get("auth_provider") or "",
+        "Acceso con": {"password": "Correo", "google": "Google", "local": "Local"}.get(p.get("auth_provider"), p.get("auth_provider") or ""),
         "Invitación": p.get("invite_code") or "",
     })
 df = pd.DataFrame(rows)
 
 act7 = 0 if events.empty else events[(events["kind"].isin(["login", "signup"])) & (events["at"] >= now - timedelta(days=7))]["email"].nunique()
-ia30 = 0 if events.empty else int(((events["kind"] == "ai_report") & (events["at"] >= now - timedelta(days=30))).sum())
 st.markdown(kpi_row([
     ("Usuarios activos", f"{sum(1 for p in profiles if p.get('status') == 'active')}", f"de {len(profiles)} registrados", GREEN),
     ("Ingresaron (7 días)", f"{act7}", "usuarios distintos", NEUTRAL),
-    ("Informes IA (30 días)", f"{ia30}", "consumen tu API de Anthropic", NEUTRAL),
     ("Suspendidos", f"{sum(1 for p in profiles if p.get('status') == 'suspended')}", "", RED),
 ]), unsafe_allow_html=True)
 st.write("")
@@ -91,41 +82,27 @@ if df.empty:
 
 ed = st.data_editor(
     df, hide_index=True, use_container_width=True, height=min(90 + 36 * len(df), 520), key="users_editor",
-    disabled=[c for c in df.columns if c not in ("Marcar", "Cuota IA")],
-    column_config={
-        "Marcar": st.column_config.CheckboxColumn(width="small"),
-        "Cuota IA": st.column_config.NumberColumn(min_value=0, max_value=10000, step=1,
-                                                  help="Edita el número y pulsa «Guardar cuotas»"),
-    })
+    disabled=[c for c in df.columns if c != "Marcar"],
+    column_config={"Marcar": st.column_config.CheckboxColumn(width="small")})
 marked = ed[ed["Marcar"]]
 marked_users = marked[(marked["Rol"] != "Admin") & (marked["Correo"] != me["email"])]
 
-c1, c2, c3, c4, c5 = st.columns(5)
-if c1.button("💾 Guardar cuotas", use_container_width=True):
-    n = 0
-    for _, r in ed.iterrows():
-        orig = df.loc[df["Correo"] == r["Correo"], "Cuota IA"].iloc[0]
-        if int(r["Cuota IA"]) != int(orig):
-            db.update_profile(r["Correo"], ai_quota=int(r["Cuota IA"]))
-            n += 1
-    st.toast(f"{n} cuota(s) actualizadas")
-    st.rerun()
-if c2.button(f"↺ Reiniciar IA usada ({len(marked)})", disabled=marked.empty, use_container_width=True,
-             help="Pone en cero los informes usados (p. ej. al inicio de cada mes)"):
-    for em in marked["Correo"]:
-        db.update_profile(em, ai_used=0)
-    st.rerun()
-if c3.button(f"⛔ Expulsar / suspender ({len(marked_users)})", disabled=marked_users.empty, use_container_width=True):
+c1, c2, c3, c4 = st.columns(4)
+if c1.button(f"⛔ Expulsar / suspender ({len(marked_users)})", disabled=marked_users.empty, use_container_width=True):
     for em in marked_users["Correo"]:
         db.update_profile(em, status="suspended")
         db.log_event(me["email"], "admin_suspend", em)
     st.toast("Usuarios suspendidos: ya no pueden entrar")
     st.rerun()
-if c4.button(f"✅ Reactivar ({len(marked_users)})", disabled=marked_users.empty, use_container_width=True):
+if c2.button(f"✅ Reactivar ({len(marked_users)})", disabled=marked_users.empty, use_container_width=True):
     for em in marked_users["Correo"]:
         db.update_profile(em, status="active")
     st.rerun()
-with c5.popover(f"🗑️ Eliminar ({len(marked_users)})", disabled=marked_users.empty, use_container_width=True):
+if c3.button("🔑 Restablecer contraseña", disabled=len(marked_users) != 1, use_container_width=True,
+             help="Marca un solo usuario"):
+    em = marked_users["Correo"].iloc[0]
+    st.session_state["tmp_pw"] = (em, auth.admin_reset_password(em))
+with c4.popover(f"🗑️ Eliminar ({len(marked_users)})", disabled=marked_users.empty, use_container_width=True):
     st.markdown("**Eliminar usuarios marcados:**<br>" + "<br>".join(marked_users["Correo"]), unsafe_allow_html=True)
     hard = st.checkbox("Borrar también su historial y watchlist (definitivo)")
     st.caption("Sin borrar el historial, la cuenta queda como «Eliminado»: no puede entrar y necesitaría una nueva invitación.")
@@ -139,8 +116,11 @@ with c5.popover(f"🗑️ Eliminar ({len(marked_users)})", disabled=marked_users
                 db.update_profile(em, status="deleted")
             db.log_event(me["email"], "admin_delete", em)
         st.rerun()
-st.caption("Los administradores (ADMIN_EMAILS) no se pueden suspender ni eliminar desde aquí. "
-           "Las columnas «Plan» y «Cuota IA» servirán de base para las suscripciones.")
+if st.session_state.get("tmp_pw"):
+    em, pw = st.session_state["tmp_pw"]
+    st.success(f"Contraseña temporal para **{em}** (envíasela; podrá cambiarla con «Olvidé mi contraseña» si el correo está configurado):")
+    st.code(pw, language=None)
+st.caption("Los administradores (ADMIN_EMAILS) no se pueden suspender ni eliminar desde aquí.")
 
 # ---------------- actividad
 st.write("")
@@ -149,7 +129,7 @@ if events.empty:
     st.info("Sin actividad registrada.")
 else:
     ev = events[events["at"] >= now - timedelta(days=30)].copy()
-    kinds = {"ai_report": "Informes IA", "analysis": "Análisis", "scan": "Escaneos", "login": "Ingresos"}
+    kinds = {"analysis": "Análisis", "scan": "Escaneos", "login": "Ingresos", "signup": "Registros"}
     ev = ev[ev["kind"].isin(kinds)]
     ev["Tipo"] = ev["kind"].map(kinds)
     ev["Día"] = ev["at"].dt.tz_convert("America/Lima").dt.date
@@ -158,22 +138,22 @@ else:
         g = ev.groupby(["Día", "Tipo"]).size().reset_index(name="Eventos")
         g["Día"] = pd.to_datetime(g["Día"]).dt.strftime("%d-%b")
         fig = px.bar(g, x="Día", y="Eventos", color="Tipo", template="plotly_dark", height=300,
-                     color_discrete_map={"Informes IA": "#a855f7", "Análisis": NEUTRAL, "Escaneos": GREEN, "Ingresos": MUTED})
+                     color_discrete_map={"Registros": "#a855f7", "Análisis": NEUTRAL, "Escaneos": GREEN, "Ingresos": MUTED})
         fig.update_layout(paper_bgcolor=BG, plot_bgcolor=BG, margin=dict(l=4, r=4, t=4, b=4),
                           legend=dict(orientation="h", y=1.1), bargap=0.2)
         fig.update_xaxes(gridcolor=BORDER, type="category", title=None)
         fig.update_yaxes(gridcolor=BORDER, dtick=1 if g["Eventos"].max() < 10 else None)
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     with c2:
-        top = ev[ev["kind"] == "ai_report"].groupby("email").size().sort_values(ascending=False).head(10)
-        st.markdown("**Más informes de IA (30 días)**")
-        st.dataframe(top.rename("Informes").reset_index().rename(columns={"email": "Usuario"}), hide_index=True,
+        top = ev[ev["kind"] == "analysis"].groupby("email").size().sort_values(ascending=False).head(10)
+        st.markdown("**Más activos (análisis, 30 días)**")
+        st.dataframe(top.rename("Análisis").reset_index().rename(columns={"email": "Usuario"}), hide_index=True,
                      use_container_width=True)
     who = st.selectbox("Ver historial de un usuario", ["—"] + df["Correo"].tolist())
     if who != "—":
         h = events[events["email"] == who].head(100).copy()
         h["Fecha"] = h["at"].dt.tz_convert("America/Lima").dt.strftime("%d-%b-%Y %H:%M")
-        h["Evento"] = h["kind"].map({**kinds, "signup": "Registro"}).fillna(h["kind"])
+        h["Evento"] = h["kind"].map({**kinds, "ai_report": "Informe IA"}).fillna(h["kind"])
         st.dataframe(h[["Fecha", "Evento", "detail"]].rename(columns={"detail": "Detalle"}), hide_index=True,
                      use_container_width=True, height=280)
 

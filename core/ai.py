@@ -199,3 +199,53 @@ def rule_based(payload: dict) -> dict:
         "contexto_general": "",
         "_modelo": "reglas (sin IA)",
     }
+
+
+# =============================================================================
+# Gemini (Google AI Studio, plan gratuito) — para usuarios invitados
+# =============================================================================
+# "gemini-flash-latest" es el alias que Google mantiene apuntando al Flash vigente;
+# los demás son respaldo si el alias falla o un modelo se retira.
+GEMINI_FALLBACK = ["gemini-flash-latest", "gemini-3-flash-preview", "gemini-2.5-flash",
+                   "gemini-flash-lite-latest", "gemini-2.5-flash-lite"]
+
+
+def analyze_gemini(payload: dict, api_key: str, model: str | None = None) -> dict:
+    """Mismo informe que Claude, generado con Gemini Flash (REST, sin dependencias extra)."""
+    import requests
+    api_key = (api_key or "").strip()
+    models = ([model] if model else []) + [m for m in GEMINI_FALLBACK if m != model]
+    body = {
+        "system_instruction": {"parts": [{"text": SYSTEM}]},
+        "contents": [{"role": "user", "parts": [{"text": "Evidencia (JSON):\n" + json.dumps(payload, ensure_ascii=False)}]}],
+        "generationConfig": {"temperature": 0.3, "maxOutputTokens": 16384, "responseMimeType": "application/json"},
+    }
+    headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
+    last_err = None
+    for mdl in models:
+        try:
+            r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{mdl}:generateContent",
+                              headers=headers, json=body, timeout=90)
+        except requests.RequestException as e:
+            last_err = f"{mdl}: {e}"
+            continue
+        if r.status_code == 429:
+            raise RuntimeError("Gemini alcanzó su límite gratuito. Espera un minuto y vuelve a intentar.")
+        if r.status_code in (400, 401, 403, 404, 500, 503):
+            # modelo retirado, no habilitado para este tipo de clave o saturado: probar el siguiente
+            last_err = f"{mdl} → {r.status_code}: {r.text[:160]}"
+            continue
+        if r.status_code >= 400:
+            raise RuntimeError(f"Gemini respondió {r.status_code}: {r.text[:200]}")
+        j = r.json()
+        try:
+            text = "".join(p.get("text", "") for p in j["candidates"][0]["content"]["parts"])
+        except (KeyError, IndexError):
+            raise RuntimeError("Gemini no devolvió contenido (posible bloqueo de seguridad).")
+        m = re.search(r"\{.*\}", text, re.S)
+        if not m:
+            raise ValueError("Gemini no devolvió JSON: " + text[:300])
+        out = json.loads(m.group(0))
+        out["_modelo"] = mdl
+        return out
+    raise RuntimeError("Gemini no respondió con ningún modelo. Revisa que GEMINI_API_KEY en los Secrets sea correcta y esté activa en Google AI Studio. Detalle: " + str(last_err))

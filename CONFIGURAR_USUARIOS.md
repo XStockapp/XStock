@@ -1,99 +1,62 @@
-# Activar usuarios, invitaciones y registro (Google + código por correo)
+# TraDiX · Usuarios, invitaciones e IA
 
-Mientras no hagas estos pasos, la app sigue funcionando en **modo personal**: entras con tu `APP_PASSWORD` como único usuario y administrador.
+TraDiX usa **solo dos servicios externos** para el modo multiusuario:
 
-Se usan dos servicios gratuitos:
-- **Supabase**: base de datos de usuarios, invitaciones, cuotas de IA y uso. Gratis hasta 500 MB.
-- **Auth0**: pantalla de registro con **Google** y con **correo + código de verificación**. Gratis hasta 25.000 usuarios.
+| Servicio | Para qué | Costo |
+|---|---|---|
+| **Supabase** | Guarda usuarios, contraseñas (cifradas), invitaciones, uso y watchlists | Gratis |
+| **Gemini (Google AI Studio)** | Informe IA de los invitados | Gratis (plan Flash) |
 
-Tiempo total: unos 20 minutos, una sola vez.
+El login es propio (correo + contraseña), con sesión recordada 30 días. No hay Auth0 ni login de Streamlit.
 
 ---
 
-## Parte A. Supabase (base de datos)
+## 1. Supabase (una sola vez)
 
-1. Entra a https://supabase.com, pulsa **Start your project** y entra con tu cuenta de GitHub.
-2. Pulsa **New project**:
-   - Name: `quantdesk`.
-   - Database password: genera una y guárdala.
-   - Region: **East US (North Virginia)**, la misma que usa Streamlit Cloud.
-   - Pulsa **Create new project** y espera unos 2 minutos.
-3. En el menú izquierdo abre **SQL Editor** y pulsa **New query**. Abre el archivo `supabase_schema.sql` de esta carpeta, copia **todo** su contenido, pégalo y pulsa **Run**. Debe decir *Success*.
-4. Ve a **Project Settings (engranaje) → API** y copia dos datos:
-   - **Project URL**, algo como `https://abcd1234.supabase.co`, para `SUPABASE_URL`.
-   - En *Project API keys*, la clave **`service_role`** (pulsa *Reveal*), para `SUPABASE_SERVICE_KEY`.
-     Esta clave es secreta: solo va en los Secrets de Streamlit, nunca en GitHub.
+1. Entra a https://supabase.com → **Start your project** → *Continue with GitHub*.
+2. **New project**: nombre `tradix`, genera la *Database password* (guárdala), región **East US (North Virginia)**. **No** uses "Connect GitHub".
+3. **SQL Editor → New query** → pega todo `supabase_schema.sql` → **Run** → debe decir *Success*.
+4. Copia:
+   - **Project URL** (botón *Copy* en la portada del proyecto) → `SUPABASE_URL`
+   - **Project Settings ⚙️ → API Keys → Secret keys** (`sb_secret_...`) → `SUPABASE_SERVICE_KEY`
+     (también sirve la clave antigua `service_role` que empieza con `eyJ...`).
 
-## Parte B. Auth0 (inicio de sesión)
+> La clave secreta da acceso total a la base. Solo va en los Secrets de Streamlit. Nunca en GitHub ni en chats.
 
-1. Entra a https://auth0.com, pulsa **Sign up** y créate una cuenta. Elige región **US** y un nombre de tenant, por ejemplo `quantdesk`.
-2. Ve a **Applications → Applications → Create Application**:
-   - Name: `QuantDesk`.
-   - Tipo: **Regular Web Applications**. Pulsa **Create**.
-3. En la pestaña **Settings** de la aplicación:
-   - Copia el **Domain**, el **Client ID** y el **Client Secret**.
-   - En **Allowed Callback URLs** pega `https://TU-APP.streamlit.app/oauth2callback`.
-   - En **Allowed Logout URLs** y **Allowed Web Origins** pega `https://TU-APP.streamlit.app`.
-   - Baja hasta el final y pulsa **Save**.
+## 2. Gemini
 
-   En los tres casos reemplaza `TU-APP` por el nombre real de tu app (el link que usas para abrirla).
-4. **Google:** en **Authentication → Social**, `google-oauth2` viene activado de fábrica. En la pestaña **Applications** de esa conexión, activa QuantDesk.
-   Auth0 usa claves de Google de prueba, que sirven para la beta. Más adelante puedes poner tus propias claves de Google Cloud para quitar el aviso de "desarrollo".
-5. **Correo con código:** en **Authentication → Passwordless**, activa **Email**. Revisa que **OTP Length = 6**, pulsa **Save** y en su pestaña **Applications** activa QuantDesk.
-6. En **Authentication → Authentication Profile** elige **Identifier First**. Así la pantalla muestra "Continuar con Google" y un campo para el correo, y al poner el correo llega el código.
-7. **Opcional, para que se vea como la imagen de referencia:** en **Branding → Universal Login → Customization Options** pon tu logo, el color primario `#22c55e` y el fondo `#0b0f17`.
-8. Para quitar los usuarios de prueba que crea Auth0, puedes desactivar la conexión **Username-Password-Authentication** en la pestaña *Connections* de la aplicación.
+1. https://aistudio.google.com/apikey → **Create API key**.
+2. Pega la clave en `GEMINI_API_KEY`. TraDiX usa el modelo Flash vigente y cambia solo a otro si Google retira uno.
+3. Plan gratuito: tiene límite por minuto/día por proyecto y Google puede usar esos datos para mejorar sus modelos.
 
-## Parte C. Secrets de Streamlit
+## 3. Secrets de Streamlit
 
-En share.streamlit.io, en tu app: **⋮ → Settings → Secrets**. Reemplaza todo por este bloque y completa los valores.
+Streamlit Cloud → tu app → **⋮ → Settings → Secrets** → pega el contenido de `.streamlit/secrets.toml.ejemplo` con tus valores → **Save**.
 
-El orden importa: las líneas sueltas van **arriba** y las secciones `[auth]` van **al final**.
+## 4. Primer ingreso (administrador)
 
-```toml
-ADMIN_EMAILS = "edwinjespinoza@gmail.com"
-ANTHROPIC_API_KEY = "sk-ant-..."
-ALPHAVANTAGE_API_KEY = ""
-SUPABASE_URL = "https://xxxx.supabase.co"
-SUPABASE_SERVICE_KEY = "eyJ..."
-APP_URL = "https://TU-APP.streamlit.app"
+1. Abre la app → **Tengo una invitación** → regístrate con el correo que pusiste en `ADMIN_EMAILS`.
+   Los administradores pueden registrarse sin invitación.
+2. Verás la sección **Administración** en la barra lateral.
 
-[auth]
-redirect_uri = "https://TU-APP.streamlit.app/oauth2callback"
-cookie_secret = "9YHhp12hbOot1ORDPSFOtwGGD_TSXwsF4wElKuhBP2o"
+## 5. Invitar usuarios
 
-[auth.auth0]
-client_id = "CLIENT_ID_DE_AUTH0"
-client_secret = "CLIENT_SECRET_DE_AUTH0"
-server_metadata_url = "https://TU-DOMINIO.us.auth0.com/.well-known/openid-configuration"
-```
+**Administración → Invitaciones**: correo (opcional), número de usos y días de vigencia → **Generar invitación**.
+Comparte el link por WhatsApp o correo. El invitado abre el link, pone nombre, correo y contraseña, y entra.
 
-- `ADMIN_EMAILS`: el correo con el que tú entrarás (con Google o con código). Ese correo es administrador y no necesita invitación. Para varios administradores, sepáralos con comas.
-- `cookie_secret`: ya va generado al azar, déjalo así.
-- `server_metadata_url`: usa el **Domain** que copiaste de Auth0, por ejemplo `https://quantdesk.us.auth0.com/.well-known/openid-configuration`.
-- `APP_PASSWORD` ya no hace falta: con Auth0 activo se ignora.
+## 6. Gestionar usuarios
 
-Guarda y luego ve a **Manage app → ⋮ → Reboot app**.
+**Administración → Usuarios y uso**: último ingreso, ingresos, análisis, escaneos, estado.
+Marca uno o varios y usa **Expulsar/suspender**, **Reactivar**, **Restablecer contraseña** (genera una temporal `QD-...` que le envías) o **Eliminar**.
 
-## Parte D. Probar
+## 7. IA por rol
 
-1. Abre tu app. Verás la pantalla **QuantDesk · Inicia sesión**. Pulsa **Continuar con Google o correo** y entra con tu correo de administrador.
-2. En el menú lateral aparece **Administración → Invitaciones**. Crea una invitación para un correo tuyo secundario y abre el enlace en otro navegador (o en modo incógnito).
-3. Registra ese segundo correo. Te llegará el código de 6 dígitos y quedarás dentro, con la cuota de IA que asignaste.
-4. En **Usuarios y uso** verás al nuevo usuario con su último ingreso y su uso.
+| | Claude (Anthropic) | Gemini | Sin IA (reglas) |
+|---|---|---|---|
+| Administrador | ✅ | ✅ | ✅ |
+| Invitado | gris | ✅ | ✅ |
 
-## Cómo funciona
+## Opcional (más adelante)
 
-- **Invitaciones:**
-  - Cada enlace tiene una cuota de informes de IA, un número de usos (1 = enlace personal) y una fecha de vencimiento.
-  - Si indicas un correo, solo esa persona puede usar el enlace.
-  - Si alguien entra sin invitación, la app le pide un código. No puede usar la plataforma.
-- **Informes de IA:**
-  - Cada informe generado con Claude descuenta 1 de la cuota del usuario. La síntesis por reglas no descuenta.
-  - Desde *Usuarios y uso* puedes subir la cuota o reiniciar lo usado (por ejemplo, cada mes).
-- **Expulsar o eliminar:**
-  - *Suspender* bloquea el acceso de inmediato, y se puede revertir.
-  - *Eliminar* deja la cuenta inactiva. Para volver, la persona necesita una invitación nueva.
-  - *Eliminar definitivamente* borra también su historial y su watchlist.
-- **Watchlist:** cada usuario tiene la suya.
-- **Suscripciones (futuro):** el campo `plan` de cada usuario y la cuota de IA son la base para conectar luego un sistema de pagos como Stripe.
+- **Códigos por correo** (verificación al registrarse y "Olvidé mi contraseña"): Gmail → Seguridad → Verificación en 2 pasos → *Contraseñas de aplicación* → crea una y llena `SMTP_*`. Sin esto, si alguien olvida su contraseña, la restableces tú desde el panel.
+- **Botón Google**: Google Cloud Console → APIs y servicios → Credenciales → *ID de cliente OAuth* (aplicación web) con URI de redirección `https://tu-app.streamlit.app/oauth2callback`; descomenta `[auth]` y `[auth.google]` en los Secrets.

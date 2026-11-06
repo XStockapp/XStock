@@ -165,17 +165,23 @@ la, lb = (st.container(), st.container()) if MOBILE else st.columns([1.55, 1], g
 with la:
     with st.container(border=True):
         h1, h2 = st.columns([3, 1.3])
-        h1.markdown("<div class='sec'>Informe del analista (IA)</div>", unsafe_allow_html=True)
-        has_key = bool(cfg["anthropic_key"])
-        _left = db.ai_remaining(_prof) if _prof else None
-        no_quota = has_key and _left is not None and _left <= 0
-        use_ai = has_key and not no_quota
-        go = h2.button("Generar con Claude" if use_ai else "Generar síntesis", type="primary", use_container_width=True)
-        if use_ai and _left is not None:
-            h1.caption(f"Te quedan {_left} informes de IA")
-        if no_quota:
-            st.warning("Usaste todos tus informes de IA. Puedes generar la síntesis cuantitativa (sin IA) o pedir más "
-                       "informes al administrador.")
+        h1.markdown("<div class='sec'>Informe del analista (IA) · elige el motor</div>", unsafe_allow_html=True)
+        # Motores de IA: Claude (solo administrador, tu API de Anthropic) y Gemini (todos, plan gratuito)
+        _is_admin = (_prof or {}).get("role") == "admin"
+        _gem_key = store.secret("GEMINI_API_KEY")
+        _cl_key = cfg["anthropic_key"]
+        b1, b2, b3 = st.columns(3)
+        go_claude = b1.button("Claude", icon=":material/auto_awesome:", type="primary", use_container_width=True,
+                              disabled=not (_is_admin and _cl_key),
+                              help=("Informe con Claude (Anthropic)" if _is_admin else
+                                    "Disponible solo para el administrador") if _cl_key else "Falta ANTHROPIC_API_KEY")
+        go_gemini = b2.button("Gemini", icon=":material/bolt:", type="primary" if not _is_admin else "secondary",
+                              use_container_width=True, disabled=not _gem_key,
+                              help="Informe con Gemini Flash (Google, plan gratuito)" if _gem_key else "Falta GEMINI_API_KEY")
+        go_rules = b3.button("Sin IA", icon=":material/calculate:", use_container_width=True,
+                             help="Síntesis cuantitativa por reglas (no usa IA)")
+        go = go_claude or go_gemini or go_rules
+        engine = "claude" if go_claude else ("gemini" if go_gemini else "reglas")
         payload = ai.build_payload(ticker, tech, m, fs, pio, prob, A["bt"], plan, A["news"], A.get("finviz"),
                                    A.get("finviz_items"), A.get("vprofile"), cfg["tp_atr"],
                                    {"max_52s": hi52, "min_52s": lo52,
@@ -183,19 +189,23 @@ with la:
                                     "ret_12m": float(last["Close"] / d["Close"].iloc[-253] - 1) if len(d) > 253 else None})
         if go:
             try:
-                with st.spinner("Claude está redactando el informe…"):
-                    V = (ai.analyze(payload, cfg["anthropic_key"], ai.MODELOS[cfg["modelo"]]) if use_ai
-                         else ai.rule_based(payload))
-                if use_ai and _prof:
-                    st.session_state["profile"] = db.consume_ai(_prof, ticker)
+                with st.spinner("Generando el informe del analista…"):
+                    if engine == "claude":
+                        V = ai.analyze(payload, cfg["anthropic_key"], ai.MODELOS[cfg["modelo"]])
+                    elif engine == "gemini":
+                        V = ai.analyze_gemini(payload, _gem_key, store.secret("GEMINI_MODEL") or None)
+                    else:
+                        V = ai.rule_based(payload)
+                if engine != "reglas" and _prof:
+                    db.log_event(_prof["email"], "ai_report", f"{ticker} · {engine}")
             except Exception as e:
-                st.error(f"Error con la IA: {e}. Se usa la síntesis por reglas.")
+                st.error(f"Error con la IA: {e}. Se muestra la síntesis por reglas.")
                 V = ai.rule_based(payload)
             st.session_state[akey] = V
             st.rerun()
-        if not has_key and (_prof or {}).get("role") == "admin":
-            st.caption("Sin Anthropic API key se genera una síntesis por reglas. Agrega `ANTHROPIC_API_KEY` en los "
-                       "Secrets de Streamlit para el informe completo de Claude.")
+        if _is_admin and not (_cl_key and _gem_key):
+            st.caption("Agrega `ANTHROPIC_API_KEY` (Claude, solo para ti) y `GEMINI_API_KEY` (Gemini, para todos) en los "
+                       "Secrets de Streamlit para activar ambos botones.")
         if V:
             col = SIGNAL_COLORS.get(V.get("veredicto"), NEUTRAL)
             pa = V.get("probabilidad_ajustada")

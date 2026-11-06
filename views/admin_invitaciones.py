@@ -12,7 +12,7 @@ if not auth.is_admin():
 
 me = auth.current_profile()
 st.markdown("## Invitaciones")
-st.markdown("<div class='muted'>Genera enlaces de invitación y define cuántos informes de IA tendrá cada invitado. "
+st.markdown("<div class='muted'>Genera enlaces de invitación. Los invitados usan Gemini para los informes de IA. "
             f"Base de datos: {db.backend_name()}</div>", unsafe_allow_html=True)
 
 left, right = st.columns([1, 1.25], gap="medium")
@@ -22,11 +22,11 @@ with left:
         with st.form("new_inv", clear_on_submit=False):
             email = st.text_input("Correo del invitado (opcional)",
                                   help="Si lo indicas, solo esa persona podrá usar la invitación (recomendado).")
-            c1, c2, c3 = st.columns(3)
-            quota = c1.number_input("Informes de IA", 0, 1000, 10, 1)
-            uses = c2.number_input("Usos del enlace", 1, 500, 1, 1,
+            c1, c2 = st.columns(2)
+            uses = c1.number_input("Usos del enlace", 1, 500, 1, 1,
                                    help="1 = enlace personal. Más de 1 = enlace para un grupo.")
-            days = c3.number_input("Vence en (días)", 1, 365, 7, 1)
+            days = c2.number_input("Vence en (días)", 1, 365, 7, 1)
+            quota = 0
             note = st.text_input("Nota interna (opcional)", placeholder="p. ej. compañero de trading")
             ok = st.form_submit_button("Generar invitación", type="primary", use_container_width=True)
         if ok:
@@ -39,14 +39,14 @@ with left:
             link = auth.invite_link(inv["code"])
             st.success("Invitación creada. Copia el enlace con el botón de la derecha:")
             st.code(link, language=None)
-            msg = (f"¡Hola! Te invito a QuantDesk, mi plataforma de análisis de acciones con IA "
+            msg = (f"¡Hola! Te invito a TraDiX, mi plataforma de análisis de acciones con IA "
                    f"(escáner de mercado, análisis técnico y fundamental, entrada/stop/objetivos). "
-                   f"Incluye {inv['ai_quota']} informes de IA. Regístrate con Google o con tu correo aquí: {link}")
+                   f"Regístrate aquí: {link}")
             st.text_area("Mensaje listo para enviar", msg, height=110)
             c1, c2 = st.columns(2)
             c1.link_button("Enviar por WhatsApp", f"https://wa.me/?text={quote(msg)}", use_container_width=True)
             if inv.get("email"):
-                c2.link_button("Enviar por correo", f"mailto:{inv['email']}?subject={quote('Invitación a QuantDesk')}&body={quote(msg)}",
+                c2.link_button("Enviar por correo", f"mailto:{inv['email']}?subject={quote('Invitación a TraDiX')}&body={quote(msg)}",
                                use_container_width=True)
             st.caption(f"Vence: {str(inv['expires_at'])[:10]} · usos: {inv['max_uses']} · "
                        + (f"solo para {inv['email']}" if inv.get("email") else "cualquier correo"))
@@ -57,7 +57,7 @@ with right:
     for i in invs:
         stt = db.invite_status(i)
         rows.append({"Código": i["code"], "Estado": stt, "Para": i.get("email") or "Cualquiera",
-                     "IA": int(i.get("ai_quota") or 0), "Usos": f"{int(i.get('uses') or 0)}/{int(i.get('max_uses') or 1)}",
+                     "Usos": f"{int(i.get('uses') or 0)}/{int(i.get('max_uses') or 1)}",
                      "Vence": str(i.get("expires_at") or "")[:10], "Creada": str(i.get("created_at") or "")[:10],
                      "Nota": i.get("note") or ""})
     df = pd.DataFrame(rows)

@@ -72,6 +72,10 @@ table.qt-tab td.n {{ font-family: 'JetBrains Mono', monospace; white-space: nowr
 .verdict h2 {{ margin: 0 0 4px 0; font-size: 1.3rem; }}
 .disclaimer {{ color: {MUTED}; font-size: .68rem; border-top: 1px solid {BORDER}; padding-top: 6px; margin-top: 16px; }}
 div[data-testid="stDataFrame"] {{ border: 1px solid {BORDER}; border-radius: 8px; }}
+/* ocultar barra de Streamlit (Deploy, menú, íconos de GitHub) */
+[data-testid="stToolbarActions"], [data-testid="stAppDeployButton"], [data-testid="stMainMenu"], [data-testid="stDecoration"],
+[data-testid="stStatusWidget"], #MainMenu, footer, .viewerBadge_container__1QSob, [class*="viewerBadge"] {{ display: none !important; }}
+header[data-testid="stHeader"] {{ background: transparent; height: 2.6rem; }}
 .kpi-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }}
 /* ---------- celular ---------- */
 @media (max-width: 700px) {{

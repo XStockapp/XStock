@@ -1,10 +1,10 @@
-# QuantDesk: plataforma de análisis de acciones (NYSE / NASDAQ)
+# TraDiX: plataforma de análisis de acciones (NYSE / NASDAQ)
 
 Escáner de mercado, análisis técnico + fundamental y veredicto con IA (Claude), con entrada, stop-loss y objetivos.
 
 ## Usuarios e invitaciones
-Registro con Google o con correo y código de verificación (Auth0), invitaciones con cuota de informes de IA,
-y panel de administración con el uso de cada usuario (Supabase). Configuración: **CONFIGURAR_USUARIOS.md**.
+Login propio con correo y contraseña (sesión de 30 días), registro solo por invitación, IA con Claude (administrador)
+y Gemini gratis (invitados), y panel de administración con el uso de cada usuario (Supabase). Configuración: **CONFIGURAR_USUARIOS.md**.
 
 ## Usarla en la web (recomendado)
 Sigue **DESPLIEGUE_WEB.md**: GitHub + Streamlit Cloud, gratis y sin instalar nada.
@@ -70,14 +70,15 @@ core/ai.py           veredicto con Claude y síntesis por reglas
 core/finviz.py       screener y ficha de Finviz
 core/data.py         Yahoo Finance, Alpha Vantage, universos y modo demo
 core/store.py        watchlist, último escaneo y configuración (carpeta datos/)
-core/auth.py         acceso: Auth0 (Google + código por correo), invitaciones, bloqueo de suspendidos
+core/auth.py         acceso: login propio, invitaciones, sesión de 30 días, bloqueo de suspendidos
+core/brand.py        logo e identidad TraDiX
 core/db.py           usuarios, invitaciones, cuotas de IA y uso (Supabase o SQLite local)
 views/admin_*.py     paneles de administración: invitaciones, y usuarios y uso
 supabase_schema.sql  tablas para Supabase
 ```
 
 ## Versión dentro de Claude (sin instalar)
-Página **QuantDesk Claude** en claude.ai, conectada al conector Alpha Vantage del usuario:
+Página **TraDiX Claude** en claude.ai, conectada al conector Alpha Vantage del usuario:
 - Datos gratuitos: precios diarios (100 días), semanal ajustado (15 años), EPS trimestral con sorpresas, movers del día y cotización.
 - La probabilidad se calcula con velas semanales (+2×ATR semanal antes que −1×ATR, máximo 8 semanas).
 - El veredicto lo da Claude dentro de la página, sin API key.

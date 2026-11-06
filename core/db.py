@@ -39,8 +39,13 @@ def _norm(email: str | None) -> str:
 class _Supabase:
     def __init__(self, url: str, key: str):
         self.base = url.rstrip("/") + "/rest/v1/"
-        self.h = {"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json",
+        key = key.strip()
+        self.h = {"apikey": key, "Content-Type": "application/json",
                   "Prefer": "return=representation"}
+        # Claves legacy (JWT "eyJ...") van también en Authorization;
+        # las nuevas "sb_secret_..." solo en el header apikey.
+        if key.startswith("eyJ"):
+            self.h["Authorization"] = f"Bearer {key}"
 
     def select(self, table, where: dict | None = None, order: str | None = None, limit: int | None = None):
         params = {"select": "*"}
@@ -88,7 +93,7 @@ class _SQLite:
         email TEXT PRIMARY KEY, name TEXT, role TEXT DEFAULT 'user', status TEXT DEFAULT 'active',
         plan TEXT DEFAULT 'beta', ai_quota INTEGER DEFAULT 10, ai_used INTEGER DEFAULT 0,
         invite_code TEXT, auth_provider TEXT, created_at TEXT, last_login TEXT, login_count INTEGER DEFAULT 0,
-        notes TEXT);
+        notes TEXT, password_hash TEXT);
     CREATE TABLE IF NOT EXISTS invitations (
         code TEXT PRIMARY KEY, email TEXT, ai_quota INTEGER DEFAULT 10, max_uses INTEGER DEFAULT 1,
         uses INTEGER DEFAULT 0, expires_at TEXT, created_by TEXT, created_at TEXT, note TEXT,
@@ -185,10 +190,11 @@ def list_profiles() -> list[dict]:
 
 
 def create_profile(email: str, name: str, role: str = "user", ai_quota: int = 10, invite_code: str | None = None,
-                   provider: str | None = None) -> dict:
+                   provider: str | None = None, password_hash: str | None = None) -> dict:
     row = {"email": _norm(email), "name": name or "", "role": role, "status": "active", "plan": "beta",
            "ai_quota": int(ai_quota), "ai_used": 0, "invite_code": invite_code, "auth_provider": provider,
-           "created_at": now_iso(), "last_login": now_iso(), "login_count": 1, "notes": ""}
+           "created_at": now_iso(), "last_login": now_iso(), "login_count": 1, "notes": "",
+           "password_hash": password_hash}
     backend().insert("profiles", row)
     return row
 
@@ -284,15 +290,19 @@ def find_invite_for_email(email: str) -> dict | None:
     return None
 
 
-def redeem_invite(inv: dict, email: str, name: str, provider: str | None) -> dict:
+def redeem_invite(inv: dict, email: str, name: str, provider: str | None, password_hash: str | None = None) -> dict:
     backend().update("invitations", {"code": inv["code"]}, {"uses": int(inv.get("uses") or 0) + 1})
     existing = get_profile(email)
-    if existing:  # usuario eliminado/suspendido que vuelve con nueva invitación
-        update_profile(email, status="active", ai_quota=int(inv.get("ai_quota") or 10), ai_used=0,
-                       invite_code=inv["code"], last_login=now_iso())
+    if existing:  # usuario eliminado que vuelve con nueva invitación
+        f = {"status": "active", "invite_code": inv["code"], "last_login": now_iso(), "auth_provider": provider}
+        if name:
+            f["name"] = name
+        if password_hash:
+            f["password_hash"] = password_hash
+        update_profile(email, **f)
         log_event(email, "login", "reactivado por invitación")
         return get_profile(email)
-    p = create_profile(email, name, "user", int(inv.get("ai_quota") or 10), inv["code"], provider)
+    p = create_profile(email, name, "user", int(inv.get("ai_quota") or 10), inv["code"], provider, password_hash)
     log_event(email, "signup", inv["code"])
     return p
 

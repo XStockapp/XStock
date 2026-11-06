@@ -1,5 +1,5 @@
 """
-QuantDesk — Plataforma de análisis de acciones de EE.UU.
+TraDiX — Plataforma de análisis de acciones de EE.UU.
 Ejecutar:  streamlit run app.py
 """
 import os
@@ -14,12 +14,12 @@ from core import store
 from core.ai import MODELOS
 from core.ui import inject_css
 
-st.set_page_config(page_title="QuantDesk · Análisis de acciones", page_icon="📈", layout="wide",
+st.set_page_config(page_title="TraDiX · Trading · Data · Analytics", page_icon="assets/favicon.png", layout="wide",
                    initial_sidebar_state="auto")
 inject_css()
 
 # ---- Acceso: invitaciones + Auth0 (Google o correo con código) / modo personal ----
-from core import auth  # noqa: E402
+from core import auth, brand  # noqa: E402
 
 profile = auth.gate()
 ADMIN = profile.get("role") == "admin"
@@ -28,9 +28,9 @@ if "cfg" not in st.session_state:
     st.session_state.cfg = store.config()
 cfg = st.session_state.cfg
 
+st.logo("assets/tradix_wordmark.png", size="large", icon_image="assets/tradix_icon.png")
+
 with st.sidebar:
-    st.markdown("<div class='brand'>Quant<span>Desk</span></div>"
-                "<div class='muted'>Escáner · Análisis · IA</div>", unsafe_allow_html=True)
     if os.environ.get("TRADING_DEMO") == "1":
         st.warning("MODO DEMO: datos sintéticos")
 
@@ -43,7 +43,7 @@ _admin = [
     st.Page("views/admin_invitaciones.py", title="Invitaciones", icon=":material/person_add:"),
     st.Page("views/admin_usuarios.py", title="Usuarios y uso", icon=":material/group:"),
 ]
-pages = st.navigation({"QuantDesk": _main, "Administración": _admin} if ADMIN else _main)
+pages = st.navigation({"TraDiX": _main, "Administración": _admin} if ADMIN else _main)
 
 with st.sidebar:
     st.divider()
@@ -81,15 +81,9 @@ with st.sidebar:
     wl = store.watchlist()
     st.caption(f"Watchlist: **{len(wl)}** acciones")
     st.divider()
-    _rem = __import__("core.db", fromlist=["ai_remaining"]).ai_remaining(profile)
-    _q = int(profile.get("ai_quota") or 0)
     st.markdown(f"<div class='small'><b>{profile.get('name') or profile['email']}</b><br>"
-                f"<span class='muted'>{profile['email']} · {'Administrador' if ADMIN else 'Plan ' + str(profile.get('plan') or 'beta')}</span></div>",
+                f"<span class='muted'>{profile['email']} · {'Administrador' if ADMIN else 'Invitado'}</span></div>",
                 unsafe_allow_html=True)
-    if _rem is None:
-        st.caption("Informes de IA: ilimitados")
-    else:
-        st.progress(min(1.0, (_q - _rem) / _q) if _q else 1.0, text=f"Informes de IA: {_q - _rem} de {_q} usados")
     if profile.get("email") != "owner@local" and st.button("Cerrar sesión", use_container_width=True):
         auth.logout()
 

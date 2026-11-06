@@ -1,4 +1,4 @@
-# Publicar QuantDesk en la web (gratis, sin instalar nada)
+# Publicar TraDiX en la web (gratis, sin instalar nada)
 
 Tiempo total: unos 15 minutos, una sola vez. Al final tendrás un link del tipo
 `https://tu-app.streamlit.app` que abres desde tu PC o tu celular.
@@ -15,7 +15,7 @@ Tiempo total: unos 15 minutos, una sola vez. Al final tendrás un link del tipo
 3. Marca **Private** (solo tú ves el código). Streamlit Cloud gratuito admite repos privados.
 4. Pulsa **Create repository**.
 5. En la página del repo vacío, haz clic en el enlace **uploading an existing file**.
-6. Descomprime `QuantDesk.zip` en tu PC, abre la carpeta `trading_app` y **arrastra todo su contenido** a la ventana de GitHub.
+6. Descomprime `TraDiX.zip` en tu PC, abre la carpeta `trading_app` y **arrastra todo su contenido** a la ventana de GitHub.
    Eso incluye las carpetas `core`, `views` y `.streamlit`, y los archivos `app.py`, `requirements.txt` y los demás.
    Arrastra lo que hay *dentro* de `trading_app`, no la carpeta en sí: `app.py` tiene que quedar en la raíz del repo.
 7. Abajo pulsa **Commit changes**.

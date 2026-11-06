@@ -1,4 +1,4 @@
--- QuantDesk · esquema de usuarios, invitaciones y uso
+-- TraDiX · esquema de usuarios, invitaciones y uso
 -- Pega todo este archivo en Supabase → SQL Editor → New query → Run.
 
 create table if not exists public.profiles (
@@ -14,8 +14,10 @@ create table if not exists public.profiles (
   created_at     timestamptz default now(),
   last_login     timestamptz,
   login_count    integer not null default 0,
-  notes          text
+  notes          text,
+  password_hash  text
 );
+alter table public.profiles add column if not exists password_hash text;
 
 create table if not exists public.invitations (
   code          text primary key,

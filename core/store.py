@@ -49,7 +49,7 @@ def _gist_id() -> str | None:
         gid = next((g["id"] for g in r.json() if GIST_FILE in g.get("files", {})), None)
         if not gid:
             r = requests.post("https://api.github.com/gists", headers=_gist_headers(), timeout=15,
-                              json={"description": "QuantDesk watchlist", "public": False,
+                              json={"description": "TraDiX watchlist", "public": False,
                                     "files": {GIST_FILE: {"content": "{}"}}})
             r.raise_for_status()
             gid = r.json()["id"]
