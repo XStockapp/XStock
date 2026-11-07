@@ -39,14 +39,14 @@ with left:
             link = auth.invite_link(inv["code"])
             st.success("Invitación creada. Copia el enlace con el botón de la derecha:")
             st.code(link, language=None)
-            msg = (f"¡Hola! Te invito a TraDiX, mi plataforma de análisis de acciones con IA "
+            msg = (f"¡Hola! Te invito a XStock, mi plataforma de análisis de acciones con IA "
                    f"(escáner de mercado, análisis técnico y fundamental, entrada/stop/objetivos). "
                    f"Regístrate aquí: {link}")
             st.text_area("Mensaje listo para enviar", msg, height=110)
             c1, c2 = st.columns(2)
             c1.link_button("Enviar por WhatsApp", f"https://wa.me/?text={quote(msg)}", use_container_width=True)
             if inv.get("email"):
-                c2.link_button("Enviar por correo", f"mailto:{inv['email']}?subject={quote('Invitación a TraDiX')}&body={quote(msg)}",
+                c2.link_button("Enviar por correo", f"mailto:{inv['email']}?subject={quote('Invitación a XStock')}&body={quote(msg)}",
                                use_container_width=True)
             st.caption(f"Vence: {str(inv['expires_at'])[:10]} · usos: {inv['max_uses']} · "
                        + (f"solo para {inv['email']}" if inv.get("email") else "cualquier correo"))

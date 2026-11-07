@@ -1,6 +1,6 @@
-"""Identidad visual de TraDiX (logo A: aspa oro + flecha esmeralda)."""
+"""Identidad visual de XStock (logo A: aspa oro + flecha esmeralda)."""
 
-NAME = "TraDiX"
+NAME = "XStock"
 TAGLINE = "Trading · Data · Analytics"
 
 INK, PANEL, IVORY, STEEL = "#0B1220", "#111A2C", "#E8ECF2", "#B9C6D8"
@@ -31,14 +31,13 @@ def icon_badge(size: int = 34) -> str:
 
 
 def wordmark(font_px: int = 40, ground: str = INK, tagline: bool = True) -> str:
-    """Logotipo completo: Tra (700) + Di (400) + X gráfica, con lema opcional."""
+    """Logotipo completo: X gráfica + Stock (700), con lema opcional."""
     x = int(font_px * .79)
-    mb = int(font_px * .18)
+    mb = int(font_px * .06)
     html = (f"<div style='font-family:Sora,system-ui,sans-serif;line-height:1;display:inline-flex;align-items:flex-end;"
             f"font-size:{font_px}px;letter-spacing:-.02em'>"
-            f"<span style='font-weight:700;color:{IVORY}'>Tra</span>"
-            f"<span style='font-weight:400;color:{STEEL}'>Di</span>"
-            f"<span style='margin-left:{int(font_px*.04)}px;margin-bottom:{mb}px;line-height:0'>{x_mark(x, ground)}</span></div>")
+            f"<span style='margin-right:{int(font_px*.08)}px;margin-bottom:{mb}px;line-height:0'>{x_mark(x, ground)}</span>"
+            f"<span style='font-weight:700;color:{IVORY}'>Stock</span></div>")
     if tagline:
         html += (f"<div style='font-family:\"IBM Plex Mono\",monospace;color:{MUTED};font-size:{max(10, int(font_px*.26))}px;"
                  f"letter-spacing:.32em;text-transform:uppercase;margin-top:{int(font_px*.3)}px'>{TAGLINE}</div>")
@@ -49,7 +48,6 @@ def sidebar_brand() -> str:
     """Versión compacta para la barra lateral."""
     return (FONTS + "<div style='display:flex;align-items:center;gap:10px;margin:-6px 0 4px'>" + icon_badge(34) +
             "<div><div style='font-family:Sora,system-ui,sans-serif;font-size:20px;font-weight:700;color:#E8ECF2;"
-            "letter-spacing:-.02em;line-height:1.05'>Tra<span style='font-weight:400;color:#B9C6D8'>Di</span>"
-            "<span style='color:#1FBF75'>X</span></div>"
+            "letter-spacing:-.02em;line-height:1.05'><span style='color:#1FBF75'>X</span>Stock</div>"
             f"<div style='font-family:\"IBM Plex Mono\",monospace;font-size:9.5px;letter-spacing:.2em;color:{MUTED};"
             "text-transform:uppercase;margin-top:2px'>Trading · Data · Analytics</div></div></div>")

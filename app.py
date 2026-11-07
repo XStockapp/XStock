@@ -1,5 +1,5 @@
 """
-TraDiX — Plataforma de análisis de acciones de EE.UU.
+XStock — Plataforma de análisis de acciones de EE.UU.
 Ejecutar:  streamlit run app.py
 """
 import os
@@ -14,7 +14,7 @@ from core import store
 from core.ai import MODELOS
 from core.ui import inject_css
 
-st.set_page_config(page_title="TraDiX · Trading · Data · Analytics", page_icon="assets/favicon.png", layout="wide",
+st.set_page_config(page_title="XStock · Trading · Data · Analytics", page_icon="assets/favicon.png", layout="wide",
                    initial_sidebar_state="auto")
 inject_css()
 
@@ -28,7 +28,7 @@ if "cfg" not in st.session_state:
     st.session_state.cfg = store.config()
 cfg = st.session_state.cfg
 
-st.logo("assets/tradix_wordmark.png", size="large", icon_image="assets/tradix_icon.png")
+st.logo("assets/xstock_wordmark.png", size="large", icon_image="assets/xstock_icon.png")
 
 with st.sidebar:
     if os.environ.get("TRADING_DEMO") == "1":
@@ -43,7 +43,7 @@ _admin = [
     st.Page("views/admin_invitaciones.py", title="Invitaciones", icon=":material/person_add:"),
     st.Page("views/admin_usuarios.py", title="Usuarios y uso", icon=":material/group:"),
 ]
-pages = st.navigation({"TraDiX": _main, "Administración": _admin} if ADMIN else _main)
+pages = st.navigation({"XStock": _main, "Administración": _admin} if ADMIN else _main)
 
 with st.sidebar:
     st.divider()

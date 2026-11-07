@@ -1,4 +1,4 @@
--- TraDiX · esquema de usuarios, invitaciones y uso
+-- XStock · esquema de usuarios, invitaciones y uso
 -- Pega todo este archivo en Supabase → SQL Editor → New query → Run.
 
 create table if not exists public.profiles (

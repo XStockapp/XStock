@@ -1,0 +1,11 @@
+# Datos locales y secretos: nunca se suben al repositorio
+datos/
+.streamlit/secrets.toml
+.env
+*.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
