@@ -1,5 +1,5 @@
 """
-Acceso a TraDiX (sin Auth0).
+Acceso a XStock (sin Auth0).
 
 Modo multiusuario (si existen SUPABASE_URL + SUPABASE_SERVICE_KEY, o en modo demo):
   * Registro solo con invitación: nombre, correo y contraseña. Opcional: código de verificación por correo
@@ -148,9 +148,9 @@ def send_code(email: str, purpose: str) -> bool:
     code = f"{random.SystemRandom().randint(0, 999999):06d}"
     st.session_state[f"code_{purpose}"] = {"email": email, "hash": hashlib.sha256(code.encode()).hexdigest(),
                                           "exp": time.time() + 900, "tries": 0}
-    subject = "Tu código de TraDiX"
+    subject = "Tu código de XStock"
     body = (f"Tu código de verificación es: {code}\n\nVence en 15 minutos.\n"
-            f"Si no pediste este código, ignora este correo.\n\nTraDiX")
+            f"Si no pediste este código, ignora este correo.\n\nXStock")
     try:
         msg = MIMEText(body, "plain", "utf-8")
         msg["Subject"], msg["From"], msg["To"] = subject, secret("SMTP_FROM") or secret("SMTP_USER"), email
@@ -207,7 +207,7 @@ def _head(inv: dict | None, title: str, sub: str) -> None:
     box = ""
     if inv and db.invite_status(inv) == "Activa":
         who = E(inv.get("inviter_name") or "El administrador")
-        box = (f"<div class='qd-inv'><b>{who}</b> te invitó a TraDiX."
+        box = (f"<div class='qd-inv'><b>{who}</b> te invitó a XStock."
                f"<small>Acceso beta — regístrate para reclamar tu lugar.</small></div>")
     elif inv:
         box = f"<div class='qd-err' style='margin-top:14px'>Esta invitación está {E(db.invite_status(inv).lower())}. Pide un nuevo enlace.</div>"
@@ -489,11 +489,11 @@ def gate() -> dict:
         p = db.redeem_invite(inv, email, ident.get("name") or "", ident["provider"])
         st.session_state["_login_logged"] = True
         _js_cookie("qd_invite", "", 0)
-        st.toast("¡Bienvenido a TraDiX! Tu cuenta quedó activada.", icon="🎉")
+        st.toast("¡Bienvenido a XStock! Tu cuenta quedó activada.", icon="🎉")
     elif p.get("status") == "suspended":
         st.session_state.pop("ident", None)
         _js_cookie(COOKIE, "", 0)
-        _screen_message("Acceso suspendido", "Tu acceso a TraDiX fue suspendido por el administrador.", email)
+        _screen_message("Acceso suspendido", "Tu acceso a XStock fue suspendido por el administrador.", email)
         st.stop()
 
     if st.session_state.get("_set_cookie"):
@@ -520,6 +520,6 @@ def is_admin() -> bool:
 
 def admin_reset_password(email: str) -> str:
     """El administrador genera una contraseña temporal para un usuario."""
-    tmp = "QD-" + _secrets.token_urlsafe(6)
+    tmp = "XS-" + _secrets.token_urlsafe(6)
     db.update_profile(email, password_hash=hash_password(tmp))
     return tmp

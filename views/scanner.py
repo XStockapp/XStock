@@ -45,7 +45,7 @@ with st.container(border=True):
         custom = st.text_area("Tickers separados por coma", "AAPL, MSFT, NVDA, AMZN, META, GOOGL, TSLA, AMD")
     if uni.startswith("Finviz"):
         st.caption("Lista generada por el screener de Finviz (volumen promedio > 500K, precio > $5, empresas de EE.UU.); "
-                   "luego TraDiX calcula indicadores y probabilidades para cada una.")
+                   "luego XStock calcula indicadores y probabilidades para cada una.")
     if uni.startswith("Todo"):
         st.info("El mercado completo tiene ~6.000 acciones: la primera descarga tarda varios minutos "
                 "(luego queda en caché 1 hora). El filtro de liquidez descarta las acciones poco negociadas.")
@@ -212,7 +212,7 @@ if b2.button("📊 Analizar selección", disabled=len(picked) != 1, use_containe
     st.session_state.ticker = picked.iloc[0]["Ticker"]
     st.switch_page("views/analisis.py")
 b3.download_button("⬇️ Exportar ranking (CSV)", view[cols].to_csv(index=False).encode("utf-8"),
-                   "ranking_quantdesk.csv", "text/csv")
+                   "ranking_xstock.csv", "text/csv")
 
 with st.expander("¿Cómo se calcula la probabilidad?"):
     st.markdown(f"""

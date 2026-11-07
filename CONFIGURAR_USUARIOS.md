@@ -1,6 +1,6 @@
-# TraDiX · Usuarios, invitaciones e IA
+# XStock · Usuarios, invitaciones e IA
 
-TraDiX usa **solo dos servicios externos** para el modo multiusuario:
+XStock usa **solo dos servicios externos** para el modo multiusuario:
 
 | Servicio | Para qué | Costo |
 |---|---|---|
@@ -14,7 +14,7 @@ El login es propio (correo + contraseña), con sesión recordada 30 días. No ha
 ## 1. Supabase (una sola vez)
 
 1. Entra a https://supabase.com → **Start your project** → *Continue with GitHub*.
-2. **New project**: nombre `tradix`, genera la *Database password* (guárdala), región **East US (North Virginia)**. **No** uses "Connect GitHub".
+2. **New project**: nombre `xstock`, genera la *Database password* (guárdala), región **East US (North Virginia)**. **No** uses "Connect GitHub".
 3. **SQL Editor → New query** → pega todo `supabase_schema.sql` → **Run** → debe decir *Success*.
 4. Copia:
    - **Project URL** (botón *Copy* en la portada del proyecto) → `SUPABASE_URL`
@@ -26,12 +26,12 @@ El login es propio (correo + contraseña), con sesión recordada 30 días. No ha
 ## 2. Gemini
 
 1. https://aistudio.google.com/apikey → **Create API key**.
-2. Pega la clave en `GEMINI_API_KEY`. TraDiX usa el modelo Flash vigente y cambia solo a otro si Google retira uno.
+2. Pega la clave en `GEMINI_API_KEY`. XStock usa el modelo Flash vigente y cambia solo a otro si Google retira uno.
 3. Plan gratuito: tiene límite por minuto/día por proyecto y Google puede usar esos datos para mejorar sus modelos.
 
 ## 3. Secrets de Streamlit
 
-Streamlit Cloud → tu app → **⋮ → Settings → Secrets** → pega el contenido de `.streamlit/secrets.toml.ejemplo` con tus valores → **Save**.
+Render → servicio `xstock` → **Environment → Secret Files → secrets.toml** → pega el contenido de `.streamlit/secrets.toml.ejemplo` con tus valores → **Save**.
 
 ## 4. Primer ingreso (administrador)
 
@@ -47,7 +47,7 @@ Comparte el link por WhatsApp o correo. El invitado abre el link, pone nombre, c
 ## 6. Gestionar usuarios
 
 **Administración → Usuarios y uso**: último ingreso, ingresos, análisis, escaneos, estado.
-Marca uno o varios y usa **Expulsar/suspender**, **Reactivar**, **Restablecer contraseña** (genera una temporal `QD-...` que le envías) o **Eliminar**.
+Marca uno o varios y usa **Expulsar/suspender**, **Reactivar**, **Restablecer contraseña** (genera una temporal `XS-...` que le envías) o **Eliminar**.
 
 ## 7. IA por rol
 
@@ -59,4 +59,4 @@ Marca uno o varios y usa **Expulsar/suspender**, **Reactivar**, **Restablecer co
 ## Opcional (más adelante)
 
 - **Códigos por correo** (verificación al registrarse y "Olvidé mi contraseña"): Gmail → Seguridad → Verificación en 2 pasos → *Contraseñas de aplicación* → crea una y llena `SMTP_*`. Sin esto, si alguien olvida su contraseña, la restableces tú desde el panel.
-- **Botón Google**: Google Cloud Console → APIs y servicios → Credenciales → *ID de cliente OAuth* (aplicación web) con URI de redirección `https://tu-app.streamlit.app/oauth2callback`; descomenta `[auth]` y `[auth.google]` en los Secrets.
+- **Botón Google**: Google Cloud Console → APIs y servicios → Credenciales → *ID de cliente OAuth* (aplicación web) con URI de redirección `https://xstockapp.com/oauth2callback`; descomenta `[auth]` y `[auth.google]` en los Secrets.
