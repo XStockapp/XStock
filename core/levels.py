@@ -15,10 +15,12 @@ from __future__ import annotations
 
 import pandas as pd
 
+from .profiles import ma_label
 from .technical import fibonacci, pivot_levels
+from .timeframes import marco, marco_corto
 
-MARCO_TEMPORAL = "Velas diarias (1D) · Mediano-Largo plazo · 1 a 3 meses (24–50 sesiones)"
-MARCO_CORTO = "1D · Mediano-Largo plazo (1–3 meses · 24–50 sesiones)"
+MARCO_TEMPORAL = marco("1D")
+MARCO_CORTO = marco_corto("1D")
 MODOS = {"market": "Entrada a mercado", "limit": "Entrada proyectada (Limit)"}
 
 
@@ -30,6 +32,10 @@ def momentum_check(df: pd.DataFrame, direction: str = "long") -> dict:
     está a más de 1 ATR sobre la EMA21. Para un corto se evalúa el espejo.
     """
     r, p, pp = df.iloc[-1], df.iloc[-2], df.iloc[-3]
+    st_ = df.attrs.get("settings")
+    fast, mid = ma_label(st_, "EMA9"), ma_label(st_, "EMA21")
+    ob = float(st_["rsi"]["sobrecompra"]) if st_ else 70.0
+    os_ = float(st_["rsi"]["sobreventa"]) if st_ else 30.0
     long = direction == "long"
     px, a = float(r["Close"]), float(r["ATR"])
     hist, hist_p, hist_pp = float(r["MACD_hist"]), float(p["MACD_hist"]), float(pp["MACD_hist"])
@@ -39,20 +45,20 @@ def momentum_check(df: pd.DataFrame, direction: str = "long") -> dict:
         if hist < hist_p < hist_pp:  # dos sesiones seguidas: filtra el ruido de un solo día
             motivos.append("MACD con histograma decreciente (2 sesiones)")
         if px < float(r["EMA9"]):
-            motivos.append("Cierre por debajo de la EMA9")
-        if rsi >= 70 or (rsi_p >= 65 and rsi < rsi_p):
+            motivos.append(f"Cierre por debajo de la {fast}")
+        if rsi >= ob or (rsi_p >= ob - 5 and rsi < rsi_p):
             motivos.append(f"RSI agotado ({rsi:.0f})")
         if px - float(r["EMA21"]) > 1.0 * a:
-            motivos.append("Precio extendido > 1 ATR sobre la EMA21")
+            motivos.append(f"Precio extendido > 1 ATR sobre la {mid}")
     else:
         if hist > hist_p > hist_pp:
             motivos.append("MACD con histograma creciente (2 sesiones)")
         if px > float(r["EMA9"]):
-            motivos.append("Cierre por encima de la EMA9")
-        if rsi <= 30 or (rsi_p <= 35 and rsi > rsi_p):
+            motivos.append(f"Cierre por encima de la {fast}")
+        if rsi <= os_ or (rsi_p <= os_ + 5 and rsi > rsi_p):
             motivos.append(f"RSI agotado ({rsi:.0f})")
         if float(r["EMA21"]) - px > 1.0 * a:
-            motivos.append("Precio extendido > 1 ATR bajo la EMA21")
+            motivos.append(f"Precio extendido > 1 ATR bajo la {mid}")
     return {"en_contra": bool(motivos), "motivos": motivos}
 
 
@@ -64,7 +70,9 @@ def projected_entry(df: pd.DataFrame, direction: str = "long") -> tuple[float, s
     supports, resist = pivot_levels(df)
     long = direction == "long"
     cands: list[tuple[float, str]] = []
-    for col, name in (("EMA21", "EMA21"), ("SMA50", "SMA50")):
+    st_ = df.attrs.get("settings")
+    for col in ("EMA21", "SMA50"):
+        name = ma_label(st_, col)
         v = float(r[col])
         if v == v:  # no NaN
             cands.append((v, name))
@@ -131,8 +139,8 @@ def _plan_for_entry(df: pd.DataFrame, entry: float, direction: str, sl_atr: floa
 
 
 def trade_plan(df: pd.DataFrame, direction: str = "long", sl_atr: float = 1.5, tp_atr: float = 3.0,
-               account: float = 10_000, risk_pct: float = 1.0, entry_mode: str = "auto") -> dict:
-    """Plan de operación. entry_mode: "auto" (recomendado), "market" o "limit"."""
+               account: float = 10_000, risk_pct: float = 1.0, entry_mode: str = "auto", tf: str = "1D") -> dict:
+    """Plan de operación. entry_mode: "auto" (recomendado), "market" o "limit". tf: temporalidad de las velas."""
     r = df.iloc[-1]
     px, a = float(r["Close"]), float(r["ATR"])
     supports, resist = pivot_levels(df)
@@ -175,10 +183,12 @@ def trade_plan(df: pd.DataFrame, direction: str = "long", sl_atr: float = 1.5, t
         "estado_tipo": estado_tipo,
         "motivos_impulso": mom["motivos"],
         "nivel_espera": nivel,
-        "marco_temporal": MARCO_TEMPORAL,
+        "marco_temporal": marco(tf),
+        "marco_corto": marco_corto(tf),
+        "tf": tf,
         "soportes": supports[:4],
         "resistencias": resist[:4],
-        "fibonacci": fibonacci(df),
+        "fibonacci": fibonacci(df, int((df.attrs.get("settings") or {}).get("fibonacci", {}).get("velas", 126))),
     }
     plan.update(_plan_for_entry(df, entry, direction, sl_atr, tp_atr, account, risk_pct))
     return plan

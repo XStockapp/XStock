@@ -34,8 +34,9 @@ Reglas de análisis:
   2×ATR), y qué hacer si se acerca el reporte de resultados.
 - Señales de cambio: qué cambios en las métricas (RSI, MACD, cierre bajo EMA21/SMA50/POC, volumen, short float, revisiones de EPS,
   rating de analistas) cambiarían el pronóstico y qué acción tomar en cada caso.
-- Marco temporal: el análisis usa velas diarias (1D), así que el plan, la probabilidad y los objetivos corresponden a
-  inversiones de MEDIANO-LARGO PLAZO (1 a 3 meses, 24-50 sesiones). Dilo explícitamente en el resumen ejecutivo.
+- Marco temporal: el plan, la probabilidad y los objetivos corresponden a la temporalidad de las velas indicada en
+  "marco_temporal" (p. ej. velas 1D = mediano-largo plazo, 1 a 3 meses / 24-50 sesiones; velas 30m = intradía).
+  Dilo explícitamente en el resumen ejecutivo y expresa los tiempos en esas unidades (velas/sesiones).
 - Validación de impulso: si "plan_propuesto.estado_tipo" es "esperar" (la señal de fondo es favorable pero el corto plazo
   corrige: MACD decreciente, pérdida de la EMA9, RSI agotado o precio extendido), NO recomiendes entrar a precio de mercado.
   Usa veredicto "ESPERAR", indica textualmente el "plan_propuesto.estado" (p. ej. "Esperar Pullback a Soporte ($XX.XX)")
@@ -172,7 +173,7 @@ def rule_based(payload: dict) -> dict:
         "confianza": int(min(90, abs(comb) * 0.6 + abs(ev) * 30)),
         "probabilidad_ajustada": p,
         "resumen_ejecutivo": (f"{plan.get('estado')}: " if wait else "") +
-                             "Análisis en velas 1D (mediano-largo plazo, 1-3 meses). " +
+                             f"{plan.get('marco_temporal', 'Velas 1D')}. " +
                              f"Puntaje combinado {comb:.0f}/100 (técnico {t:.0f}, fundamental "
                              f"{f if f is not None else 'n/d'}). Configuraciones similares alcanzaron el objetivo antes que "
                              f"el stop {p*100:.0f}% de las veces (valor esperado {ev:+.2f}R).",
