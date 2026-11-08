@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from . import probability as P
+from .market import rendimientos, spark
 from .levels import trade_plan
 from .technical import compute_all, score_series
 
@@ -143,6 +144,9 @@ def scan(prices: dict[str, pd.DataFrame], min_price=5.0, min_dollar_vol=20e6, tp
             "Lado": side,
             "Sector": mt.get("sector") or "Sin sector",
             "Market cap": mt.get("cap"),
+            "Nombre": mt.get("nombre"),
+            **{f"Ret {k}": v for k, v in rendimientos(d, t).items()},
+            "Spark": spark(d),
         })
     if progress:
         progress(1.0, "Escaneo completo")

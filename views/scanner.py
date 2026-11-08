@@ -1,7 +1,7 @@
 import plotly.express as px
 import streamlit as st
 
-from core import crypto, data, store
+from core import crypto, data, market, store, tables
 from core.scanner import scan
 from core.ui import (BG, BORDER, DISCLAIMER, GREEN, RED, AMBER, MUTED, NEUTRAL, SIGNAL_COLORS, bias_bar, kpi,
                      is_mobile, kpi_row, opportunity_treemap, plot_config, prob_css, rs_css, signal_css, signed_css)
@@ -43,9 +43,7 @@ def _movers(tipo: str, mercado: str) -> list[dict]:
 
 
 def _px(v):
-    if v is None or pd.isna(v):
-        return "—"
-    return f"${v:,.2f}" if v >= 1 else f"${v:.4g}"
+    return tables.price_fmt(v)
 
 
 def _logo(url, ticker):
@@ -205,6 +203,7 @@ if "Lado" not in res.columns:
     st.warning("Este escaneo es de una versión anterior. Vuelve a pulsar **Escanear mercado** para ver el lado corto y el mapa de calor.")
     st.stop()
 
+IS_CR = tables.es_cripto_scan(meta, res)
 base = res.copy()
 if only_up:
     base = base[base["Sobre SMA200"]]
@@ -214,7 +213,7 @@ n_l, n_s = int((res["Lado"] == "LONG").sum()), int((res["Lado"] == "SHORT").sum(
 pct_up = res["Sobre SMA200"].mean() * 100
 best = base.sort_values("Ranking score", ascending=False).iloc[0] if len(base) else None
 st.markdown(kpi_row([
-    ("Acciones evaluadas", f"{len(res):,}", f"{meta.get('universo', '')} · {meta.get('fecha', '')}", "#e5e7eb"),
+    ("Criptomonedas evaluadas" if IS_CR else "Acciones evaluadas", f"{len(res):,}", f"{meta.get('universo', '')} · {meta.get('fecha', '')}", "#e5e7eb"),
     ("Señales de compra", f"{int(res['Señal'].isin(['COMPRA FUERTE', 'COMPRA']).sum())}",
      f"{int((res['Señal'] == 'COMPRA FUERTE').sum())} fuertes", GREEN),
     ("Señales de venta en corto", f"{int(res['Señal corto'].isin(['VENTA FUERTE', 'VENTA']).sum())}",
@@ -264,9 +263,12 @@ else:
 
 # ---------------- Ranking ----------------
 st.write("")
-r1, f1, f2, f3 = st.columns([1.6, 2, 1, 1])
+r1, f1, f2, f3 = st.columns([1.6, 2, 1, 1], vertical_alignment="bottom")
 side = r1.segmented_control("Ranking", ["Compras (long)", "Ventas en corto"], default="Compras (long)") or "Compras (long)"
 is_long = side.startswith("Compras")
+KIND = "cripto" if IS_CR else "acciones"
+PREF = tables.personalizar(KIND, f"scanpref_{KIND}", f3)
+top_n = PREF["filas"]
 if is_long:
     view = base.sort_values("Ranking score", ascending=False).copy()
     view["_p_opp"] = view["Prob. corto"]
@@ -283,44 +285,62 @@ else:
     sig_opts, sig_def = ["VENTA FUERTE", "VENTA", "NEUTRAL"], ["VENTA FUERTE", "VENTA"]
 sig_filter = f1.multiselect("Filtrar señal", sig_opts, default=sig_def)
 min_prob = f2.slider("Prob. mínima", 0, 90, 0, 5) / 100
-top_n = f3.selectbox("Mostrar", [25, 50, 100, 250, 1000], index=1)
 if sig_filter:
     view = view[view["Señal"].isin(sig_filter)]
 view = view[view["Prob. ganancia"] >= min_prob].head(top_n)
 view["#"] = range(1, len(view) + 1)
 view["dir"] = 1 if is_long else -1
 
-cols = ["#", "Ticker", "Sector", "Señal", "Prob. ganancia", "Valor esperado (R)", "Score técnico", "Fuerza relativa 3m",
-        "Precio", "Var. 1d %", "Ret. 3m %", "RSI", "ADX", "Vol. relativo", "ATR %", "Entrada", "Stop",
-        "Objetivo 1", "Objetivo 2", "Casos similares"]
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cg_market(tickers: tuple) -> dict:
+    try:
+        return market.cripto_mercado(list(tickers))
+    except Exception:
+        return {}
+
+
+CM = _cg_market(tuple(view["Ticker"])) if IS_CR and not data._demo() else {}
+MK, MCFG, FM = tables.columnas(view, KIND, PREF, CM)
+_spark = [c for c in MK.columns if c.startswith("Últimos")]
+_perf, _met = FM["perf"], [c for c in MK.columns if c in FM["money"] + FM["ratio"] + ["Sector", "Ranking"]]
+_tec = [c for c in PREF["tecnicas"] if c in MK.columns]
+_ident = ["Moneda", "Ticker"] if IS_CR else ["Ticker"]
+vt = pd.concat([view[["#", "Ticker", "Señal", "Prob. ganancia", "Valor esperado (R)", "Entrada", "Stop", "Objetivo 1"]],
+                MK.drop(columns=[c for c in ("Ticker",) if c in MK.columns])], axis=1)
 if MOBILE:  # tabla compacta en celular
-    cols = ["#", "Ticker", "Señal", "Prob. ganancia", "Valor esperado (R)", "Precio", "Entrada", "Stop", "Objetivo 1"]
+    order = ["#", "Logo", "Ticker", "Señal", "Prob. ganancia", "Precio"] + _perf[:1] + _spark
+else:
+    order = (["#", "Logo"] + _ident + ["Precio"] + _perf + _spark + ["Señal", "Prob. ganancia", "Valor esperado (R)"]
+             + _met + ["Entrada", "Stop", "Objetivo 1"] + _tec)
+vt = vt[[c for c in order if c in vt.columns]]
 st.markdown(f"##### Ranking de {'compras' if is_long else 'ventas en corto'} · selecciona filas para enviarlas a tu watchlist o analizarlas")
+if "Spark" not in res.columns:
+    st.caption("Vuelve a pulsar **Escanear mercado** para ver el rendimiento por periodo y los mini gráficos.")
 sgn = 1 if is_long else -1
-vt = view[cols].rename(columns={"Fuerza relativa 3m": "RS 3m"})
 opp = view["_p_opp"]
-_rs = ["RS 3m"] if "RS 3m" in vt.columns else []
-_chg = [c for c in ("Var. 1d %", "Ret. 3m %") if c in vt.columns]
-_sc = [c for c in ("Score técnico",) if c in vt.columns]
 _obj = [c for c in ("Objetivo 1", "Objetivo 2") if c in vt.columns]
-sty = (vt.style
-       .format({k_: v_ for k_, v_ in {"Prob. ganancia": "{:.1%}", "Valor esperado (R)": "{:+.2f} R", "Score técnico": "{:+.0f}", "RS 3m": "{:.0f}",
-                "Precio": "${:,.2f}", "Var. 1d %": "{:+.2f}%", "Ret. 3m %": "{:+.1f}%", "RSI": "{:.0f}", "ADX": "{:.0f}",
-                "Vol. relativo": "{:.1f}x", "ATR %": "{:.1f}%", "Entrada": "${:,.2f}", "Stop": "${:,.2f}",
-                "Objetivo 1": "${:,.2f}", "Objetivo 2": "${:,.2f}"}.items() if k_ in vt.columns}, na_rep="—")
-       .apply(lambda col: [prob_css(v, opp.loc[i], sgn) for i, v in col.items()], subset=["Prob. ganancia"])
-       .map(lambda v: signed_css(v, 0.1, 0.0, invert=False).replace(GREEN, GREEN if sgn > 0 else RED), subset=["Valor esperado (R)"])
-       .map(lambda v: signed_css(v, 15, -15), subset=_sc)
-       .map(lambda v: signed_css(v, 0.0, 0.0), subset=_chg)
-       .map(rs_css, subset=_rs)
-       .map(signal_css, subset=["Señal"])
-       .map(lambda v: f"color: {NEUTRAL}", subset=["Entrada"])
-       .map(lambda v: f"color: {RED}", subset=["Stop"])
-       .map(lambda v: f"color: {GREEN}", subset=_obj))
+sty = tables.aplicar_formatos(vt.style, FM, vt.columns, {
+    "Prob. ganancia": "{:.1%}", "Valor esperado (R)": "{:+.2f} R", "Entrada": "${:,.2f}", "Stop": "${:,.2f}",
+    "Objetivo 1": "${:,.2f}"})
+sty = (sty.apply(lambda col: [prob_css(v, opp.loc[i], sgn) for i, v in col.items()], subset=["Prob. ganancia"])
+       .map(signal_css, subset=["Señal"]))
+if "Valor esperado (R)" in vt.columns:
+    sty = sty.map(lambda v: signed_css(v, 0.1, 0.0, invert=False).replace(GREEN, GREEN if sgn > 0 else RED),
+                  subset=["Valor esperado (R)"])
+for _c, _css in (("Entrada", f"color: {NEUTRAL}"), ("Stop", f"color: {RED}")):
+    if _c in vt.columns:
+        sty = sty.map(lambda v, _css=_css: _css, subset=[_c])
+if _obj:
+    sty = sty.map(lambda v: f"color: {GREEN}", subset=_obj)
+if "Score técnico" in vt.columns:
+    sty = sty.map(lambda v: signed_css(v, 15, -15), subset=["Score técnico"])
+if "Fuerza relativa" in vt.columns:
+    sty = sty.map(rs_css, subset=["Fuerza relativa"])
 sel = st.dataframe(
-    sty, hide_index=True, use_container_width=True, height=460 if MOBILE else 560,
+    sty, hide_index=True, use_container_width=True, height=min(38 + 35 * max(len(vt), 1), 460 if MOBILE else 720),
     on_select="rerun", selection_mode="multi-row", key=f"scan_table_{is_long}",
-    column_config={"#": st.column_config.NumberColumn(width="small")},
+    column_config={"#": st.column_config.NumberColumn(width="small"), **MCFG},
 )
 st.caption("Probabilidad: verde = ventaja de compra · rojo = ventaja de venta en corto · azul = indeciso (compra y venta "
            "difieren ≤ 5 puntos). Más intenso = mayor probabilidad.")
@@ -334,7 +354,8 @@ if b2.button("📊 Analizar selección", disabled=len(picked) != 1, use_containe
              help="Selecciona una sola fila"):
     st.session_state.ticker = picked.iloc[0]["Ticker"]
     st.switch_page("views/analisis.py")
-b3.download_button("⬇️ Exportar ranking (CSV)", view[cols].to_csv(index=False).encode("utf-8"),
+_csv = vt.drop(columns=[c for c in vt.columns if c == "Logo" or c.startswith("Últimos")])
+b3.download_button("⬇️ Exportar ranking (CSV)", _csv.to_csv(index=False).encode("utf-8"),
                    "ranking_xstock.csv", "text/csv")
 
 with st.expander("¿Cómo se calcula la probabilidad?"):
