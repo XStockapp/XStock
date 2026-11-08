@@ -3,8 +3,8 @@ import copy
 
 import streamlit as st
 
-from core import db, profiles, store
-from core.timeframes import TIMEFRAMES
+from core import profiles
+from core.timeframes import RANGOS, TIMEFRAMES, rango_valido
 
 prof = st.session_state.get("profile") or {}
 saved_key = st.session_state.get("trader_profile")
@@ -43,8 +43,18 @@ S = st.session_state.get("ob_settings") or profiles.default_settings(k)
 st.markdown(f"### {P['icono']} {P['nombre']} · ajustes técnicos")
 st.caption("Valores pre-seteados para tu perfil. Ajústalos si quieres y pulsa **Guardar y entrar a la plataforma**.")
 
-tf = st.selectbox("Temporalidad por defecto", P["tfs"], index=P["tfs"].index(P["tf"]),
-                  format_func=lambda t: f"{t} · {TIMEFRAMES[t]['marco']}")
+_tf_saved = st.session_state.get("default_tf") if k == saved_key else None
+_tf0 = _tf_saved if _tf_saved in P["tfs"] else P["tf"]
+v1, v2 = st.columns([1.4, 1])
+tf = v1.selectbox("Temporalidad de velas por defecto", P["tfs"], index=P["tfs"].index(_tf0),
+                  format_func=lambda t: f"{t} · {TIMEFRAMES[t]['marco']}",
+                  help="La misma que eliges en la pantalla de análisis: si la cambias allí, se actualiza aquí.")
+# La vista (temporalidad y rangos) siempre se lee de lo último guardado, que el análisis actualiza en vivo
+_VISTA = copy.deepcopy((profiles.merge_settings(st.session_state.get("technical_settings")).get("vista")
+                        if k == saved_key else None) or {"rangos": {}})
+_r0 = rango_valido(tf, _VISTA.get("rangos", {}).get(tf))
+rango = v2.segmented_control("Rango visible del gráfico", RANGOS[tf], default=_r0, key=f"ob_rng_{tf}",
+                             help="S = semanas, M = meses, A = años. Se recuerda por temporalidad.") or _r0
 
 with st.container(border=True):
     st.markdown("**Medias móviles**")
@@ -79,7 +89,7 @@ with d.container(border=True):
     bb_k = st.slider("Desviaciones", 1.0, 4.0, float(S["bollinger"]["desv"]), 0.1)
     fib = st.slider("Velas para Fibonacci", 20, 300, int(S["fibonacci"]["velas"]))
 
-new = {"mas": new_mas, "rsi": {"periodo": rsi_p, "sobrecompra": rsi_hi, "sobreventa": rsi_lo},
+new = {"vista": _VISTA, "mas": new_mas, "rsi": {"periodo": rsi_p, "sobrecompra": rsi_hi, "sobreventa": rsi_lo},
        "macd": {"rapida": int(mf), "lenta": int(ms), "senal": int(mg)},
        "adx": {"periodo": adx_p, "umbral": adx_u},
        "bollinger": {"periodo": bb_p, "desv": float(bb_k)}, "fibonacci": {"velas": fib}}
@@ -98,16 +108,7 @@ if c2.button("Restaurar valores del perfil", use_container_width=True):
     st.rerun()
 if c3.button("Guardar y entrar a la plataforma", type="primary", use_container_width=True,
              disabled=new["macd"]["rapida"] >= new["macd"]["lenta"]):
-    email = prof.get("email")
-    if email and email != "owner@local":
-        db.save_trader_profile(email, k, new, tf)
-    else:  # modo personal sin base de datos: se guarda en la configuración local
-        cfg = st.session_state.cfg
-        cfg.update({"trader_profile": k, "technical_settings": copy.deepcopy(new), "default_tf": tf})
-        store.save_config(cfg)
-    st.session_state.trader_profile = k
-    st.session_state.technical_settings = new
-    st.session_state.default_tf = tf
+    profiles.save_user_view(tf, rango, new, k)
     st.session_state.ob_step = 1
     st.session_state.pop("onboarding", None)
     st.rerun()

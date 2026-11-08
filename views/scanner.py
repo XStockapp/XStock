@@ -9,6 +9,23 @@ from core.ui import (BG, BORDER, DISCLAIMER, GREEN, RED, AMBER, MUTED, NEUTRAL, 
 cfg = st.session_state.cfg
 MOBILE = is_mobile()
 
+# ---------------------------------------------------------------- búsqueda directa
+import re  # noqa: E402
+
+with st.form("buscar_simbolo", border=True):
+    b1, b2 = st.columns([5, 1], vertical_alignment="bottom")
+    _q = b1.text_input("Analizar un símbolo", placeholder="Acción, ETF o cripto: NVDA, SPY, BRK-B, BTC-USD…",
+                       help="Va directo al análisis sin escanear el mercado. Para cripto usa el par con -USD "
+                            "(BTC-USD, ETH-USD, SOL-USD).")
+    _go = b2.form_submit_button("Analizar", type="primary", use_container_width=True)
+if _go:
+    _sym = (_q or "").strip().upper().replace(" ", "").replace("/", "-").lstrip("$")
+    if not re.fullmatch(r"[A-Z0-9][A-Z0-9.\-]{0,14}", _sym or ""):
+        st.warning("Escribe un símbolo válido, por ejemplo AAPL, BRK-B o BTC-USD.")
+    else:
+        st.session_state.ticker = _sym
+        st.switch_page("views/analisis.py")
+
 st.markdown("## Escáner de mercado")
 st.markdown("<div class='muted'>Ranking por <b>valor esperado</b> y <b>probabilidad histórica</b> de alcanzar el "
             "objetivo antes que el stop, con 12 indicadores técnicos profesionales.</div>", unsafe_allow_html=True)
@@ -54,7 +71,7 @@ with st.container(border=True):
                                help="No se escanea todo el mercado cripto: solo las N primeras según el criterio.")
         crit = k2.selectbox("Criterio de selección (ranking de CoinGecko)", list(crypto.CRITERIOS))
         st.caption("Fuente: ranking de CoinGecko (sin monedas estables ni tokens envueltos). Los precios diarios se descargan "
-                   "de Yahoo Finance como SÍMBOLO-USD; las monedas que Yahoo no tenga se omiten. "
+                   "de Alpaca o, si no la tiene, de Yahoo Finance como SÍMBOLO-USD; las que no estén en ninguna se omiten. "
                    "Para analizar una en detalle usa el ticker en Análisis, p. ej. BTC-USD.")
     if uni == "Lista personalizada":
         custom = st.text_area("Tickers separados por coma", "AAPL, MSFT, NVDA, AMZN, META, GOOGL, TSLA, AMD")

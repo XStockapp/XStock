@@ -86,3 +86,40 @@ def rangebreaks(tf: str, crypto: bool = False) -> list[dict]:
     if tf in INTRADAY:
         rb.append(dict(bounds=[16, 9.5], pattern="hour"))
     return rb
+
+
+# ---------------------------------------------------------------- rango visible del gráfico
+# Opciones de rango (periodo) por temporalidad de velas y el rango por defecto de cada una.
+RANGOS: dict[str, list[str]] = {
+    "30m": ["1S", "2S", "1M", "3M"],
+    "1h": ["2S", "1M", "3M", "6M"],
+    "4h": ["1M", "3M", "6M", "1A"],
+    "1D": ["3M", "6M", "1A", "2A", "5A"],
+    "1W": ["1A", "2A", "5A", "10A"],
+    "1M": ["5A", "10A", "Máx"],
+}
+RANGO_DEFAULT = {"30m": "2S", "1h": "1M", "4h": "3M", "1D": "6M", "1W": "2A", "1M": "10A"}
+RANGO_NOMBRE = {"1S": "1 semana", "2S": "2 semanas", "1M": "1 mes", "3M": "3 meses", "6M": "6 meses", "1A": "1 año",
+                "2A": "2 años", "5A": "5 años", "10A": "10 años", "Máx": "Todo el historial"}
+_DIAS_BURSATILES = {"1S": 5, "2S": 10, "1M": 21, "3M": 63, "6M": 126, "1A": 252, "2A": 504, "5A": 1260, "10A": 2520}
+_VELAS_DIA_CRIPTO = {"30m": 48, "1h": 24, "4h": 6, "1D": 1, "1W": 1 / 7, "1M": 1 / 30.4}
+
+
+def rango_valido(tf: str, rango: str | None) -> str:
+    """El rango si existe para esa temporalidad; si no, el rango por defecto."""
+    return rango if rango in RANGOS.get(tf, []) else RANGO_DEFAULT.get(tf, "6M")
+
+
+def rango_velas(tf: str, rango: str, crypto: bool = False, disponibles: int | None = None) -> int:
+    """Cantidad de velas que cubre un rango (p. ej. 6M en 1D = 126 velas; en cripto, días corridos)."""
+    rango = rango_valido(tf, rango)
+    if rango == "Máx":
+        n = disponibles or 10_000
+    else:
+        dias = _DIAS_BURSATILES[rango]
+        if crypto:
+            n = dias * 365 / 252 * _VELAS_DIA_CRIPTO[tf]
+        else:
+            n = dias * TIMEFRAMES[tf]["bars_day"]
+    n = max(20, int(round(n)))
+    return min(n, disponibles) if disponibles else n
