@@ -35,7 +35,7 @@ Reglas de análisis:
 - Señales de cambio: qué cambios en las métricas (RSI, MACD, cierre bajo EMA21/SMA50/POC, volumen, short float, revisiones de EPS,
   rating de analistas) cambiarían el pronóstico y qué acción tomar en cada caso.
 - Marco temporal: el plan, la probabilidad y los objetivos corresponden a la temporalidad de las velas indicada en
-  "marco_temporal" (p. ej. velas 1D = mediano-largo plazo, 1 a 3 meses / 24-50 sesiones; velas 30m = intradía).
+  "marco_temporal" (p. ej. velas 1D = mediano-largo plazo, 1 a 3 meses / 24-50 sesiones; velas 10m o 30m = intradía).
   Dilo explícitamente en el resumen ejecutivo y expresa los tiempos en esas unidades (velas/sesiones).
 - Validación de impulso: si "plan_propuesto.estado_tipo" es "esperar" (la señal de fondo es favorable pero el corto plazo
   corrige: MACD decreciente, pérdida de la EMA9, RSI agotado o precio extendido), NO recomiendes entrar a precio de mercado.

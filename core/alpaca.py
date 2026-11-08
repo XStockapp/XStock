@@ -29,9 +29,9 @@ OHLCV = ["Open", "High", "Low", "Close", "Volume"]
 _AGG = {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}
 
 # Años de historial que se piden por temporalidad (Alpaca tiene datos desde 2016)
-YEARS = {"30m": 2, "1h": 3, "4h": 4, "1D": 10, "1W": 11, "1M": 11}
+YEARS = {"10m": 1, "30m": 2, "1h": 3, "4h": 4, "1D": 10, "1W": 11, "1M": 11}
 # Vencimiento de la caché en segundos
-TTL = {"30m": 120, "1h": 300, "4h": 600, "1D": 900, "1W": 3600, "1M": 3600}
+TTL = {"10m": 60, "30m": 120, "1h": 300, "4h": 600, "1D": 900, "1W": 3600, "1M": 3600}
 
 
 class AlpacaError(Exception):
@@ -156,7 +156,7 @@ def _regular_session(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def resample(df: pd.DataFrame, tf: str, crypto: bool) -> pd.DataFrame:
-    if df.empty or tf in ("30m", "1D"):
+    if df.empty or tf in ("10m", "30m", "1D"):
         return df
     if tf == "1h":
         rule, kw = "1h", ({} if crypto else {"origin": "start_day", "offset": "30min"})
@@ -179,12 +179,14 @@ def _base_tf(tf: str, crypto: bool) -> str:
         return "1Day"
     if crypto and tf in ("1h", "4h"):
         return "1Hour"
+    if tf == "10m":
+        return "10Min"  # las 9:30 caen en múltiplo de 10 min: velas ya alineadas a la apertura
     return "30Min"
 
 
 # ---------------------------------------------------------------- API pública
 def bars(ticker: str, tf: str = "1D", years: float | None = None) -> pd.DataFrame:
-    """Historial OHLCV en la temporalidad pedida (30m, 1h, 4h, 1D, 1W, 1M). Lanza AlpacaError."""
+    """Historial OHLCV en la temporalidad pedida (10m, 30m, 1h, 4h, 1D, 1W, 1M). Lanza AlpacaError."""
     df = batch_bars([ticker], tf, years).get(ticker)
     if df is None or df.empty:
         raise AlpacaError(f"Alpaca no devolvió barras {tf} para {ticker}")
@@ -226,7 +228,7 @@ def batch_bars(tickers: list[str], tf: str = "1D", years: float | None = None) -
             for sym, rows in raw.items():
                 t = symmap.get(sym, sym)
                 df = _frame(rows, base == "1Day")
-                if base == "30Min":
+                if base in ("10Min", "30Min"):
                     df = _regular_session(df)
                 df = resample(df, tf, False)
                 if len(df):

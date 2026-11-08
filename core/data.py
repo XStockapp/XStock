@@ -223,12 +223,12 @@ def _synthetic_tf(ticker: str, tf: str, n: int = 600) -> pd.DataFrame:
     from .timeframes import is_crypto
     df = _synthetic(ticker + tf, n)
     end = pd.Timestamp.today().normalize() + pd.Timedelta(hours=15, minutes=30)
-    if tf in ("30m", "1h", "4h"):
-        step = {"30m": "30min", "1h": "60min", "4h": "240min"}[tf]
+    if tf in ("10m", "30m", "1h", "4h"):
+        step = {"10m": "10min", "30m": "30min", "1h": "60min", "4h": "240min"}[tf]
         if is_crypto(ticker):
             idx = pd.date_range(end=end, periods=n, freq=step)
         else:
-            per_day = {"30m": 13, "1h": 7, "4h": 2}[tf]
+            per_day = {"10m": 39, "30m": 13, "1h": 7, "4h": 2}[tf]
             days = pd.bdate_range(end=end.normalize(), periods=n // per_day + 2)
             stamps = [d + pd.Timedelta(hours=9, minutes=30) + i * pd.Timedelta(step) for d in days for i in range(per_day)]
             idx = pd.DatetimeIndex(stamps[-n:])
@@ -245,8 +245,8 @@ def _synthetic_tf(ticker: str, tf: str, n: int = 600) -> pd.DataFrame:
 
 
 def history_tf(ticker: str, tf: str = "1D", provider: str = "yahoo", av_key: str = "") -> pd.DataFrame:
-    """Historial OHLCV en la temporalidad pedida. Mínimo 30m: 1m/5m/15m no se solicitan nunca."""
-    from .timeframes import TIMEFRAMES, validate
+    """Historial OHLCV en la temporalidad pedida. Mínimo 10m: nunca se ofrecen velas de 1m/5m/15m (10m con Yahoo se arma desde 5m)."""
+    from .timeframes import TIMEFRAMES, is_crypto, validate
     tf = validate(tf)
     if tf == "1D":
         return history(ticker, "10y" if _use_alpaca(ticker, provider) else "5y", provider, av_key)
@@ -273,6 +273,9 @@ def history_tf(ticker: str, tf: str = "1D", provider: str = "yahoo", av_key: str
     if spec["resample"]:
         df = df.resample(spec["resample"], origin="start_day", offset="9h30min").agg(
             {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna()
+        if not is_crypto(ticker):
+            _t = df.index.hour * 60 + df.index.minute
+            df = df[(_t >= 570) & (_t < 960)]
     return _tag(df, "Yahoo Finance")
 
 

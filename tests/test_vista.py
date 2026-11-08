@@ -23,3 +23,25 @@ def test_vista_se_conserva_y_no_entra_al_motor():
     assert profiles.saved_range(s, "4h") == "6M" and s["rsi"]["periodo"] == 9
     assert "vista" not in profiles.engine_settings(s)
     assert profiles.saved_range(profiles.default_settings("swing"), "1D") is None
+
+
+def test_10m():
+    from core.timeframes import validate
+    assert validate("10m") == "10m"
+    assert rango_velas("10m", "3D") == 117 and rango_velas("10m", "Hoy") == 39
+    assert profiles.get("day")["tfs"][0] == "10m"
+    import pytest
+    for bad in ("1m", "5m", "15m"):
+        with pytest.raises(ValueError):
+            validate(bad)
+
+
+def test_future_index_respeta_la_sesion():
+    import pandas as pd
+    from core.timeframes import future_index
+    fri = pd.Timestamp("2026-11-06 15:50")
+    assert future_index(fri, 1, "10m") == pd.Timestamp("2026-11-09 09:30")   # lunes a la apertura
+    assert future_index(fri, 39, "10m") == pd.Timestamp("2026-11-09 15:50")  # 39 velas = 1 sesión
+    assert future_index(fri, 45, "10m") == pd.Timestamp("2026-11-10 10:20")
+    assert future_index(pd.Timestamp("2026-11-05 09:30"), 13, "30m") == pd.Timestamp("2026-11-06 09:30")
+    assert future_index(fri, 6, "10m", crypto=True) == pd.Timestamp("2026-11-06 16:50")

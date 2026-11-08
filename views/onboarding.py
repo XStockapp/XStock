@@ -33,7 +33,7 @@ if step == 1:
                                                 if k == saved_key else profiles.default_settings(k))
                 st.session_state.ob_step = 2
                 st.rerun()
-    st.caption("Temporalidad mínima de la plataforma: 30 minutos.")
+    st.caption("Temporalidad mínima de la plataforma: 10 minutos.")
     st.stop()
 
 # ---------------------------------------------------------------- PASO 2

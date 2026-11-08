@@ -47,7 +47,7 @@ def _s(**over) -> dict:
 
 PERFILES: dict[str, dict] = {
     "day": {
-        "nombre": "Day Trader", "icono": "⚡", "tfs": ["30m", "1h"], "tf": "30m",
+        "nombre": "Day Trader", "icono": "⚡", "tfs": ["10m", "1h"], "tf": "10m",
         "descripcion": "Operaciones de horas a 2–3 días. Prioriza VWAP, la media rápida, RSI y volumen relativo.",
         "settings": _s(mas=[{"tipo": "EMA", "periodo": 9, "color": "#facc15"},
                             {"tipo": "EMA", "periodo": 20, "color": "#ef4444"},

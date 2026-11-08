@@ -12,7 +12,7 @@ from .timeframes import TIMEFRAMES, is_crypto, marco, unidad, validate
 def full_analysis(ticker: str, tp=3.0, sl=1.5, horizon=None, account=10_000.0, risk_pct=1.0,
                   av_key: str | None = None, provider: str = "yahoo", tf: str = "1D",
                   settings: dict | None = None) -> dict:
-    """Análisis completo en la temporalidad `tf` (mínimo 30m) con los ajustes técnicos del usuario."""
+    """Análisis completo en la temporalidad `tf` (mínimo 10m) con los ajustes técnicos del usuario."""
     tf = validate(tf)
     horizon = int(horizon or TIMEFRAMES[tf]["horizonte"])
     raw = data.history_tf(ticker, tf, provider, av_key or "")
