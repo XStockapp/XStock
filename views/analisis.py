@@ -69,21 +69,18 @@ ticker = c1.text_input("Símbolo", st.session_state.get("ticker", "AAPL"),
                        placeholder="Acción o cripto, p. ej. NVDA o BTC-USD").strip().upper()
 _tfs = PERF["tfs"]
 _tf_def = st.session_state.get("default_tf") if st.session_state.get("default_tf") in _tfs else PERF["tf"]
-TF = ctf.segmented_control("Velas", _tfs, default=_tf_def, key="tf_sel",
-                           help="Temporalidad de cada vela. Se guarda como tu temporalidad por defecto.") or _tf_def
+TF = ctf.segmented_control("Velas", _tfs, default=_tf_def, key="tf_sel") or _tf_def
 _rk = RANGOS[TF]
 _rng_def = rango_valido(TF, saved_range(SETTINGS, TF))
 rng = crg.segmented_control("Rango visible", _rk, default=_rng_def, key=f"rng_{TF}",
-                            format_func=lambda r: r,
-                            help="Periodo que muestra el gráfico (S = semanas, M = meses, A = años). "
-                                 "Se guarda por temporalidad en tu configuración de indicadores.") or _rng_def
+                            format_func=lambda r: r) or _rng_def
 if TF != st.session_state.get("default_tf") or rng != _rng_def:
     try:
         profiles.save_user_view(TF, rng, SETTINGS)
         SETTINGS = st.session_state.technical_settings
     except Exception as _e:  # no bloquear el análisis si falla el guardado
         st.toast(f"No se pudo guardar la vista: {_e}")
-c2.button("Analizar", type="primary", use_container_width=True)
+c2.button("Analizar", type="primary", width="stretch")
 if not ticker:
     st.stop()
 st.session_state.ticker = ticker
@@ -114,7 +111,7 @@ last, prev = d.iloc[-1], d.iloc[-2]
 chg = last["Close"] / prev["Close"] - 1
 times = ai.time_estimates(plan, prob, cfg["tp_atr"])
 
-if c3.button("⭐ A watchlist", use_container_width=True):
+if c3.button("⭐ A watchlist", width="stretch"):
     store.add_to_watchlist([{"Ticker": ticker, "Precio": float(last["Close"]), "Señal": None,
                              "Prob. ganancia": prob["probabilidad"], "Entrada": plan["entrada"], "Stop": plan["stop"],
                              "Objetivo 1": plan["objetivo_1"], "Objetivo 2": plan["objetivo_2"]}])
@@ -134,19 +131,29 @@ st.markdown(
 
 # ---------------------------------------------------------------- gráfico + panel vertical
 bars = rango_velas(TF, rng, is_crypto(ticker), len(d))
-cc1, cc2, cc3 = st.columns([3.2, 1, 1])
-cc1.markdown(f"<div class='muted small' style='padding-top:6px'>Gráfico: velas <b>{E(TF)}</b> · "
-             f"{E(RANGO_NOMBRE.get(rng, rng))} · {bars} velas visibles</div>", unsafe_allow_html=True)
-show_vp = cc2.toggle("VRVP", value=True)
-show_bb = cc3.toggle("Bollinger", value=False)
+from core import indicators as IND  # noqa: E402
+
+from core import user_menu  # noqa: E402
+
+IND_CFG = user_menu.work()  # copia de trabajo del panel USER › Indicadores: los cambios se ven antes de guardar
+_act = IND.activos(IND_CFG, TF)
+st.markdown(f"<div class='muted small'>Gráfico: velas <b>{E(TF)}</b> · {E(RANGO_NOMBRE.get(rng, rng))} · {bars} velas "
+            f"visibles · {len(_act)} indicadores activos (configúralos en <b>USER › Indicadores</b>)</div>",
+            unsafe_allow_html=True)
 
 akey = f"ai_{ticker}_{d.index[-1]:%Y%m%d}_{cfg['tp_atr']}_{cfg['sl_atr']}_{plan['modo_entrada']}_{TF}"
 V = st.session_state.get(akey)
 
 from core.technical import volume_profile
-_vp = volume_profile(d.tail(bars)) if show_vp else None
-_fig = price_chart(d, plan, _vp, V, bars=bars, times=times, show_bb=show_bb, show_vp=show_vp, mobile=MOBILE,
-                   tf=TF, crypto=is_crypto(ticker), settings=SETTINGS)
+_pv = IND_CFG["vrvp"]["in"]
+_rows = int(IND._num(_pv.get("rows"), 24))
+if _pv.get("layout") == "Ticks por fila":  # tamaño de fila en ticks de $0.01 → cantidad de filas
+    _span = float(d.tail(bars)["High"].max() - d.tail(bars)["Low"].min())
+    _rows = int(max(4, min(300, round(_span / (_rows * 0.01)))))
+_vp = (volume_profile(d.tail(bars), bins=max(4, min(300, _rows)), value_area=IND._num(_pv.get("va"), 70) / 100)
+       if "vrvp" in _act else None)
+_fig = price_chart(d, plan, _vp, V, bars=bars, times=times, mobile=MOBILE, tf=TF, crypto=is_crypto(ticker),
+                   settings=SETTINGS, ind=IND_CFG)
 st.markdown(summary.html(summary.cards(A, plan, times, PKEY),
                          f"Resumen ejecutivo · {PERF['icono']} {PERF['nombre']} · {TF}"), unsafe_allow_html=True)
 if MOBILE:
@@ -163,7 +170,7 @@ vpa = A["vprofile"] or {}
 risk_pct = abs(plan["entrada"] - plan["stop"]) / plan["entrada"]
 
 
-def row(label, val, color="#e5e7eb", sub=""):
+def row(label, val, color="#E6EDF3", sub=""):
     return (f"<div class='mp-i'><div class='mp-r'><span>{label}</span><b style='color:{color}'>{val}</b></div>"
             + (f"<div class='mp-s'>{sub}</div>" if sub else "") + "</div>")
 
@@ -189,7 +196,7 @@ panel += row("Piotroski", f"{pio['score']}/{pio['max']}" if pio else "—",
 panel += f"<div class='mp-h'>Plan · {E(plan['direccion'])} · {TF}</div>"
 panel += row("Entrada", money(plan["entrada"]), "#60a5fa", E(plan["tipo_entrada"]))
 if plan["modo_entrada"] == "limit":
-    panel += row("Precio actual", money(plan["entrada_mercado"]), "#e5e7eb",
+    panel += row("Precio actual", money(plan["entrada_mercado"]), "#E6EDF3",
                  f"esperar retroceso de {abs(plan['entrada'] / plan['entrada_mercado'] - 1) * 100:.1f}%")
 else:
     panel += row("Entrada proyectada", money(plan["entrada_proyectada"]), "#93c5fd",
@@ -201,21 +208,21 @@ panel += row("Objetivo 1", money(plan["objetivo_1"]), GREEN,
 panel += row("Objetivo 2", money(plan["objetivo_2"]), GREEN,
              f"R/B {plan['rr_2']:.1f} · {abs(plan['objetivo_2'] / plan['entrada'] - 1) * 100:.1f}%"
              + (f" · ~{unidad(TF, times['sesiones_a_objetivo_2'])}" if times else ""))
-panel += row("Tamaño", f"{plan['acciones']} acc.", "#e5e7eb",
+panel += row("Tamaño", f"{plan['acciones']} acc.", "#E6EDF3",
              f"capital {money(plan['capital_requerido'])} · riesgo {money(plan['riesgo_monetario'])}")
 panel += "<div class='mp-h'>Niveles</div>"
 panel += row("POC (180d)", money(vpa.get("poc")), AMBER)
-panel += row("Área de valor", f"{money(vpa.get('val'))} – {money(vpa.get('vah'))}", "#e5e7eb")
+panel += row("Área de valor", f"{money(vpa.get('val'))} – {money(vpa.get('vah'))}", "#E6EDF3")
 if plan["soportes"]:
     panel += row("Soporte cercano", money(plan["soportes"][0][0]), "#26a69a")
 if plan["resistencias"]:
     panel += row("Resistencia cercana", money(plan["resistencias"][0][0]), "#ef5350")
-panel += row("ATR (14)", f"{money(plan['atr'])} · {plan['atr'] / last['Close'] * 100:.1f}%", "#e5e7eb")
+panel += row("ATR (14)", f"{money(plan['atr'])} · {plan['atr'] / last['Close'] * 100:.1f}%", "#E6EDF3")
 panel += "</div>"
 if MOBILE:
     panel = panel.replace("<div class='mp'>", "<div class='mp mp-cols'>", 1)
 right.markdown(panel, unsafe_allow_html=True)
-chart_box.plotly_chart(_fig, use_container_width=True, config=plot_config(MOBILE))
+chart_box.plotly_chart(_fig, width="stretch", config=plot_config(MOBILE))
 
 # ---------------------------------------------------------------- informe IA + fundamentales clave
 la, lb = (st.container(), st.container()) if MOBILE else st.columns([1.55, 1], gap="small")
@@ -227,15 +234,15 @@ with la:
         _is_admin = (_prof or {}).get("role") == "admin"
         _gem_key = store.secret("GEMINI_API_KEY")
         _cl_key = cfg["anthropic_key"]
-        b1, b2, b3 = st.columns(3)
-        go_claude = b1.button("Claude", icon=":material/auto_awesome:", type="primary", use_container_width=True,
+        b1, b2, b3 = st.columns(3, vertical_alignment="bottom")
+        go_claude = b1.button("Claude", icon=":material/auto_awesome:", type="primary", width="stretch",
                               disabled=not (_is_admin and _cl_key),
                               help=("Informe con Claude (Anthropic)" if _is_admin else
                                     "Disponible solo para el administrador") if _cl_key else "Falta ANTHROPIC_API_KEY")
         go_gemini = b2.button("Gemini", icon=":material/bolt:", type="primary" if not _is_admin else "secondary",
-                              use_container_width=True, disabled=not _gem_key,
+                              width="stretch", disabled=not _gem_key,
                               help="Informe con Gemini Flash (Google, plan gratuito)" if _gem_key else "Falta GEMINI_API_KEY")
-        go_rules = b3.button("Sin IA", icon=":material/calculate:", use_container_width=True,
+        go_rules = b3.button("Sin IA", icon=":material/calculate:", width="stretch",
                              help="Síntesis cuantitativa por reglas (no usa IA)")
         go = go_claude or go_gemini or go_rules
         engine = "claude" if go_claude else ("gemini" if go_gemini else "reglas")
@@ -296,9 +303,9 @@ with la:
                 if isinstance(x, dict) else f"<li>{E(str(x))}</li>" for x in V.get("senales_de_cambio", [])) + "</ul>",
                 unsafe_allow_html=True)
             f1, f2 = st.columns(2)
-            f1.markdown("<div class='sec2' style='color:#22c55e'>A favor</div><ul class='tl'>" +
+            f1.markdown("<div class='sec2' style='color:#26A69A'>A favor</div><ul class='tl'>" +
                         "".join(f"<li>{E(str(x))}</li>" for x in V.get("factores_a_favor", [])) + "</ul>", unsafe_allow_html=True)
-            f2.markdown("<div class='sec2' style='color:#ef4444'>Riesgos</div><ul class='tl'>" +
+            f2.markdown("<div class='sec2' style='color:#EF5350'>Riesgos</div><ul class='tl'>" +
                         "".join(f"<li>{E(str(x))}</li>" for x in V.get("riesgos", [])) + "</ul>", unsafe_allow_html=True)
             extra = f"<b>Invalidación:</b> {E(str(V.get('invalidacion', '')))}"
             if V.get("catalizadores"):
@@ -352,7 +359,7 @@ with t1:
     sty = (sig.style.format({"Señal": "{:+.2f}", "Aporte": "{:+.2f}", "Peso": "{:.1f}"})
            .map(colr, subset=["Señal", "Aporte"])
            .map(lambda s: colr(1 if s.startswith("▲") else -1 if s.startswith("▼") else 0), subset=["Sesgo"]))
-    st.dataframe(sty, hide_index=True, use_container_width=True)
+    st.dataframe(sty, hide_index=True, width="stretch")
     st.caption("Cada indicador emite una señal de −1 a +1 ponderada por su fiabilidad; el score técnico es el promedio ponderado × 100.")
 
 with t6:
@@ -375,7 +382,7 @@ with t6:
             colr2 = lambda v: f"color: {GREEN if v > 0.15 else RED if v < -0.15 else NEUTRAL}; font-weight: 600"
             st.dataframe(fdf.style.format({"Impacto": "{:+.2f}"}).map(colr2, subset=["Impacto"])
                          .map(lambda s: colr2(1 if s.startswith("▲") else -1 if s.startswith("▼") else 0), subset=["Efecto"]),
-                         hide_index=True, use_container_width=True)
+                         hide_index=True, width="stretch")
         c1, c2 = st.columns([1, 1.3])
         with c1:
             if fv.get("signals"):
@@ -384,12 +391,12 @@ with t6:
         with c2:
             st.markdown("**Cambios de rating de analistas**")
             if fv.get("ratings"):
-                st.dataframe(pd.DataFrame(fv["ratings"]), hide_index=True, use_container_width=True)
+                st.dataframe(pd.DataFrame(fv["ratings"]), hide_index=True, width="stretch")
             else:
                 st.caption("Sin cambios recientes.")
         with st.expander("Ficha completa de Finviz"):
             st.dataframe(pd.DataFrame([{"Campo": k_, "Valor": v} for k_, v in fv["snapshot"].items()]),
-                         hide_index=True, use_container_width=True)
+                         hide_index=True, width="stretch")
         st.markdown(f"[Ver {ticker} en Finviz ↗](https://finviz.com/quote.ashx?t={ticker.replace('-', '.')})")
 
 with t3:
@@ -407,22 +414,22 @@ with t3:
         st.markdown(f"**Backtest de la señal** (entrada cuando el puntaje cruza ±40, 5 años, sin solapamiento): "
                     f"{bt['n']} operaciones · acierto {bt['win_rate'] * 100:.0f}% · R medio {bt['avg_R']:+.2f} · "
                     f"profit factor {bt['profit_factor']:.2f} · total {bt['total_R']:+.1f} R · drawdown máx {bt['max_dd_R']:.1f} R")
-        st.plotly_chart(equity_chart(bt["trades"]), use_container_width=True)
+        st.plotly_chart(equity_chart(bt["trades"]), width="stretch")
     else:
         st.info("La señal no generó operaciones en el periodo analizado.")
 
 with t4:
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3 = st.columns(3, vertical_alignment="bottom")
     c1.markdown("**Soportes**")
     c1.dataframe(pd.DataFrame([{"Nivel": f"${lv:,.2f}", "Toques": n, "Distancia": f"{(lv / last['Close'] - 1) * 100:+.1f}%"}
-                               for lv, n in plan["soportes"]]), hide_index=True, use_container_width=True)
+                               for lv, n in plan["soportes"]]), hide_index=True, width="stretch")
     c2.markdown("**Resistencias**")
     c2.dataframe(pd.DataFrame([{"Nivel": f"${lv:,.2f}", "Toques": n, "Distancia": f"{(lv / last['Close'] - 1) * 100:+.1f}%"}
-                               for lv, n in plan["resistencias"]]), hide_index=True, use_container_width=True)
+                               for lv, n in plan["resistencias"]]), hide_index=True, width="stretch")
     fib = plan["fibonacci"]
     c3.markdown(f"**Fibonacci** (tramo {fib['tramo']} 6 meses)")
     c3.dataframe(pd.DataFrame([{"Retroceso": k_, "Precio": f"${v:,.2f}"} for k_, v in fib["niveles"].items()]),
-                 hide_index=True, use_container_width=True)
+                 hide_index=True, width="stretch")
 
 with t5:
     if A["news"]:

@@ -17,7 +17,7 @@ with st.form("buscar_simbolo", border=True):
     _q = b1.text_input("Analizar un símbolo", placeholder="Acción, ETF o cripto: NVDA, SPY, BRK-B, BTC-USD…",
                        help="Va directo al análisis sin escanear el mercado. Para cripto usa el par con -USD "
                             "(BTC-USD, ETH-USD, SOL-USD).")
-    _go = b2.form_submit_button("Analizar", type="primary", use_container_width=True)
+    _go = b2.form_submit_button("Analizar", type="primary", width="stretch")
 if _go:
     _sym = (_q or "").strip().upper().replace(" ", "").replace("/", "-").lstrip("$")
     if not re.fullmatch(r"[A-Z0-9][A-Z0-9.\-]{0,14}", _sym or ""):
@@ -53,7 +53,7 @@ def _logo(url, ticker):
 
 
 st.markdown(f"""<style>
-.mv-logo{{position:relative;width:28px;height:28px;border-radius:50%;background:#1f2937;color:#c9d1d9;font:600 10px Inter,sans-serif;
+.mv-logo{{position:relative;width:28px;height:28px;border-radius:50%;background:#21262D;color:#C9D1D9;font:600 10px Inter,sans-serif;
   display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none}}
 .mv-logo img{{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#fff;border-radius:50%}}
 .mv-px{{text-align:right;font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:.92rem;padding-top:6px}}
@@ -89,7 +89,7 @@ def _panel(col, tipo: str, titulo: str, ayuda: str):
             c0, c1, c2, c3 = st.columns([0.32, 2.6, 1.15, 0.95], vertical_alignment="center")
             c0.markdown(_logo(r.get("logo"), r["ticker"]), unsafe_allow_html=True)
             if c1.button(r["nombre"], key=f"mv_{tipo}_{mercado}_{i}", type="tertiary",
-                         help=f"Analizar {r['ticker']}", use_container_width=True):
+                         help=f"Analizar {r['ticker']}", width="stretch"):
                 st.session_state.ticker = r["ticker"]
                 st.switch_page("views/analisis.py")
             c2.markdown(f"<div class='mv-px'>{_px(r.get('precio'))}</div>", unsafe_allow_html=True)
@@ -139,7 +139,7 @@ def _prices(tickers: tuple):
 
 
 with st.container(border=True):
-    c1, c2, c3, c4 = st.columns([2.2, 1, 1, 1])
+    c1, c2, c3, c4 = st.columns([2.2, 1, 1, 1], vertical_alignment="bottom")
     uni = c1.selectbox("Universo", data.UNIVERSOS, index=0)
     IS_CRYPTO = uni == data.CRIPTO_UNIVERSO
     min_px = c2.number_input("Precio mínimo ($)", 0.0, 1000.0, 0.0 if IS_CRYPTO else 5.0, 1.0, key=f"minpx_{IS_CRYPTO}")
@@ -148,7 +148,7 @@ with st.container(border=True):
     custom = ""
     n_cr, crit = 25, "Capitalización de mercado"
     if IS_CRYPTO:
-        k1, k2 = st.columns([1, 2])
+        k1, k2 = st.columns([1, 2], vertical_alignment="bottom")
         n_cr = k1.number_input("Cantidad de criptomonedas", 5, 100, 25, 5,
                                help="No se escanea todo el mercado cripto: solo las N primeras según el criterio.")
         crit = k2.selectbox("Criterio de selección (ranking de CoinGecko)", list(crypto.CRITERIOS))
@@ -165,7 +165,7 @@ with st.container(border=True):
                 "(luego queda en caché 1 hora). El filtro de liquidez descarta las acciones poco negociadas.")
     if uni.startswith("Movers") and not cfg["alphavantage_key"]:
         st.warning("Este universo usa Alpha Vantage: agrega tu API key gratuita en ⚙️ Configuración.")
-    run = st.button("🔍  Escanear mercado", type="primary", use_container_width=True)
+    run = st.button("🔍  Escanear mercado", type="primary", width="stretch")
 
 if run:
     try:
@@ -213,7 +213,7 @@ n_l, n_s = int((res["Lado"] == "LONG").sum()), int((res["Lado"] == "SHORT").sum(
 pct_up = res["Sobre SMA200"].mean() * 100
 best = base.sort_values("Ranking score", ascending=False).iloc[0] if len(base) else None
 st.markdown(kpi_row([
-    ("Criptomonedas evaluadas" if IS_CR else "Acciones evaluadas", f"{len(res):,}", f"{meta.get('universo', '')} · {meta.get('fecha', '')}", "#e5e7eb"),
+    ("Criptomonedas evaluadas" if IS_CR else "Acciones evaluadas", f"{len(res):,}", f"{meta.get('universo', '')} · {meta.get('fecha', '')}", "#E6EDF3"),
     ("Señales de compra", f"{int(res['Señal'].isin(['COMPRA FUERTE', 'COMPRA']).sum())}",
      f"{int((res['Señal'] == 'COMPRA FUERTE').sum())} fuertes", GREEN),
     ("Señales de venta en corto", f"{int(res['Señal corto'].isin(['VENTA FUERTE', 'VENTA']).sum())}",
@@ -226,7 +226,7 @@ st.markdown(kpi_row([
 
 # ---------------- Mapa de oportunidades ----------------
 st.write("")
-m1, m2, m3 = st.columns([1.6, 1.4, 3])
+m1, m2, m3 = st.columns([1.6, 1.4, 3], vertical_alignment="bottom")
 mode = m1.segmented_control("Visualización", ["Mapa de calor", "Dispersión"], default="Mapa de calor") or "Mapa de calor"
 size_by = m2.segmented_control("Tamaño", ["Volumen $", "Market cap"], default="Volumen $",
                                help="Market cap solo está disponible en los universos de Finviz") or "Volumen $"
@@ -243,12 +243,12 @@ if mode == "Mapa de calor":
         st.markdown(f"<div class='sec2' style='color:{GREEN}'>▲ Candidatas a compra (long) · color = valor esperado</div>",
                     unsafe_allow_html=True)
         if len(L):
-            st.plotly_chart(opportunity_treemap(L, "LONG", 420 if MOBILE else 560), use_container_width=True,
+            st.plotly_chart(opportunity_treemap(L, "LONG", 420 if MOBILE else 560), width="stretch",
                             config=plot_config(MOBILE))
     with cS:
         st.markdown(f"<div class='sec2' style='color:{RED}'>▼ Candidatas a venta en corto (short)</div>", unsafe_allow_html=True)
         if len(S):
-            st.plotly_chart(opportunity_treemap(S, "SHORT", 420 if MOBILE else 560), use_container_width=True,
+            st.plotly_chart(opportunity_treemap(S, "SHORT", 420 if MOBILE else 560), width="stretch",
                             config=plot_config(MOBILE))
     st.caption("Cada acción va al lado con mayor valor esperado histórico. Verde o rojo intenso = mayor ventaja; gris = sin ventaja "
                "(valor esperado ≤ 0). Tamaño = " + ("capitalización" if size_by == "Market cap" else "volumen negociado en $") + ".")
@@ -259,7 +259,7 @@ else:
     fig.update_layout(paper_bgcolor=BG, plot_bgcolor=BG, margin=dict(l=10, r=10, t=10, b=10))
     fig.update_xaxes(gridcolor=BORDER)
     fig.update_yaxes(gridcolor=BORDER, tickformat=".0%")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 # ---------------- Ranking ----------------
 st.write("")
@@ -338,7 +338,7 @@ if "Score técnico" in vt.columns:
 if "Fuerza relativa" in vt.columns:
     sty = sty.map(rs_css, subset=["Fuerza relativa"])
 sel = st.dataframe(
-    sty, hide_index=True, use_container_width=True, height=min(38 + 35 * max(len(vt), 1), 460 if MOBILE else 720),
+    sty, hide_index=True, width="stretch", height=min(38 + 35 * max(len(vt), 1), 460 if MOBILE else 720),
     on_select="rerun", selection_mode="multi-row", key=f"scan_table_{is_long}",
     column_config={"#": st.column_config.NumberColumn(width="small"), **MCFG},
 )
@@ -346,11 +346,11 @@ st.caption("Probabilidad: verde = ventaja de compra · rojo = ventaja de venta e
            "difieren ≤ 5 puntos). Más intenso = mayor probabilidad.")
 picked = view.iloc[sel.selection.rows] if sel and sel.selection.rows else view.iloc[0:0]
 
-b1, b2, b3 = st.columns([1.3, 1.3, 3])
-if b1.button(f"⭐ Agregar a watchlist ({len(picked)})", disabled=picked.empty, type="primary", use_container_width=True):
+b1, b2, b3 = st.columns([1.3, 1.3, 3], vertical_alignment="bottom")
+if b1.button(f"⭐ Agregar a watchlist ({len(picked)})", disabled=picked.empty, type="primary", width="stretch"):
     n = store.add_to_watchlist(picked.to_dict("records"))
     st.toast(f"{n} acción(es) agregadas a tu watchlist", icon="⭐")
-if b2.button("📊 Analizar selección", disabled=len(picked) != 1, use_container_width=True,
+if b2.button("📊 Analizar selección", disabled=len(picked) != 1, width="stretch",
              help="Selecciona una sola fila"):
     st.session_state.ticker = picked.iloc[0]["Ticker"]
     st.switch_page("views/analisis.py")

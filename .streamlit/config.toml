@@ -1,2 +1,33 @@
 [browser]
 gatherUsageStats = false
+
+# Sistema de diseño XStock (ver "Desarrollo visual de app" en el proyecto):
+# fondo industrial, paneles con borde sutil, acento cobalto solo para estados activos y acción principal,
+# verde/rojo desaturados para datos, Inter para texto y JetBrains Mono para números.
+[theme]
+base = "dark"
+primaryColor = "#2962FF"
+backgroundColor = "#0D1117"
+secondaryBackgroundColor = "#161B22"
+textColor = "#E6EDF3"
+borderColor = "#30363D"
+dataframeBorderColor = "#30363D"
+dataframeHeaderBackgroundColor = "#161B22"
+linkColor = "#5B85FF"
+linkUnderline = false
+redColor = "#EF5350"
+greenColor = "#26A69A"
+blueColor = "#2962FF"
+font = "Inter, sans-serif"
+codeFont = "'JetBrains Mono', monospace"
+baseFontSize = 14
+headingFontSizes = ["1.6rem", "1.3rem", "1.1rem", "1rem", "0.95rem", "0.9rem"]
+headingFontWeights = [700, 600, 600, 600, 600, 600]
+baseRadius = "6px"
+buttonRadius = "6px"
+showWidgetBorder = true
+showSidebarBorder = true
+
+[theme.sidebar]
+backgroundColor = "#0D1117"
+secondaryBackgroundColor = "#161B22"

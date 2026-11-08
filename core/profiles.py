@@ -19,10 +19,10 @@ MA_TYPES = ["EMA", "SMA", "WMA"]
 
 BASE_SETTINGS = {
     "mas": [
-        {"tipo": "EMA", "periodo": 9, "color": "#facc15"},
-        {"tipo": "EMA", "periodo": 21, "color": "#ef4444"},
-        {"tipo": "SMA", "periodo": 50, "color": "#22c55e"},
-        {"tipo": "SMA", "periodo": 200, "color": "#a855f7"},
+        {"tipo": "EMA", "periodo": 9, "color": "#FFEB3B"},
+        {"tipo": "EMA", "periodo": 21, "color": "#FF9800"},
+        {"tipo": "SMA", "periodo": 50, "color": "#E91E63"},
+        {"tipo": "SMA", "periodo": 200, "color": "#B2B5BE"},
     ],
     "rsi": {"periodo": 14, "sobrecompra": 70, "sobreventa": 30},
     "macd": {"rapida": 12, "lenta": 26, "senal": 9},
@@ -32,6 +32,8 @@ BASE_SETTINGS = {
     # Vista del gráfico: temporalidad de velas y rango visible elegidos por el usuario (uno por temporalidad).
     # No interviene en los cálculos: se guarda junto a los ajustes para recordarlo entre sesiones.
     "vista": {"rangos": {}},
+    # Panel de indicadores (menú USER › Indicadores): ver core/indicators.py
+    "indicadores": {},
 }
 
 
@@ -49,10 +51,10 @@ PERFILES: dict[str, dict] = {
     "day": {
         "nombre": "Day Trader", "icono": "⚡", "tfs": ["10m", "1h"], "tf": "10m",
         "descripcion": "Operaciones de horas a 2–3 días. Prioriza VWAP, la media rápida, RSI y volumen relativo.",
-        "settings": _s(mas=[{"tipo": "EMA", "periodo": 9, "color": "#facc15"},
-                            {"tipo": "EMA", "periodo": 20, "color": "#ef4444"},
-                            {"tipo": "EMA", "periodo": 50, "color": "#22c55e"},
-                            {"tipo": "SMA", "periodo": 200, "color": "#a855f7"}],
+        "settings": _s(mas=[{"tipo": "EMA", "periodo": 9, "color": "#FFEB3B"},
+                            {"tipo": "EMA", "periodo": 20, "color": "#FF9800"},
+                            {"tipo": "EMA", "periodo": 50, "color": "#E91E63"},
+                            {"tipo": "SMA", "periodo": 200, "color": "#B2B5BE"}],
                        rsi={"periodo": 9}, bollinger={"periodo": 20}, fibonacci={"velas": 78}),
         "prioridad": ["estado", "vwap", "ma_rapida", "rsi", "vol_rel", "atr", "entrada", "stop", "tp1"],
     },
@@ -65,10 +67,10 @@ PERFILES: dict[str, dict] = {
     "position": {
         "nombre": "Position Trader", "icono": "🏔️", "tfs": ["1D", "1W"], "tf": "1W",
         "descripcion": "Posiciones de meses. Prioriza la tendencia de largo plazo, el puntaje combinado y la probabilidad.",
-        "settings": _s(mas=[{"tipo": "EMA", "periodo": 10, "color": "#facc15"},
-                            {"tipo": "EMA", "periodo": 20, "color": "#ef4444"},
-                            {"tipo": "SMA", "periodo": 50, "color": "#22c55e"},
-                            {"tipo": "SMA", "periodo": 100, "color": "#a855f7"}],
+        "settings": _s(mas=[{"tipo": "EMA", "periodo": 10, "color": "#FFEB3B"},
+                            {"tipo": "EMA", "periodo": 20, "color": "#FF9800"},
+                            {"tipo": "SMA", "periodo": 50, "color": "#E91E63"},
+                            {"tipo": "SMA", "periodo": 100, "color": "#B2B5BE"}],
                        fibonacci={"velas": 104}),
         "prioridad": ["estado", "tendencia", "combinado", "prob", "entrada", "tp2", "objetivo_analistas", "piotroski"],
     },
@@ -122,7 +124,7 @@ def ma_label(settings: dict | None, slot: str) -> str:
 
 
 def ma_color(settings: dict | None, slot: str) -> str:
-    base = {"EMA9": "#facc15", "EMA21": "#ef4444", "SMA50": "#22c55e", "SMA200": "#a855f7"}
+    base = {"EMA9": "#FFEB3B", "EMA21": "#FF9800", "SMA50": "#E91E63", "SMA200": "#B2B5BE"}
     if not settings:
         return base[slot]
     return settings["mas"][MA_SLOTS.index(slot)].get("color") or base[slot]
@@ -130,7 +132,7 @@ def ma_color(settings: dict | None, slot: str) -> str:
 
 def engine_settings(settings: dict) -> dict:
     """Ajustes que usa el motor de cálculo (sin la vista del gráfico, que no cambia los indicadores)."""
-    return {k: v for k, v in settings.items() if k != "vista"}
+    return {k: v for k, v in settings.items() if k not in ("vista", "indicadores")}
 
 
 def save_user_view(tf: str | None = None, rango: str | None = None, settings: dict | None = None,

@@ -179,17 +179,17 @@ LANDING_CSS = brand.FONTS + """
 <style>
 section[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [data-testid="stExpandSidebarButton"] { display: none !important; }
 .block-container { max-width: 440px !important; padding-top: 6vh !important; }
-.qd-card { background: #111A2C; border: 1px solid #22304A; border-radius: 14px; padding: 24px 22px 6px; }
+.qd-card { background: #161B22; border: 1px solid #30363D; border-radius: 14px; padding: 24px 22px 6px; }
 .qd-logo { margin-bottom: 10px; }
-.qd-tag { color: #8b95a7; font-family: 'JetBrains Mono', monospace; font-size: .74rem; margin-top: 2px; }
+.qd-tag { color: #8B949E; font-family: 'JetBrains Mono', monospace; font-size: .74rem; margin-top: 2px; }
 .qd-inv { border: 1px solid #2563eb; background: rgba(37,99,235,.08); border-radius: 10px; padding: 12px; text-align: center;
           margin: 18px 0 4px; font-size: .9rem; }
-.qd-inv small { display: block; color: #8b95a7; font-family: 'JetBrains Mono', monospace; font-size: .72rem; margin-top: 4px; }
+.qd-inv small { display: block; color: #8B949E; font-family: 'JetBrains Mono', monospace; font-size: .72rem; margin-top: 4px; }
 .qd-h { font-size: 1.35rem; font-weight: 600; margin: 16px 0 2px; }
-.qd-sub { color: #8b95a7; font-size: .85rem; margin-bottom: 6px; }
+.qd-sub { color: #8B949E; font-size: .85rem; margin-bottom: 6px; }
 .qd-or { display:flex; align-items:center; gap:10px; color:#6b7280; font-size:.75rem; margin: 8px 0; }
-.qd-or:before, .qd-or:after { content:""; flex:1; border-top:1px solid #1f2937; }
-.qd-err { border: 1px solid #ef4444; background: rgba(239,68,68,.08); border-radius: 10px; padding: 12px; font-size: .88rem; }
+.qd-or:before, .qd-or:after { content:""; flex:1; border-top:1px solid #30363D; }
+.qd-err { border: 1px solid #EF5350; background: rgba(239,83,80,.08); border-radius: 10px; padding: 12px; font-size: .88rem; }
 div[data-testid="stForm"] { border: 0; padding: 0; }
 </style>
 """
@@ -211,7 +211,7 @@ def _head(inv: dict | None, title: str, sub: str) -> None:
                f"<small>Acceso beta — regístrate para reclamar tu lugar.</small></div>")
     elif inv:
         box = f"<div class='qd-err' style='margin-top:14px'>Esta invitación está {E(db.invite_status(inv).lower())}. Pide un nuevo enlace.</div>"
-    st.markdown(LANDING_CSS + f"<div class='qd-card'><div class='qd-logo'>{brand.wordmark(38, '#111A2C', tagline=True)}</div>"
+    st.markdown(LANDING_CSS + f"<div class='qd-card'><div class='qd-logo'>{brand.wordmark(38, '#161B22', tagline=True)}</div>"
                 f"<div class='qd-tag'>Escáner · análisis técnico y fundamental · IA</div>{box}"
                 f"<div class='qd-h'>{title}</div><div class='qd-sub'>{sub}</div></div>", unsafe_allow_html=True)
 
@@ -219,7 +219,7 @@ def _head(inv: dict | None, title: str, sub: str) -> None:
 def _google_button() -> None:
     if google_enabled():
         st.markdown("<div class='qd-or'>O</div>", unsafe_allow_html=True)
-        if st.button("Continuar con Google", icon=":material/account_circle:", use_container_width=True):
+        if st.button("Continuar con Google", icon=":material/account_circle:", width="stretch"):
             st.login("google")
 
 
@@ -234,13 +234,13 @@ def _screen_signup(code: str | None) -> None:
     if step == "verify":
         with st.form("verify"):
             c = st.text_input("Código de verificación", max_chars=6, placeholder="123456")
-            ok = st.form_submit_button("Verificar y entrar", type="primary", use_container_width=True)
+            ok = st.form_submit_button("Verificar y entrar", type="primary", width="stretch")
         if ok:
             if check_code("signup", c):
                 _finish_signup(st.session_state.pop("signup_data"))
             else:
                 st.error("Código incorrecto o vencido.")
-        if st.button("Volver", use_container_width=True):
+        if st.button("Volver", width="stretch"):
             st.session_state.pop("signup_step", None)
             st.rerun()
         return
@@ -250,7 +250,7 @@ def _screen_signup(code: str | None) -> None:
                               value=(inv or {}).get("email") or "")
         pw = st.text_input("Contraseña", type="password", placeholder="Contraseña (mínimo 8 caracteres)",
                            label_visibility="collapsed")
-        ok = st.form_submit_button("Crear cuenta", type="primary", use_container_width=True)
+        ok = st.form_submit_button("Crear cuenta", type="primary", width="stretch")
     if ok:
         email = email.strip().lower()
         err = _validate_signup(name, email, pw, code)
@@ -266,7 +266,7 @@ def _screen_signup(code: str | None) -> None:
             else:
                 _finish_signup(data)
     _google_button()
-    if st.button("¿Ya tienes cuenta? Inicia sesión", type="tertiary", use_container_width=True):
+    if st.button("¿Ya tienes cuenta? Inicia sesión", type="tertiary", width="stretch"):
         st.session_state["auth_view"] = "login"
         st.rerun()
 
@@ -319,7 +319,7 @@ def _screen_login() -> None:
     with st.form("login"):
         email = st.text_input("Correo", placeholder="Correo electrónico", label_visibility="collapsed")
         pw = st.text_input("Contraseña", type="password", placeholder="Contraseña", label_visibility="collapsed")
-        ok = st.form_submit_button("Entrar", type="primary", use_container_width=True)
+        ok = st.form_submit_button("Entrar", type="primary", width="stretch")
     if ok:
         tries = st.session_state.get("_login_tries", 0)
         if tries >= 6:
@@ -336,10 +336,10 @@ def _screen_login() -> None:
                 st.error("Correo o contraseña incorrectos.")
     _google_button()
     c1, c2 = st.columns(2)
-    if c1.button("Olvidé mi contraseña", type="tertiary", use_container_width=True):
+    if c1.button("Olvidé mi contraseña", type="tertiary", width="stretch"):
         st.session_state["reset_step"] = "ask"
         st.rerun()
-    if c2.button("Tengo una invitación", type="tertiary", use_container_width=True):
+    if c2.button("Tengo una invitación", type="tertiary", width="stretch"):
         st.session_state["auth_view"] = "signup"
         st.rerun()
 
@@ -349,7 +349,7 @@ def _screen_reset(step: str) -> None:
         _head(None, "Restablecer contraseña", "")
         st.info("Pide al administrador que restablezca tu contraseña desde el panel de usuarios. "
                 "Te dará una contraseña temporal.")
-        if st.button("Volver", use_container_width=True):
+        if st.button("Volver", width="stretch"):
             st.session_state.pop("reset_step", None)
             st.rerun()
         return
@@ -357,7 +357,7 @@ def _screen_reset(step: str) -> None:
         _head(None, "Restablecer contraseña", "Te enviaremos un código a tu correo.")
         with st.form("reset_ask"):
             email = st.text_input("Correo", placeholder="Correo electrónico", label_visibility="collapsed")
-            ok = st.form_submit_button("Enviar código", type="primary", use_container_width=True)
+            ok = st.form_submit_button("Enviar código", type="primary", width="stretch")
         if ok:
             email = email.strip().lower()
             if db.get_profile(email) and send_code(email, "reset"):
@@ -372,7 +372,7 @@ def _screen_reset(step: str) -> None:
             c = st.text_input("Código", max_chars=6, placeholder="123456", label_visibility="collapsed")
             pw = st.text_input("Nueva contraseña", type="password", placeholder="Nueva contraseña (mín. 8)",
                                label_visibility="collapsed")
-            ok = st.form_submit_button("Guardar y entrar", type="primary", use_container_width=True)
+            ok = st.form_submit_button("Guardar y entrar", type="primary", width="stretch")
         if ok:
             em = st.session_state.get("reset_email", "")
             if len(pw) < 8:
@@ -386,7 +386,7 @@ def _screen_reset(step: str) -> None:
                 st.rerun()
             else:
                 st.error("Código incorrecto o vencido.")
-    if st.button("Volver", use_container_width=True):
+    if st.button("Volver", width="stretch"):
         st.session_state.pop("reset_step", None)
         st.rerun()
 
@@ -394,7 +394,7 @@ def _screen_reset(step: str) -> None:
 def _screen_message(title: str, msg: str, email: str) -> None:
     _head(None, title, f"Cuenta: <b>{E(email)}</b>")
     st.markdown(f"<div class='qd-err'>{msg}</div>", unsafe_allow_html=True)
-    if st.button("Salir", use_container_width=True):
+    if st.button("Salir", width="stretch"):
         logout()
 
 
@@ -441,7 +441,7 @@ def gate() -> dict:
             _head(None, "Acceso privado", "Ingresa tu contraseña.")
             with st.form("pwd"):
                 p = st.text_input("Contraseña", type="password")
-                if st.form_submit_button("Entrar", type="primary", use_container_width=True):
+                if st.form_submit_button("Entrar", type="primary", width="stretch"):
                     if p == pwd:
                         st.session_state.auth_ok = True
                         st.rerun()
@@ -483,7 +483,7 @@ def gate() -> dict:
             _head(None, "Necesitas una invitación", f"Entraste como <b>{E(email)}</b>.")
             st.markdown(f"<div class='qd-err'>{E(err or 'No encontramos una invitación para tu cuenta. Abre el enlace que te enviaron.')}</div>",
                         unsafe_allow_html=True)
-            if st.button("Salir", use_container_width=True):
+            if st.button("Salir", width="stretch"):
                 logout()
             st.stop()
         p = db.redeem_invite(inv, email, ident.get("name") or "", ident["provider"])

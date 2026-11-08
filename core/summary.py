@@ -6,7 +6,9 @@ import math
 from .profiles import get as get_profile, ma_label
 from .timeframes import unidad
 
-GREEN, RED, AMBER, NEUTRAL, BLUE = "#22c55e", "#ef4444", "#f59e0b", "#94a3b8", "#60a5fa"
+from .ui import AMBER, GREEN, NEUTRAL as BLUE, RED
+
+NEUTRAL = "#8B949E"
 
 
 def _ok(x):
@@ -94,12 +96,19 @@ def cards(A: dict, plan: dict, times: dict, profile_key: str) -> list[dict]:
 
 
 def html(cards_: list[dict], title: str) -> str:
-    cells = "".join(
-        f"<div style='background:#111a2c;border:1px solid #1f2b44;border-radius:10px;padding:9px 11px'>"
-        f"<div style='font-size:11px;color:#8fa3bf;text-transform:uppercase;letter-spacing:.06em'>{c['t']}</div>"
-        f"<div style='font-size:17px;font-weight:700;color:{c['c']};margin-top:2px'>{c['v']}</div>"
-        f"<div style='font-size:11px;color:#94a3b8;margin-top:1px'>{c['s']}</div></div>"
-        for c in cards_)
+    """Resumen ejecutivo: tarjetas compactas (11–15 px), números en monoespaciada tabular. La primera tarjeta
+    (estado de la entrada) ocupa dos columnas porque su valor es texto."""
+    cells = []
+    for i, c in enumerate(cards_):
+        first = i == 0
+        val_css = ("font-family:Inter,sans-serif;font-size:14px;line-height:1.35" if first else
+                   "font-family:&quot;JetBrains Mono&quot;,monospace;font-variant-numeric:tabular-nums;font-size:15px;line-height:1.3")
+        cells.append(
+            f"<div style='background:#161B22;border:1px solid #30363D;border-radius:6px;padding:8px 10px;min-width:0;"
+            f"{'grid-column:span 2;' if first else ''}'>"
+            f"<div style='font-size:11.5px;color:#8B949E;line-height:1.3'>{c['t']}</div>"
+            f"<div style='{val_css};font-weight:600;color:{c['c']};margin-top:3px'>{c['v']}</div>"
+            f"<div style='font-size:11px;color:#8B949E;margin-top:2px;line-height:1.35'>{c['s']}</div></div>")
     return (f"<div class='sec' style='margin-top:6px'>{title}</div>"
-            f"<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:6px 0 10px'>"
-            f"{cells}</div>")
+            f"<div style='display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px;margin:6px 0 10px'>"
+            f"{''.join(cells)}</div>")

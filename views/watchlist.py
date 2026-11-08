@@ -15,9 +15,9 @@ st.markdown("<div class='muted'>Seguimiento de tus acciones: señal actualizada,
 wl = store.watchlist()
 
 with st.container(border=True):
-    a, b = st.columns([4, 1])
+    a, b = st.columns([4, 1], vertical_alignment="bottom")
     new = a.text_input("Agregar tickers manualmente", placeholder="p. ej. NVDA, AMD, PLTR", label_visibility="collapsed")
-    if b.button("➕ Agregar", use_container_width=True) and new.strip():
+    if b.button("➕ Agregar", width="stretch") and new.strip():
         tick = [t.strip().upper() for t in new.replace(";", ",").split(",") if t.strip()]
         n = store.add_to_watchlist([{"Ticker": t} for t in tick])
         st.toast(f"{n} agregadas", icon="⭐")
@@ -106,7 +106,7 @@ df = df.sort_values("Prob. ganancia", ascending=False, na_position="last").reset
 
 avg = df["Desde que se agregó %"].mean()
 st.markdown(kpi_row([
-    ("Activos en seguimiento", f"{len(df)}", "", "#e5e7eb"),
+    ("Activos en seguimiento", f"{len(df)}", "", "#E6EDF3"),
     ("Con señal de compra", f"{df['Señal actual'].isin(['COMPRA FUERTE', 'COMPRA']).sum()}", "", GREEN),
     ("En zona de entrada", f"{(df['Estado'] == '🎯 En zona de entrada').sum()}", "", NEUTRAL),
     ("Rendimiento medio", "—" if pd.isna(avg) else f"{avg:+.1f}%", "desde que se agregaron", GREEN if (avg or 0) >= 0 else RED),
@@ -153,7 +153,7 @@ def _tabla(sub: pd.DataFrame, kind: str):
            .map(lambda v: f"color: {RED}", subset=["Stop"])
            .map(lambda v: f"color: {GREEN}", subset=["Objetivo 1", "Objetivo 2"])
            .apply(lambda col: [prob_css(v, None, 1) for v in col], subset=["Prob. ganancia"]))
-    ev = st.dataframe(sty, hide_index=True, use_container_width=True, on_select="rerun", selection_mode="multi-row",
+    ev = st.dataframe(sty, hide_index=True, width="stretch", on_select="rerun", selection_mode="multi-row",
                       key=f"wl_table_{kind}", height=min(38 + 35 * len(vt), 640),
                       column_config={**mcfg, "Notas": st.column_config.TextColumn(width="medium")})
     rows_sel = ev.selection.rows if ev and ev.selection else []
@@ -166,16 +166,16 @@ if (~es_cr).any():
 if es_cr.any():
     _tabla(df[es_cr], "cripto")
 
-c2, c3, _ = st.columns([1, 1.2, 3])
-if c2.button("📊 Analizar", disabled=len(picked) != 1, use_container_width=True, help="Selecciona una sola fila"):
+c2, c3, _ = st.columns([1, 1.2, 3], vertical_alignment="bottom")
+if c2.button("📊 Analizar", disabled=len(picked) != 1, width="stretch", help="Selecciona una sola fila"):
     st.session_state.ticker = picked[0]
     st.switch_page("views/analisis.py")
-if c3.button(f"🗑️ Quitar ({len(picked)})", disabled=not picked, use_container_width=True):
+if c3.button(f"🗑️ Quitar ({len(picked)})", disabled=not picked, width="stretch"):
     store.remove_from_watchlist(picked)
     st.rerun()
 
 with st.expander("📝 Notas"):
-    ed = st.data_editor(df[["Ticker", "Notas"]], hide_index=True, use_container_width=True, key="wl_notas",
+    ed = st.data_editor(df[["Ticker", "Notas"]], hide_index=True, width="stretch", key="wl_notas",
                         disabled=["Ticker"], column_config={"Notas": st.column_config.TextColumn(width="large")})
     for _, r in ed.iterrows():
         if r["Notas"] != wl[r["Ticker"]].get("notas", ""):
