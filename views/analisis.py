@@ -77,7 +77,7 @@ try:
     with st.spinner(f"Analizando {ticker}…"):
         A = _run(ticker, cfg["tp_atr"], cfg["sl_atr"], int(cfg["horizonte"]) if TF == "1D" else None,
                  cfg["capital"], cfg["riesgo_pct"], cfg["alphavantage_key"],
-                 "alphavantage" if cfg.get("proveedor", "").startswith("Alpha") else "yahoo",
+                 "alphavantage" if cfg.get("proveedor", "").startswith("Alpha Vantage") else "yahoo",
                  TF, json.dumps(SETTINGS, sort_keys=True))
 except Exception as e:
     st.error(f"No se pudo analizar {ticker}: {e}")
@@ -114,7 +114,8 @@ st.markdown(
     f"<span class='muted'>{E(m.get('Nombre', ''))} · {E(m.get('Sector', ''))} · {E(m.get('Industria', ''))} · "
     f"cierre {d.index[-1]:%d-%b-%Y} · rango 52s {money(lo52)} – {money(hi52)}</span>"
     f"<span class='muted small' style='display:block;margin-top:2px'>🕒 {E(plan['marco_temporal'])} · "
-    f"perfil {E(PERF['icono'])} {E(PERF['nombre'])}</span></div>",
+    f"perfil {E(PERF['icono'])} {E(PERF['nombre'])}"
+    f"{' · datos ' + E(A.get('fuente')) if A.get('fuente') else ''}</span></div>",
     unsafe_allow_html=True)
 
 # ---------------------------------------------------------------- gráfico + panel vertical
