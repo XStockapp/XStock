@@ -6,26 +6,22 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
-BG, PANEL, BORDER = "#0b0f17", "#111827", "#1f2937"
-TXT, MUTED = "#e5e7eb", "#8b95a7"
-GREEN, RED, AMBER, BLUE, VIOLET = "#22c55e", "#ef4444", "#f59e0b", "#3b82f6", "#a78bfa"
-NEUTRAL = "#60a5fa"  # azul: mercado indeciso / pronóstico neutro
+# Paleta del sistema de diseño (igual que .streamlit/config.toml)
+BG, PANEL, BORDER = "#0D1117", "#161B22", "#30363D"
+TXT, MUTED = "#E6EDF3", "#8B949E"
+GREEN, RED, AMBER, BLUE, VIOLET = "#26A69A", "#EF5350", "#D29922", "#2962FF", "#A371F7"
+ACCENT = "#2962FF"  # cobalto: solo estados activos, foco y acción principal
+NEUTRAL = "#58A6FF"  # azul claro: mercado indeciso / pronóstico neutro
 
 CSS = f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
 html, body, [class*="css"], .stMarkdown, .stText {{ font-family: 'Inter', sans-serif; }}
-html {{ font-size: 14px; }}
-.block-container {{ padding: 2.2rem 1.2rem 1.5rem 1.2rem; max-width: 100%; }}
-h1, h2, h3 {{ letter-spacing: -0.02em; }}
-h2 {{ font-size: 1.35rem !important; }}
-[data-testid="stSidebar"] {{ background: #0d1320; border-right: 1px solid {BORDER}; }}
-[data-testid="stVerticalBlock"] {{ gap: 0.55rem; }}
-div[data-testid="stVerticalBlockBorderWrapper"] > div {{ padding: 0.15rem 0.1rem; }}
-/* botones primarios en el color de la marca (independiente de config.toml) */
-.stButton button[kind="primary"], .stDownloadButton button[kind="primary"], button[data-testid="stBaseButton-primary"] {{
-  background: #16a34a !important; border-color: #16a34a !important; color: #fff !important; }}
-.stButton button[kind="primary"]:hover, button[data-testid="stBaseButton-primary"]:hover {{ background: #15803d !important; }}
+.block-container {{ padding: 2.4rem 1.6rem 1.5rem 1.6rem; max-width: 100%; }}
+h1, h2, h3 {{ letter-spacing: -0.01em; line-height: 1.3; }}
+.stMarkdown p, .stCaption, [data-testid="stCaptionContainer"] {{ line-height: 1.5; }}
+[data-testid="stSidebar"] {{ border-right: 1px solid {BORDER}; }}
+code, .mono {{ font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }}
 .kpi {{ background: {PANEL}; border: 1px solid {BORDER}; border-radius: 8px; padding: 8px 10px; height: 100%; }}
 .kpi .lbl {{ color: {MUTED}; font-size: 0.66rem; text-transform: uppercase; letter-spacing: .07em; }}
 .kpi .val {{ font-family: 'JetBrains Mono', monospace; font-size: 1.1rem; font-weight: 600; margin-top: 2px; }}
@@ -53,7 +49,7 @@ div[data-testid="stVerticalBlockBorderWrapper"] > div {{ padding: 0.15rem 0.1rem
 .sec {{ font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: {MUTED}; font-weight: 600; padding-top: 6px; }}
 .sec2 {{ font-size: .7rem; text-transform: uppercase; letter-spacing: .07em; color: {MUTED}; font-weight: 600; margin: 8px 0 3px; }}
 .rep p.lead {{ font-size: .92rem; margin: 6px 0 4px; line-height: 1.45; }}
-.rep-b {{ background: #0f1626; border: 1px solid {BORDER}; border-radius: 6px; padding: 7px 9px; font-size: .8rem; line-height: 1.45; height: 100%; }}
+.rep-b {{ background: #0D1117; border: 1px solid {BORDER}; border-radius: 6px; padding: 7px 9px; font-size: .8rem; line-height: 1.45; height: 100%; }}
 ul.tl {{ margin: 0; padding-left: 16px; font-size: .8rem; line-height: 1.45; }}
 ul.tl li {{ margin: 2px 0; }}
 table.qt-tab {{ width: 100%; border-collapse: collapse; font-size: .78rem; }}
@@ -127,37 +123,133 @@ SIGNAL_COLORS = {"COMPRA FUERTE": GREEN, "COMPRA": "#4ade80", "REBOTE (contraten
 def _tag(fig, y, text, color, row=1, size=10.5):
     """Etiqueta de precio estilo TradingView en el eje derecho."""
     fig.add_annotation(xref="paper", x=1.0, xanchor="left", yref="y" if row == 1 else f"y{row}", y=y,
-                       text=f"<b>{text}</b>", showarrow=False, font=dict(color="#0b0f17", size=size),
+                       text=f"<b>{text}</b>", showarrow=False, font=dict(color="#0D1117", size=size),
                        bgcolor=color, borderpad=2, opacity=0.95)
+
+
+BY_DRAW: dict[str, str] = {}
+
+
+def _rgba_hex(c: str, o: float) -> str:
+    c = c.lstrip("#")
+    if len(c) != 6:
+        return c
+    return f"rgba({int(c[0:2], 16)},{int(c[2:4], 16)},{int(c[4:6], 16)},{max(0, min(1, o)):.2f})"
+
+
+_DASH = {"solid": None, "dashed": "dash", "dotted": "dot"}
+
+
+def _ln(st_: dict, w_extra: float = 0) -> dict:
+    return dict(color=_rgba_hex(st_["c"], st_["o"] / 100), width=float(st_["w"]) + w_extra, dash=_DASH.get(st_["s"]))
 
 
 def price_chart(d: pd.DataFrame, plan: dict | None = None, vp: dict | None = None, verdict: dict | None = None,
                 bars: int = 180, times: dict | None = None, show_bb: bool = False, show_vp: bool = True,
-                mobile: bool = False, tf: str = "1D", crypto: bool = False, settings: dict | None = None) -> go.Figure:
+                mobile: bool = False, tf: str = "1D", crypto: bool = False, settings: dict | None = None,
+                ind: dict | None = None) -> go.Figure:
+    """Gráfico de precio con el plan de operación y los indicadores activos del panel del usuario
+    (menú USER › Indicadores): cada uno con su color, opacidad, grosor y tipo de línea; un panel
+    inferior por cada oscilador activo."""
     import numpy as np
-    from .profiles import ma_color, ma_label
+
+    from . import indicators as I
     from .timeframes import future_index, rangebreaks
-    settings = settings or d.attrs.get("settings")
-    fx = lambda n: future_index(x[-1], n, tf, crypto)  # fecha de la vela n en el futuro
+    if not BY_DRAW:
+        BY_DRAW.update({c["id"]: c.get("draw") for c in I.CATALOGO})
+    settings = settings or d.attrs.get("settings") or {}
+    if ind is None:
+        ind = I.merge_config((settings or {}).get("indicadores"), None, settings or None)
+        if show_bb:
+            ind["bb"]["on"] = True
+        if not show_vp:
+            ind["vrvp"]["on"] = False
+    act = I.activos(ind, tf)
+    full = d
     d = d.tail(bars)
     x = d.index
-    fig = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.018,
-                        row_heights=[0.62, 0.12, 0.13, 0.13], specs=[[{"secondary_y": True}], [{}], [{}], [{}]])
-    # --- Volumen superpuesto (25% inferior del panel de precio) ---
-    vc = np.where(d["Close"] >= d["Open"], "rgba(38,166,154,0.28)", "rgba(239,83,80,0.28)")
-    fig.add_trace(go.Bar(x=x, y=d["Volume"], marker_color=vc, name="Volumen", showlegend=False,
-                         hovertemplate="Vol %{y:,.0f}<extra></extra>"), 1, 1, secondary_y=True)
-    # --- Velas y medias (EMA9 amarilla, EMA21 roja, SMA50 verde, SMA200 morada) ---
+    fx = lambda n: future_index(x[-1], n, tf, crypto)  # fecha de la vela n en el futuro
+
+    # paneles inferiores: un oscilador por panel, en el orden del catálogo
+    panes = []
+    for iid in act:
+        if BY_DRAW.get(iid) == "pane" and iid != "vol":
+            pn = I.pane(full, iid, ind[iid]["in"])
+            if pn:
+                panes.append((iid, pn))
+    n_rows = 1 + len(panes)
+    pane_h = 0.15 if len(panes) <= 3 else 0.11
+    price_h = max(0.42, 1 - pane_h * len(panes))
+    heights = [price_h] + [(1 - price_h) / len(panes)] * len(panes) if panes else [1.0]
+    fig = make_subplots(rows=n_rows, cols=1, shared_xaxes=True, vertical_spacing=0.018, row_heights=heights,
+                        specs=[[{"secondary_y": True}]] + [[{}] for _ in panes])
+
+    # --- Volumen superpuesto en la parte baja del precio (como TradingView) ---
+    if "vol" in act:
+        sv = ind["vol"]["st"]
+        p_vol = ind["vol"]["in"]
+        up_ = (d["Close"] >= d["Close"].shift()) if p_vol.get("col") else (d["Close"] >= d["Open"])
+        vc = np.where(up_, _rgba_hex(sv["up"]["c"], sv["up"]["o"] / 100 * 0.6), _rgba_hex(sv["dn"]["c"], sv["dn"]["o"] / 100 * 0.6))
+        if sv["up"]["v"] or sv["dn"]["v"]:
+            fig.add_trace(go.Bar(x=x, y=d["Volume"], marker_color=vc, name="Volumen", showlegend=False,
+                                 hovertemplate="Vol %{y:,.0f}<extra></extra>"), 1, 1, secondary_y=True)
+        if sv["ma"]["v"]:
+            fig.add_trace(go.Scatter(x=x, y=d["Volume"].rolling(int(I._num(p_vol.get("mal"), 20))).mean(), line=_ln(sv["ma"]),
+                                     showlegend=False, hoverinfo="skip"), 1, 1, secondary_y=True)
     fig.add_trace(go.Candlestick(x=x, open=d["Open"], high=d["High"], low=d["Low"], close=d["Close"], name="Precio",
-                                 increasing=dict(line=dict(color="#26a69a", width=1), fillcolor="#26a69a"),
-                                 decreasing=dict(line=dict(color="#ef5350", width=1), fillcolor="#ef5350")), 1, 1)
-    for col, w in (("EMA9", 1.1), ("EMA21", 1.4), ("SMA50", 1.6), ("SMA200", 2.2)):
-        fig.add_trace(go.Scatter(x=x, y=d[col], name=ma_label(settings, col), line=dict(color=ma_color(settings, col), width=w),
-                                 hoverinfo="skip"), 1, 1)
-    if show_bb:
-        fig.add_trace(go.Scatter(x=x, y=d["BB_up"], name="Bollinger", line=dict(color="#64748b", width=0.8, dash="dot"), hoverinfo="skip"), 1, 1)
-        fig.add_trace(go.Scatter(x=x, y=d["BB_low"], showlegend=False, line=dict(color="#64748b", width=0.8, dash="dot"),
-                                 fill="tonexty", fillcolor="rgba(100,116,139,0.05)", hoverinfo="skip"), 1, 1)
+                                 increasing=dict(line=dict(color=GREEN, width=1), fillcolor=GREEN),
+                                 decreasing=dict(line=dict(color=RED, width=1), fillcolor=RED)), 1, 1)
+
+    # --- Indicadores sobre el precio ---
+    ov_vals = []
+    for iid in act:
+        if BY_DRAW.get(iid) != "ov" or iid in ("vrvp", "fib"):
+            continue
+        st_all = ind[iid]["st"]
+        for e in I.overlay(full, iid, ind[iid]["in"], tf):
+            sty = st_all.get(e["plot"])
+            if not sty or not sty["v"]:
+                continue
+            k = e["kind"]
+            if k in ("line", "step"):
+                y = e["y"].reindex(x)
+                fig.add_trace(go.Scatter(x=x, y=y, name=e.get("label") or I.BYID[iid]["name"], line=_ln(sty),
+                                         line_shape="hv" if k == "step" else "linear", connectgaps=False,
+                                         showlegend=bool(e.get("label")), hovertemplate="%{y:.2f}<extra>" + (e.get("label") or "") + "</extra>"), 1, 1)
+                ov_vals.append(y)
+            elif k == "band":
+                up, dn = e["up"].reindex(x), e["dn"].reindex(x)
+                fig.add_trace(go.Scatter(x=x, y=up, line=dict(width=0), showlegend=False, hoverinfo="skip"), 1, 1)
+                fig.add_trace(go.Scatter(x=x, y=dn, line=dict(width=0), fill="tonexty", showlegend=False, hoverinfo="skip",
+                                         fillcolor=_rgba_hex(sty["c"], sty["o"] / 100)), 1, 1)
+            elif k == "cloud":
+                a, b = e["a"].reindex(x), e["b"].reindex(x)
+                m = (a >= b) if e["up"] else (a < b)
+                top, bot = np.where(m, np.maximum(a, b), np.nan), np.where(m, np.minimum(a, b), np.nan)
+                fig.add_trace(go.Scatter(x=x, y=top, line=dict(width=0), showlegend=False, hoverinfo="skip", connectgaps=False), 1, 1)
+                fig.add_trace(go.Scatter(x=x, y=bot, line=dict(width=0), fill="tonexty", showlegend=False, hoverinfo="skip",
+                                         connectgaps=False, fillcolor=_rgba_hex(sty["c"], sty["o"] / 100)), 1, 1)
+                ov_vals += [pd.Series(top, index=x), pd.Series(bot, index=x)]
+            elif k == "marks":
+                y = e["y"].reindex(x)
+                fig.add_trace(go.Scatter(x=x, y=y, mode="markers", name=e.get("label"), showlegend=bool(e.get("label")),
+                                         marker=dict(size=2 + 1.5 * float(sty["w"]), color=_rgba_hex(sty["c"], sty["o"] / 100)),
+                                         hovertemplate="SAR %{y:.2f}<extra></extra>"), 1, 1)
+                ov_vals.append(y)
+    if "fib" in act:
+        fv = I.fib_levels(full, ind["fib"]["in"])
+        sl_, sg_ = ind["fib"]["st"]["lv"], ind["fib"]["st"]["golden"]
+        x0f = x[0] if ind["fib"]["in"].get("ext") or fv["x0"] < x[0] else fv["x0"]
+        lv = dict(fv["levels"])
+        if sg_["v"]:
+            fig.add_shape(type="rect", x0=x0f, x1=x[-1], y0=lv[0.5], y1=lv[0.618], line_width=0,
+                          fillcolor=_rgba_hex(sg_["c"], sg_["o"] / 100), row=1, col=1)
+        if sl_["v"]:
+            for k_, y_ in fv["levels"]:
+                fig.add_shape(type="line", x0=x0f, x1=x[-1], y0=y_, y1=y_, line=_ln(sl_), row=1, col=1)
+                if ind["fib"]["in"].get("lbl", True) and not mobile:
+                    fig.add_annotation(x=x0f, y=y_, xanchor="left", yanchor="bottom", showarrow=False,
+                                       text=f"{k_:.3g} ({y_:,.2f})", font=dict(size=9, color=_rgba_hex(sl_["c"], 0.9)), row=1, col=1)
 
     last_x, last_px = x[-1], float(d["Close"].iloc[-1])
     lo, hi = float(d["Low"].min()), float(d["High"].max())
@@ -190,7 +282,7 @@ def price_chart(d: pd.DataFrame, plan: dict | None = None, vp: dict | None = Non
             wait = plan.get("estado_tipo") == "esperar"
             fig.add_annotation(xref="paper", yref="paper", x=0.005, y=0.995, xanchor="left", yanchor="top",
                                text=("⏳ " if wait else "✅ ") + plan["estado"] + ("" if mobile else "  ·  " + plan.get("marco_corto", "")),
-                               showarrow=False, font=dict(size=11 if mobile else 12, color="#0b0f17"),
+                               showarrow=False, font=dict(size=11 if mobile else 12, color="#0D1117"),
                                bgcolor="#fbbf24" if wait else "#22c55e", borderpad=4)
         # trayectoria proyectada
         px_path = [last_px] + ([e] if abs(e - last_px) > 0.15 * atr else []) + [t1, t2]
@@ -223,71 +315,97 @@ def price_chart(d: pd.DataFrame, plan: dict | None = None, vp: dict | None = Non
         lo, hi = min([lo] + lv_all), max([hi] + lv_all)
     # --- Perfil de volumen (VRVP) con POC y área de valor ---
     vp_axis = None
-    if show_vp and vp and len(vp.get("precios", [])):
-        tot = vp["up"] + vp["down"]
-        fig.add_trace(go.Bar(y=vp["precios"], x=tot, orientation="h", width=vp["alto_bin"] * 0.92, xaxis="x5", yaxis="y",
-                             marker_color="rgba(59,91,219,0.30)", name="VRVP", hovertemplate="%{y:.2f}: %{x:,.0f}<extra>Vol. total</extra>"))
-        fig.add_trace(go.Bar(y=vp["precios"], x=vp["up"], orientation="h", width=vp["alto_bin"] * 0.92, xaxis="x5", yaxis="y",
-                             marker_color="rgba(212,160,23,0.45)", showlegend=False, hovertemplate="%{y:.2f}: %{x:,.0f}<extra>Vol. comprador</extra>"))
-        vp_axis = dict(overlaying="x", anchor="y", range=[float(tot.max()) * 4.5, 0], autorange=False,
-                       visible=False, fixedrange=True, showgrid=False)
-        fig.add_hline(y=vp["poc"], line=dict(color="#f59e0b", width=2), row=1, col=1)
-        fig.add_annotation(xref="paper", x=0.775, xanchor="right", yref="y", y=vp["poc"], text=f"<b>POC {vp['poc']:,.2f}</b>",
-                           showarrow=False, font=dict(size=10, color="#0b0f17"), bgcolor="#f59e0b", borderpad=2)
+    if "vrvp" in act and vp and len(vp.get("precios", [])):
+        sv, pv = ind["vrvp"]["st"], ind["vrvp"]["in"]
+        pr = np.asarray(vp["precios"], float)
+        in_va = (pr >= vp["val"]) & (pr <= vp["vah"])
+        mode = pv.get("volm", "Arriba/Abajo")
+        up_v, dn_v = np.asarray(vp["up"], float), np.asarray(vp["down"], float)
+        tot = up_v + dn_v
+        col = lambda k_va, k_out: [_rgba_hex(sv[k_va if va else k_out]["c"], sv[k_va if va else k_out]["o"] / 100) for va in in_va]  # noqa: E731
+        if mode == "Total":
+            fig.add_trace(go.Bar(y=pr, x=tot, orientation="h", width=vp["alto_bin"] * 0.92, xaxis="x20", yaxis="y",
+                                 marker_color=col("vaup", "upv"), name="VRVP", hovertemplate="%{y:.2f}: %{x:,.0f}<extra>Volumen</extra>"))
+            ref = tot
+        elif mode == "Delta":
+            dl = up_v - dn_v
+            colors = [_rgba_hex(sv[("vaup" if va else "upv") if v >= 0 else ("vadn" if va else "dnv")]["c"],
+                                sv[("vaup" if va else "upv") if v >= 0 else ("vadn" if va else "dnv")]["o"] / 100)
+                      for v, va in zip(dl, in_va)]
+            fig.add_trace(go.Bar(y=pr, x=np.abs(dl), orientation="h", width=vp["alto_bin"] * 0.92, xaxis="x20", yaxis="y",
+                                 marker_color=colors, name="VRVP", hovertemplate="%{y:.2f}: %{x:,.0f}<extra>Delta</extra>"))
+            ref = np.abs(dl)
+        else:  # Arriba/Abajo: barra total (abajo) con la parte compradora encima
+            fig.add_trace(go.Bar(y=pr, x=tot, orientation="h", width=vp["alto_bin"] * 0.92, xaxis="x20", yaxis="y",
+                                 marker_color=col("vadn", "dnv"), name="VRVP", hovertemplate="%{y:.2f}: %{x:,.0f}<extra>Vol. total</extra>"))
+            fig.add_trace(go.Bar(y=pr, x=up_v, orientation="h", width=vp["alto_bin"] * 0.92, xaxis="x20", yaxis="y",
+                                 marker_color=col("vaup", "upv"), showlegend=False, hovertemplate="%{y:.2f}: %{x:,.0f}<extra>Vol. comprador</extra>"))
+            ref = tot
+        wpct = max(5.0, min(100.0, I._num(pv.get("width"), 30)))
+        span = float(np.nanmax(ref) or 1) * 100 / wpct
+        vp_axis = dict(overlaying="x", anchor="y", range=[span, 0] if pv.get("place", "Derecha") != "Izquierda" else [0, span],
+                       autorange=False, visible=False, fixedrange=True, showgrid=False)
+        if sv["poc"]["v"]:
+            fig.add_hline(y=vp["poc"], line=_ln(sv["poc"]), row=1, col=1)
+            fig.add_annotation(xref="paper", x=0.775, xanchor="right", yref="y", y=vp["poc"], text=f"<b>POC {vp['poc']:,.2f}</b>",
+                               showarrow=False, font=dict(size=10, color="#0D1117"), bgcolor=sv["poc"]["c"], borderpad=2)
         for k in ("vah", "val"):
-            fig.add_hline(y=vp[k], line=dict(color="rgba(245,158,11,0.5)", width=1, dash="dash"), row=1, col=1)
+            fig.add_hline(y=vp[k], line=dict(color=_rgba_hex(sv["vaup"]["c"], 0.55), width=1, dash="dash"), row=1, col=1)
             fig.add_annotation(xref="paper", x=0.775, xanchor="right", yref="y", y=vp[k], text=k.upper(), showarrow=False,
-                               font=dict(size=9, color="#fbbf24"), yshift=7)
+                               font=dict(size=9, color=MUTED), yshift=7)
     if not plan or abs(plan["entrada"] - last_px) > 0.25 * plan["atr"]:
-        _tag(fig, last_px, f"{last_px:,.2f}", "#e5e7eb")
+        _tag(fig, last_px, f"{last_px:,.2f}", TXT)
 
-    # --- RSI con banda 30-70 ---
-    _ob = float(settings["rsi"]["sobrecompra"]) if settings else 70
-    _os = float(settings["rsi"]["sobreventa"]) if settings else 30
-    fig.add_shape(type="rect", xref="x2 domain", x0=0, x1=1, yref="y3", y0=_os, y1=_ob, fillcolor="rgba(167,139,250,0.08)", line_width=0)
-    fig.add_trace(go.Scatter(x=x, y=d["RSI"], name="RSI", line=dict(color="#c084fc", width=1.4), showlegend=False,
-                             hovertemplate="RSI %{y:.1f}<extra></extra>"), 2, 1)
-    for y, c in ((_ob, "rgba(239,68,68,.6)"), (50, "rgba(148,163,184,.35)"), (_os, "rgba(34,197,94,.6)")):
-        fig.add_hline(y=y, line=dict(color=c, width=1, dash="dot"), row=2, col=1)
-    # --- MACD con histograma de 4 tonos ---
-    h = d["MACD_hist"].fillna(0)
-    hp = h.shift().fillna(0)
-    hc = np.where(h >= 0, np.where(h >= hp, "#26a69a", "#9adbd3"), np.where(h <= hp, "#ef5350", "#f4b6b5"))
-    fig.add_trace(go.Bar(x=x, y=h, marker_color=hc, showlegend=False, hovertemplate="Hist %{y:.2f}<extra></extra>"), 3, 1)
-    fig.add_trace(go.Scatter(x=x, y=d["MACD"], line=dict(color="#38bdf8", width=1.2), showlegend=False, name="MACD"), 3, 1)
-    fig.add_trace(go.Scatter(x=x, y=d["MACD_signal"], line=dict(color="#fb923c", width=1.2), showlegend=False, name="Señal"), 3, 1)
-    # --- ADX / DMI ---
-    fig.add_trace(go.Scatter(x=x, y=d["+DI"], line=dict(color="#22c55e", width=1), showlegend=False, name="+DI"), 4, 1)
-    fig.add_trace(go.Scatter(x=x, y=d["-DI"], line=dict(color="#ef4444", width=1), showlegend=False, name="−DI"), 4, 1)
-    fig.add_trace(go.Scatter(x=x, y=d["ADX"], line=dict(color="#e5e7eb", width=1.6), showlegend=False, name="ADX",
-                             fill="tozeroy", fillcolor="rgba(229,231,235,0.05)"), 4, 1)
-    fig.add_hline(y=float(settings["adx"]["umbral"]) if settings else 25,
-                  line=dict(color="rgba(148,163,184,.5)", width=1, dash="dot"), row=4, col=1)
+    # --- Paneles inferiores ---
+    for r_, (iid, pn) in enumerate(panes, start=2):
+        st_all = ind[iid]["st"]
+        first = next((st_all[k] for k, _ in pn["lines"] if st_all.get(k, {}).get("v")), None)
+        if pn.get("zone"):
+            zc = first["c"] if first else MUTED
+            fig.add_hrect(y0=pn["zone"][0], y1=pn["zone"][1], fillcolor=_rgba_hex(zc, 0.08), line_width=0, row=r_, col=1)
+        for lvl in pn.get("refs", []):
+            fig.add_hline(y=lvl, line=dict(color="rgba(139,148,158,.45)", width=1, dash="dot"), row=r_, col=1)
+        if pn.get("hist"):
+            hk, hs = pn["hist"]
+            sth = st_all.get(hk)
+            if sth and sth["v"]:
+                hv = hs.reindex(x)
+                hc = np.where(hv >= 0, _rgba_hex(sth["c"], sth["o"] / 100), _rgba_hex(RED, sth["o"] / 100))
+                fig.add_trace(go.Bar(x=x, y=hv, marker_color=hc, showlegend=False, hovertemplate="%{y:.2f}<extra></extra>"), r_, 1)
+        for k, ser in pn["lines"]:
+            sty = st_all.get(k)
+            if sty and sty["v"]:
+                fig.add_trace(go.Scatter(x=x, y=ser.reindex(x), line=_ln(sty), showlegend=False, name=k,
+                                         hovertemplate="%{y:.2f}<extra>" + k.upper() + "</extra>"), r_, 1)
+        if pn.get("range"):
+            fig.update_yaxes(range=list(pn["range"]), row=r_, col=1)
+        fig.add_annotation(xref="paper", x=0.002, xanchor="left", yref=f"y{r_ + 1} domain", y=0.97, text=pn["title"],
+                           showarrow=False, font=dict(size=10, color=MUTED))
 
+    vals = [v for v in ov_vals if v is not None]
+    if vals:
+        allv = pd.concat(vals, axis=1)
+        lo, hi = min(lo, float(np.nanmin(allv.values))), max(hi, float(np.nanmax(allv.values)))
     pad = (hi - lo) * 0.05
-    fig.update_layout(template="plotly_dark", paper_bgcolor="#0f141f", plot_bgcolor="#0f141f",
-                      height=640 if mobile else 820,
-                      margin=dict(l=2, r=86 if mobile else 92, t=26 if not mobile else 6, b=6), xaxis_rangeslider_visible=False, barmode="overlay",
+    n_leg = sum(1 for t in fig.data if t.showlegend is not False and t.name)
+    leg_rows = max(1, -(-n_leg // 7))  # ~7 entradas por línea de leyenda
+    top = 6 if mobile else 10 + 20 * leg_rows
+    fig.update_layout(template="plotly_dark", paper_bgcolor=BG, plot_bgcolor=BG,
+                      height=(560 if mobile else 600) + (110 if mobile else 140) * len(panes) + top,
+                      margin=dict(l=2, r=86 if mobile else 92, t=top, b=6), xaxis_rangeslider_visible=False, barmode="overlay",
                       showlegend=not mobile,
                       hovermode="x unified", dragmode=False if mobile else "pan", bargap=0.15,
-                      legend=dict(orientation="h", y=1.035, x=0, font=dict(size=10), bgcolor="rgba(0,0,0,0)"),
+                      legend=dict(orientation="h", yanchor="bottom", y=1.0, x=0, font=dict(size=10), bgcolor="rgba(0,0,0,0)",
+                                  traceorder="normal"),
                       font=dict(family="Inter", color=TXT, size=11))
-    for r_ in (1, 2, 3, 4):
-        fig.update_xaxes(gridcolor="#1c2433", rangebreaks=rangebreaks(tf, crypto), showspikes=True, spikecolor="#475569",
-                         spikethickness=1, range=[x[0], x_end + pd.Timedelta(days=3)], row=r_, col=1)
+    for r_ in range(1, n_rows + 1):
+        fig.update_xaxes(gridcolor="#1C2128", rangebreaks=rangebreaks(tf, crypto), showspikes=True, spikecolor="#484F58",
+                         spikethickness=1, range=[x[0], max(x_end, fx(max(2, int(len(x) * 0.03))))], row=r_, col=1)
     if vp_axis:
-        fig.update_layout(xaxis5=vp_axis)
-    fig.update_yaxes(gridcolor="#1c2433", side="right", tickfont=dict(size=10))
+        fig.update_layout(xaxis20=vp_axis)
+    fig.update_yaxes(gridcolor="#1C2128", side="right", tickfont=dict(size=10, family="JetBrains Mono"))
     fig.update_yaxes(range=[lo - pad, hi + pad], row=1, col=1, secondary_y=False)
     fig.update_yaxes(range=[0, float(d["Volume"].max()) * 4], visible=False, row=1, col=1, secondary_y=True)
-    fig.update_yaxes(range=[0, 100], tickvals=[30, 50, 70], row=2, col=1)
-    _rl = f"RSI {settings['rsi']['periodo']}" if settings else "RSI 14"
-    _ml = (f"MACD {settings['macd']['rapida']}·{settings['macd']['lenta']}·{settings['macd']['senal']}" if settings
-           else "MACD 12·26·9")
-    _al = f"ADX/DMI {settings['adx']['periodo']}" if settings else "ADX/DMI 14"
-    for i, t in ((2, _rl), (3, _ml), (4, _al)):
-        fig.add_annotation(xref="paper", x=0.002, xanchor="left", yref=f"y{i + 1 if i > 1 else i} domain", y=0.97,
-                           text=t, showarrow=False, font=dict(size=10, color=MUTED))
     return fig
 
 
@@ -337,7 +455,7 @@ def opportunity_treemap(df: pd.DataFrame, side: str, height: int = 560) -> go.Fi
     fig = go.Figure(go.Treemap(
         ids=ids, labels=labels, parents=parents, values=values, branchvalues="total",
         text=texts, texttemplate="%{text}", textposition="middle center",
-        customdata=custom, marker=dict(colors=colors, colorscale=scale, cmin=-0.6, cmax=1.2, line=dict(width=1, color="#0b0f17"),
+        customdata=custom, marker=dict(colors=colors, colorscale=scale, cmin=-0.6, cmax=1.2, line=dict(width=1, color="#0D1117"),
                                        pad=dict(t=18, l=2, r=2, b=2)),
         hovertemplate="<b>%{label}</b><br>Prob.: %{customdata[0]:.0%}<br>Valor esperado: %{customdata[1]:+.2f} R"
                       "<br>Var. día: %{customdata[2]:+.2f}%<extra></extra>",

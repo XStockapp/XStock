@@ -81,32 +81,32 @@ if df.empty:
     st.stop()
 
 ed = st.data_editor(
-    df, hide_index=True, use_container_width=True, height=min(90 + 36 * len(df), 520), key="users_editor",
+    df, hide_index=True, width="stretch", height=min(90 + 36 * len(df), 520), key="users_editor",
     disabled=[c for c in df.columns if c != "Marcar"],
     column_config={"Marcar": st.column_config.CheckboxColumn(width="small")})
 marked = ed[ed["Marcar"]]
 marked_users = marked[(marked["Rol"] != "Admin") & (marked["Correo"] != me["email"])]
 
-c1, c2, c3, c4 = st.columns(4)
-if c1.button(f"⛔ Expulsar / suspender ({len(marked_users)})", disabled=marked_users.empty, use_container_width=True):
+c1, c2, c3, c4 = st.columns(4, vertical_alignment="bottom")
+if c1.button(f"⛔ Expulsar / suspender ({len(marked_users)})", disabled=marked_users.empty, width="stretch"):
     for em in marked_users["Correo"]:
         db.update_profile(em, status="suspended")
         db.log_event(me["email"], "admin_suspend", em)
     st.toast("Usuarios suspendidos: ya no pueden entrar")
     st.rerun()
-if c2.button(f"✅ Reactivar ({len(marked_users)})", disabled=marked_users.empty, use_container_width=True):
+if c2.button(f"✅ Reactivar ({len(marked_users)})", disabled=marked_users.empty, width="stretch"):
     for em in marked_users["Correo"]:
         db.update_profile(em, status="active")
     st.rerun()
-if c3.button("🔑 Restablecer contraseña", disabled=len(marked_users) != 1, use_container_width=True,
+if c3.button("🔑 Restablecer contraseña", disabled=len(marked_users) != 1, width="stretch",
              help="Marca un solo usuario"):
     em = marked_users["Correo"].iloc[0]
     st.session_state["tmp_pw"] = (em, auth.admin_reset_password(em))
-with c4.popover(f"🗑️ Eliminar ({len(marked_users)})", disabled=marked_users.empty, use_container_width=True):
+with c4.popover(f"🗑️ Eliminar ({len(marked_users)})", disabled=marked_users.empty, width="stretch"):
     st.markdown("**Eliminar usuarios marcados:**<br>" + "<br>".join(marked_users["Correo"]), unsafe_allow_html=True)
     hard = st.checkbox("Borrar también su historial y watchlist (definitivo)")
     st.caption("Sin borrar el historial, la cuenta queda como «Eliminado»: no puede entrar y necesitaría una nueva invitación.")
-    if st.button("Confirmar eliminación", type="primary", use_container_width=True):
+    if st.button("Confirmar eliminación", type="primary", width="stretch"):
         for em in marked_users["Correo"]:
             if hard:
                 db.delete_profile(em, purge_events=True)
@@ -143,18 +143,18 @@ else:
                           legend=dict(orientation="h", y=1.1), bargap=0.2)
         fig.update_xaxes(gridcolor=BORDER, type="category", title=None)
         fig.update_yaxes(gridcolor=BORDER, dtick=1 if g["Eventos"].max() < 10 else None)
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
     with c2:
         top = ev[ev["kind"] == "analysis"].groupby("email").size().sort_values(ascending=False).head(10)
         st.markdown("**Más activos (análisis, 30 días)**")
         st.dataframe(top.rename("Análisis").reset_index().rename(columns={"email": "Usuario"}), hide_index=True,
-                     use_container_width=True)
+                     width="stretch")
     who = st.selectbox("Ver historial de un usuario", ["—"] + df["Correo"].tolist())
     if who != "—":
         h = events[events["email"] == who].head(100).copy()
         h["Fecha"] = h["at"].dt.tz_convert("America/Lima").dt.strftime("%d-%b-%Y %H:%M")
         h["Evento"] = h["kind"].map({**kinds, "ai_report": "Informe IA"}).fillna(h["kind"])
         st.dataframe(h[["Fecha", "Evento", "detail"]].rename(columns={"detail": "Detalle"}), hide_index=True,
-                     use_container_width=True, height=280)
+                     width="stretch", height=280)
 
 st.markdown(DISCLAIMER, unsafe_allow_html=True)

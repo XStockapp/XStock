@@ -1,0 +1,2990 @@
+{
+ "grupos": [
+  [
+   "trend",
+   "Tendencia"
+  ],
+  [
+   "mom",
+   "Momentum y osciladores"
+  ],
+  [
+   "vola",
+   "Volatilidad"
+  ],
+  [
+   "vol",
+   "Volumen y flujo de dinero"
+  ],
+  [
+   "lvl",
+   "Niveles y estructura"
+  ]
+ ],
+ "activos_por_defecto": [
+  "ma",
+  "bb",
+  "vrvp",
+  "vol",
+  "rsi",
+  "macd"
+ ],
+ "catalogo": [
+  {
+   "id": "ma",
+   "g": "trend",
+   "name": "Medias móviles (4)",
+   "draw": "ov",
+   "inputs": [
+    {
+     "k": "l1",
+     "l": "Longitud MA1",
+     "t": "num",
+     "d": 20,
+     "mn": 1,
+     "mx": 500,
+     "st": 1
+    },
+    {
+     "k": "t1",
+     "l": "Tipo MA1",
+     "t": "sel",
+     "d": "EMA",
+     "o": [
+      [
+       "SMA",
+       "SMA"
+      ],
+      [
+       "EMA",
+       "EMA"
+      ],
+      [
+       "WMA",
+       "WMA"
+      ],
+      [
+       "HMA",
+       "HMA"
+      ],
+      [
+       "RMA",
+       "RMA"
+      ],
+      [
+       "DEMA",
+       "DEMA"
+      ],
+      [
+       "TEMA",
+       "TEMA"
+      ],
+      [
+       "VWMA",
+       "VWMA"
+      ],
+      [
+       "ALMA",
+       "ALMA"
+      ],
+      [
+       "KAMA",
+       "KAMA"
+      ],
+      [
+       "LSMA",
+       "LSMA"
+      ]
+     ]
+    },
+    {
+     "k": "l2",
+     "l": "Longitud MA2",
+     "t": "num",
+     "d": 50,
+     "mn": 1,
+     "mx": 500,
+     "st": 1
+    },
+    {
+     "k": "t2",
+     "l": "Tipo MA2",
+     "t": "sel",
+     "d": "EMA",
+     "o": [
+      [
+       "SMA",
+       "SMA"
+      ],
+      [
+       "EMA",
+       "EMA"
+      ],
+      [
+       "WMA",
+       "WMA"
+      ],
+      [
+       "HMA",
+       "HMA"
+      ],
+      [
+       "RMA",
+       "RMA"
+      ],
+      [
+       "DEMA",
+       "DEMA"
+      ],
+      [
+       "TEMA",
+       "TEMA"
+      ],
+      [
+       "VWMA",
+       "VWMA"
+      ],
+      [
+       "ALMA",
+       "ALMA"
+      ],
+      [
+       "KAMA",
+       "KAMA"
+      ],
+      [
+       "LSMA",
+       "LSMA"
+      ]
+     ]
+    },
+    {
+     "k": "l3",
+     "l": "Longitud MA3",
+     "t": "num",
+     "d": 100,
+     "mn": 1,
+     "mx": 500,
+     "st": 1
+    },
+    {
+     "k": "t3",
+     "l": "Tipo MA3",
+     "t": "sel",
+     "d": "SMA",
+     "o": [
+      [
+       "SMA",
+       "SMA"
+      ],
+      [
+       "EMA",
+       "EMA"
+      ],
+      [
+       "WMA",
+       "WMA"
+      ],
+      [
+       "HMA",
+       "HMA"
+      ],
+      [
+       "RMA",
+       "RMA"
+      ],
+      [
+       "DEMA",
+       "DEMA"
+      ],
+      [
+       "TEMA",
+       "TEMA"
+      ],
+      [
+       "VWMA",
+       "VWMA"
+      ],
+      [
+       "ALMA",
+       "ALMA"
+      ],
+      [
+       "KAMA",
+       "KAMA"
+      ],
+      [
+       "LSMA",
+       "LSMA"
+      ]
+     ]
+    },
+    {
+     "k": "l4",
+     "l": "Longitud MA4",
+     "t": "num",
+     "d": 200,
+     "mn": 1,
+     "mx": 500,
+     "st": 1
+    },
+    {
+     "k": "t4",
+     "l": "Tipo MA4",
+     "t": "sel",
+     "d": "SMA",
+     "o": [
+      [
+       "SMA",
+       "SMA"
+      ],
+      [
+       "EMA",
+       "EMA"
+      ],
+      [
+       "WMA",
+       "WMA"
+      ],
+      [
+       "HMA",
+       "HMA"
+      ],
+      [
+       "RMA",
+       "RMA"
+      ],
+      [
+       "DEMA",
+       "DEMA"
+      ],
+      [
+       "TEMA",
+       "TEMA"
+      ],
+      [
+       "VWMA",
+       "VWMA"
+      ],
+      [
+       "ALMA",
+       "ALMA"
+      ],
+      [
+       "KAMA",
+       "KAMA"
+      ],
+      [
+       "LSMA",
+       "LSMA"
+      ]
+     ]
+    },
+    {
+     "k": "src",
+     "l": "Fuente",
+     "t": "sel",
+     "d": "close",
+     "o": [
+      [
+       "close",
+       "Cierre"
+      ],
+      [
+       "open",
+       "Apertura"
+      ],
+      [
+       "high",
+       "Máximo"
+      ],
+      [
+       "low",
+       "Mínimo"
+      ],
+      [
+       "hl2",
+       "(máx+mín)/2"
+      ],
+      [
+       "hlc3",
+       "(máx+mín+cierre)/3"
+      ],
+      [
+       "ohlc4",
+       "(ap+máx+mín+cierre)/4"
+      ]
+     ]
+    }
+   ],
+   "plots": [
+    {
+     "k": "m1",
+     "l": "MA1",
+     "c": "#FFEB3B",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "m2",
+     "l": "MA2",
+     "c": "#FF9800",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "m3",
+     "l": "MA3",
+     "c": "#E91E63",
+     "w": 2,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "m4",
+     "l": "MA4",
+     "c": "#B2B5BE",
+     "w": 2,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Suavizan el precio para mostrar la dirección de la tendencia. Cuatro medias de distinta velocidad, como en el script Multiple Indicators.",
+    "perfil": "Todos los perfiles; imprescindible en swing y position.",
+    "ayuda": "Identificar tendencia, soportes y resistencias dinámicas y cruces (por ejemplo 50/200, el cruce dorado).",
+    "combina": "RSI o MACD para el momentum, ADX para confirmar que hay tendencia, volumen para validar los cruces.",
+    "tf": "1h en adelante; en 30m las medias cortas dan muchos cruces falsos.",
+    "uso": "Precio sobre medias ordenadas de rápida a lenta = tendencia alcista. Busca entradas en retrocesos a la media intermedia.",
+    "esperar": "Es un indicador rezagado: confirma la tendencia, no la anticipa. En rangos laterales los cruces fallan seguido."
+   }
+  },
+  {
+   "id": "ichi",
+   "g": "trend",
+   "name": "Ichimoku Cloud",
+   "draw": "ov",
+   "inputs": [
+    {
+     "k": "conv",
+     "l": "Longitud de la línea de conversión",
+     "t": "num",
+     "d": 9,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "base",
+     "l": "Longitud de la línea base",
+     "t": "num",
+     "d": 26,
+     "mn": 1,
+     "mx": 200,
+     "st": 1
+    },
+    {
+     "k": "spanb",
+     "l": "Longitud de Leading Span B",
+     "t": "num",
+     "d": 52,
+     "mn": 1,
+     "mx": 300,
+     "st": 1
+    },
+    {
+     "k": "disp",
+     "l": "Desplazamiento retrasado",
+     "t": "num",
+     "d": 26,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    }
+   ],
+   "plots": [
+    {
+     "k": "tk",
+     "l": "Línea de conversión",
+     "c": "#2962FF",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "kj",
+     "l": "Línea base",
+     "c": "#B71C1C",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "cloudUp",
+     "l": "Nube alcista",
+     "c": "#4CAF50",
+     "w": 1,
+     "s": "solid",
+     "o": 15
+    },
+    {
+     "k": "cloudDn",
+     "l": "Nube bajista",
+     "c": "#F23645",
+     "w": 1,
+     "s": "solid",
+     "o": 15
+    }
+   ],
+   "info": {
+    "que": "Sistema completo de tendencia: dirección, momentum y zonas de soporte y resistencia proyectadas al futuro (la nube).",
+    "perfil": "Swing y position; muy usado en cripto y divisas.",
+    "ayuda": "Ver de un vistazo si el mercado es alcista, bajista o neutro y dónde están los soportes futuros.",
+    "combina": "Volumen y RSI. Evita sumarle muchas medias: ya las contiene.",
+    "tf": "4h, 1D y 1W. En temporalidades cortas pierde fiabilidad.",
+    "uso": "Precio sobre la nube y línea de conversión sobre la base = sesgo alcista. Una nube gruesa es un soporte fuerte.",
+    "esperar": "Muy confiable en tendencias claras; en rangos queda dentro de la nube y no aporta."
+   }
+  },
+  {
+   "id": "psar",
+   "g": "trend",
+   "name": "Parabolic SAR",
+   "draw": "ov",
+   "inputs": [
+    {
+     "k": "start",
+     "l": "Inicio",
+     "t": "num",
+     "d": 0.02,
+     "mn": 0.001,
+     "mx": 1,
+     "st": 0.01
+    },
+    {
+     "k": "inc",
+     "l": "Incremento",
+     "t": "num",
+     "d": 0.02,
+     "mn": 0.001,
+     "mx": 1,
+     "st": 0.01
+    },
+    {
+     "k": "max",
+     "l": "Valor máximo",
+     "t": "num",
+     "d": 0.2,
+     "mn": 0.01,
+     "mx": 1,
+     "st": 0.01
+    }
+   ],
+   "plots": [
+    {
+     "k": "sar",
+     "l": "Parabolic SAR",
+     "c": "#2962FF",
+     "w": 2,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Puntos que siguen al precio y se acercan a medida que avanza la tendencia. Cuando el precio los cruza, cambian de lado.",
+    "perfil": "Swing y day trading.",
+    "ayuda": "Colocar y mover el stop (trailing stop) y detectar giros.",
+    "combina": "ADX para filtrar: úsalo solo cuando el ADX supere su nivel clave.",
+    "tf": "1h a 1D.",
+    "uso": "Puntos bajo el precio = mantener largos; el stop sigue al punto. Un cambio de lado es una alerta de salida.",
+    "esperar": "Excelente en tendencias, malo en rangos: allí cambia de lado una y otra vez."
+   }
+  },
+  {
+   "id": "st",
+   "g": "trend",
+   "name": "Supertrend",
+   "draw": "ov",
+   "inputs": [
+    {
+     "k": "atr",
+     "l": "Longitud ATR",
+     "t": "num",
+     "d": 10,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "fac",
+     "l": "Factor",
+     "t": "num",
+     "d": 3,
+     "mn": 0.5,
+     "mx": 10,
+     "st": 0.1
+    }
+   ],
+   "plots": [
+    {
+     "k": "up",
+     "l": "Tendencia alcista",
+     "c": "#089981",
+     "w": 2,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "dn",
+     "l": "Tendencia bajista",
+     "c": "#F23645",
+     "w": 2,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Línea basada en el ATR que se pinta debajo del precio en tendencia alcista y encima en bajista.",
+    "perfil": "Swing, day trading y cripto.",
+    "ayuda": "Definir la dirección y un stop dinámico con una sola línea.",
+    "combina": "Medias largas para el sesgo de fondo; volumen para validar los cambios.",
+    "tf": "1h a 1D.",
+    "uso": "Opera solo en la dirección de la línea. Su valor sirve de stop.",
+    "esperar": "Señales claras y pocas, pero llega tarde a los giros fuertes."
+   }
+  },
+  {
+   "id": "adx",
+   "g": "trend",
+   "name": "Índice direccional medio (ADX / DMI)",
+   "draw": "pane",
+   "inputs": [
+    {
+     "k": "smooth",
+     "l": "Suavizado ADX",
+     "t": "num",
+     "d": 14,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "di",
+     "l": "Longitud DI",
+     "t": "num",
+     "d": 14,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "key",
+     "l": "Nivel clave",
+     "t": "num",
+     "d": 25,
+     "mn": 1,
+     "mx": 60,
+     "st": 1
+    }
+   ],
+   "plots": [
+    {
+     "k": "adx",
+     "l": "ADX",
+     "c": "#FF9800",
+     "w": 2,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "pdi",
+     "l": "+DI",
+     "c": "#089981",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "ndi",
+     "l": "−DI",
+     "c": "#F23645",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Mide la fuerza de la tendencia, sin importar su dirección. +DI y −DI indican hacia dónde.",
+    "perfil": "Todos; clave para decidir qué estrategia usar.",
+    "ayuda": "Distinguir mercado en tendencia de mercado lateral.",
+    "combina": "Medias, Supertrend o Parabolic SAR cuando hay tendencia; osciladores (RSI, estocástico) cuando no la hay.",
+    "tf": "1h en adelante.",
+    "uso": "ADX sobre el nivel clave (25) = hay tendencia; por debajo = rango. +DI sobre −DI = dirección alcista.",
+    "esperar": "No da entradas por sí solo: es un filtro que mejora a los demás indicadores."
+   }
+  },
+  {
+   "id": "vwap",
+   "g": "trend",
+   "name": "VWAP",
+   "draw": "ov",
+   "inputs": [
+    {
+     "k": "anchor",
+     "l": "Periodo de anclaje",
+     "t": "sel",
+     "d": "Mes",
+     "o": [
+      [
+       "Sesión",
+       "Sesión"
+      ],
+      [
+       "Semana",
+       "Semana"
+      ],
+      [
+       "Mes",
+       "Mes"
+      ],
+      [
+       "Trimestre",
+       "Trimestre"
+      ],
+      [
+       "Año",
+       "Año"
+      ]
+     ]
+    },
+    {
+     "k": "src",
+     "l": "Fuente",
+     "t": "sel",
+     "d": "hlc3",
+     "o": [
+      [
+       "close",
+       "Cierre"
+      ],
+      [
+       "open",
+       "Apertura"
+      ],
+      [
+       "high",
+       "Máximo"
+      ],
+      [
+       "low",
+       "Mínimo"
+      ],
+      [
+       "hl2",
+       "(máx+mín)/2"
+      ],
+      [
+       "hlc3",
+       "(máx+mín+cierre)/3"
+      ],
+      [
+       "ohlc4",
+       "(ap+máx+mín+cierre)/4"
+      ]
+     ]
+    },
+    {
+     "k": "bm",
+     "l": "Multiplicador de bandas #1",
+     "t": "num",
+     "d": 1,
+     "mn": 0,
+     "mx": 5,
+     "st": 0.1
+    },
+    {
+     "k": "bands",
+     "l": "Mostrar bandas",
+     "t": "bool",
+     "d": false
+    }
+   ],
+   "plots": [
+    {
+     "k": "vwap",
+     "l": "VWAP",
+     "c": "#2962FF",
+     "w": 2,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "band",
+     "l": "Bandas",
+     "c": "#4CAF50",
+     "w": 1,
+     "s": "dashed",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Precio promedio ponderado por volumen desde un punto de anclaje. Es el precio \"justo\" que pagaron los participantes.",
+    "perfil": "Day trading e institucionales; en swing, anclado a semana o mes.",
+    "ayuda": "Saber si compras caro o barato respecto al promedio del periodo.",
+    "combina": "VRVP (POC y área de valor) y volumen relativo.",
+    "tf": "Intradía (30m y 1h); anclado a mes o trimestre en 1D.",
+    "uso": "Sobre el VWAP el control es comprador. Los retrocesos al VWAP en tendencia son zonas de entrada.",
+    "esperar": "Muy respetado por fondos; pierde sentido en temporalidades largas sin anclaje."
+   }
+  },
+  {
+   "id": "rsi",
+   "g": "mom",
+   "name": "Índice de fuerza relativa (RSI)",
+   "draw": "pane",
+   "inputs": [
+    {
+     "k": "len",
+     "l": "Longitud RSI",
+     "t": "num",
+     "d": 14,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "src",
+     "l": "Fuente",
+     "t": "sel",
+     "d": "close",
+     "o": [
+      [
+       "close",
+       "Cierre"
+      ],
+      [
+       "open",
+       "Apertura"
+      ],
+      [
+       "high",
+       "Máximo"
+      ],
+      [
+       "low",
+       "Mínimo"
+      ],
+      [
+       "hl2",
+       "(máx+mín)/2"
+      ],
+      [
+       "hlc3",
+       "(máx+mín+cierre)/3"
+      ],
+      [
+       "ohlc4",
+       "(ap+máx+mín+cierre)/4"
+      ]
+     ]
+    },
+    {
+     "k": "ob",
+     "l": "Banda superior",
+     "t": "num",
+     "d": 70,
+     "mn": 50,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "os",
+     "l": "Banda inferior",
+     "t": "num",
+     "d": 30,
+     "mn": 0,
+     "mx": 50,
+     "st": 1
+    },
+    {
+     "k": "mat",
+     "l": "Tipo de MA",
+     "t": "sel",
+     "d": "SMA",
+     "o": [
+      [
+       "Ninguna",
+       "Ninguna"
+      ],
+      [
+       "SMA",
+       "SMA"
+      ],
+      [
+       "EMA",
+       "EMA"
+      ],
+      [
+       "WMA",
+       "WMA"
+      ]
+     ]
+    },
+    {
+     "k": "mal",
+     "l": "Longitud MA",
+     "t": "num",
+     "d": 14,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    }
+   ],
+   "plots": [
+    {
+     "k": "rsi",
+     "l": "RSI",
+     "c": "#7E57C2",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "ma",
+     "l": "MA basada en RSI",
+     "c": "#FFEB3B",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Oscilador de 0 a 100 que mide la velocidad y la fuerza de los movimientos.",
+    "perfil": "Todos los perfiles.",
+    "ayuda": "Detectar sobrecompra y sobreventa, divergencias y la fuerza del impulso.",
+    "combina": "ADX (en tendencia, 70/30 se sostiene mucho tiempo), divergencias, soportes y resistencias.",
+    "tf": "Todas; más confiable desde 1h.",
+    "uso": "En tendencia alcista, compra cuando el RSI rebota en 40-50. En rango, vende en 70 y compra en 30.",
+    "esperar": "Sobrecompra no significa vender: en tendencias fuertes el RSI se queda arriba. Sus mejores señales son las divergencias."
+   }
+  },
+  {
+   "id": "macd",
+   "g": "mom",
+   "name": "MACD",
+   "draw": "pane",
+   "inputs": [
+    {
+     "k": "fast",
+     "l": "Longitud rápida",
+     "t": "num",
+     "d": 12,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "slow",
+     "l": "Longitud lenta",
+     "t": "num",
+     "d": 26,
+     "mn": 1,
+     "mx": 200,
+     "st": 1
+    },
+    {
+     "k": "src",
+     "l": "Fuente",
+     "t": "sel",
+     "d": "close",
+     "o": [
+      [
+       "close",
+       "Cierre"
+      ],
+      [
+       "open",
+       "Apertura"
+      ],
+      [
+       "high",
+       "Máximo"
+      ],
+      [
+       "low",
+       "Mínimo"
+      ],
+      [
+       "hl2",
+       "(máx+mín)/2"
+      ],
+      [
+       "hlc3",
+       "(máx+mín+cierre)/3"
+      ],
+      [
+       "ohlc4",
+       "(ap+máx+mín+cierre)/4"
+      ]
+     ]
+    },
+    {
+     "k": "sig",
+     "l": "Suavizado de la señal",
+     "t": "num",
+     "d": 9,
+     "mn": 1,
+     "mx": 50,
+     "st": 1
+    },
+    {
+     "k": "mao",
+     "l": "Tipo MA oscilador",
+     "t": "sel",
+     "d": "EMA",
+     "o": [
+      [
+       "EMA",
+       "EMA"
+      ],
+      [
+       "SMA",
+       "SMA"
+      ]
+     ]
+    },
+    {
+     "k": "mas",
+     "l": "Tipo MA línea de señal",
+     "t": "sel",
+     "d": "EMA",
+     "o": [
+      [
+       "EMA",
+       "EMA"
+      ],
+      [
+       "SMA",
+       "SMA"
+      ]
+     ]
+    }
+   ],
+   "plots": [
+    {
+     "k": "macd",
+     "l": "MACD",
+     "c": "#2962FF",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "signal",
+     "l": "Señal",
+     "c": "#FF6D00",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "hist",
+     "l": "Histograma",
+     "c": "#26A69A",
+     "w": 1,
+     "s": "solid",
+     "o": 60
+    }
+   ],
+   "info": {
+    "que": "Diferencia entre dos medias exponenciales, con su línea de señal y un histograma que muestra la distancia entre ambas.",
+    "perfil": "Swing y position.",
+    "ayuda": "Medir el momentum de la tendencia y anticipar cambios con los cruces y el histograma.",
+    "combina": "RSI, medias móviles y volumen.",
+    "tf": "4h, 1D y 1W.",
+    "uso": "Cruce del MACD sobre la señal = impulso alcista; mejor si ocurre bajo cero. Un histograma que se achica avisa pérdida de fuerza.",
+    "esperar": "Rezagado y con señales falsas en rangos; las divergencias con el precio son su señal más valiosa."
+   }
+  },
+  {
+   "id": "stoch",
+   "g": "mom",
+   "name": "Estocástico",
+   "draw": "pane",
+   "inputs": [
+    {
+     "k": "k",
+     "l": "%K longitud",
+     "t": "num",
+     "d": 14,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "ks",
+     "l": "%K suavizado",
+     "t": "num",
+     "d": 1,
+     "mn": 1,
+     "mx": 20,
+     "st": 1
+    },
+    {
+     "k": "d",
+     "l": "%D suavizado",
+     "t": "num",
+     "d": 3,
+     "mn": 1,
+     "mx": 20,
+     "st": 1
+    },
+    {
+     "k": "ob",
+     "l": "Banda superior",
+     "t": "num",
+     "d": 80,
+     "mn": 50,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "os",
+     "l": "Banda inferior",
+     "t": "num",
+     "d": 20,
+     "mn": 0,
+     "mx": 50,
+     "st": 1
+    }
+   ],
+   "plots": [
+    {
+     "k": "k",
+     "l": "%K",
+     "c": "#2962FF",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "d",
+     "l": "%D",
+     "c": "#FF6D00",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Compara el cierre con el rango de máximos y mínimos recientes.",
+    "perfil": "Day trading y swing en rangos.",
+    "ayuda": "Encontrar giros dentro de un rango y el timing fino de entrada.",
+    "combina": "ADX bajo (sin tendencia), soportes y resistencias, Bollinger.",
+    "tf": "30m a 1D.",
+    "uso": "Cruce de %K sobre %D bajo 20 = posible compra; sobre 80 = posible venta.",
+    "esperar": "Muy sensible: da muchas señales. Fíltralo con la tendencia mayor."
+   }
+  },
+  {
+   "id": "srsi",
+   "g": "mom",
+   "name": "RSI estocástico",
+   "draw": "pane",
+   "inputs": [
+    {
+     "k": "k",
+     "l": "K",
+     "t": "num",
+     "d": 3,
+     "mn": 1,
+     "mx": 20,
+     "st": 1
+    },
+    {
+     "k": "d",
+     "l": "D",
+     "t": "num",
+     "d": 3,
+     "mn": 1,
+     "mx": 20,
+     "st": 1
+    },
+    {
+     "k": "rl",
+     "l": "Longitud RSI",
+     "t": "num",
+     "d": 14,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "sl",
+     "l": "Longitud estocástico",
+     "t": "num",
+     "d": 14,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    }
+   ],
+   "plots": [
+    {
+     "k": "k",
+     "l": "K",
+     "c": "#2962FF",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "d",
+     "l": "D",
+     "c": "#FF6D00",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Estocástico aplicado al RSI: más rápido y sensible que ambos.",
+    "perfil": "Day trading y cripto.",
+    "ayuda": "Timing de entradas en retrocesos de una tendencia.",
+    "combina": "Medias o Supertrend para la dirección.",
+    "tf": "30m a 4h.",
+    "uso": "En tendencia alcista, compra cuando K cruza D al alza desde la zona baja.",
+    "esperar": "Mucho ruido si se usa solo; como gatillo dentro de una tendencia funciona bien."
+   }
+  },
+  {
+   "id": "cci",
+   "g": "mom",
+   "name": "Commodity Channel Index (CCI)",
+   "draw": "pane",
+   "inputs": [
+    {
+     "k": "len",
+     "l": "Longitud",
+     "t": "num",
+     "d": 20,
+     "mn": 1,
+     "mx": 200,
+     "st": 1
+    },
+    {
+     "k": "src",
+     "l": "Fuente",
+     "t": "sel",
+     "d": "hlc3",
+     "o": [
+      [
+       "close",
+       "Cierre"
+      ],
+      [
+       "open",
+       "Apertura"
+      ],
+      [
+       "high",
+       "Máximo"
+      ],
+      [
+       "low",
+       "Mínimo"
+      ],
+      [
+       "hl2",
+       "(máx+mín)/2"
+      ],
+      [
+       "hlc3",
+       "(máx+mín+cierre)/3"
+      ],
+      [
+       "ohlc4",
+       "(ap+máx+mín+cierre)/4"
+      ]
+     ]
+    }
+   ],
+   "plots": [
+    {
+     "k": "cci",
+     "l": "CCI",
+     "c": "#2196F3",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Mide cuánto se aleja el precio de su promedio estadístico.",
+    "perfil": "Swing y commodities.",
+    "ayuda": "Detectar extremos y el inicio de tendencias nuevas.",
+    "combina": "Medias móviles y ADX.",
+    "tf": "1h a 1D.",
+    "uso": "Cruce sobre +100 = inicio de impulso alcista; bajo −100 = bajista.",
+    "esperar": "Sin límites fijos: los extremos varían según el activo."
+   }
+  },
+  {
+   "id": "willr",
+   "g": "mom",
+   "name": "Williams %R",
+   "draw": "pane",
+   "inputs": [
+    {
+     "k": "len",
+     "l": "Longitud",
+     "t": "num",
+     "d": 14,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    }
+   ],
+   "plots": [
+    {
+     "k": "wr",
+     "l": "%R",
+     "c": "#7E57C2",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Oscilador de 0 a −100 que ubica el cierre dentro del rango reciente.",
+    "perfil": "Day trading y swing corto.",
+    "ayuda": "Encontrar sobrecompra y sobreventa rápidas.",
+    "combina": "Tendencia mayor (medias) para filtrar.",
+    "tf": "30m a 1D.",
+    "uso": "Sobre −20 = sobrecompra; bajo −80 = sobreventa.",
+    "esperar": "Similar al estocástico, igual de sensible."
+   }
+  },
+  {
+   "id": "wt",
+   "g": "mom",
+   "name": "WaveTrend (Lupown)",
+   "draw": "pane",
+   "inputs": [
+    {
+     "k": "ch",
+     "l": "Longitud del canal WT",
+     "t": "num",
+     "d": 9,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "avg",
+     "l": "Longitud promedio WT",
+     "t": "num",
+     "d": 12,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "src",
+     "l": "Fuente",
+     "t": "sel",
+     "d": "hlc3",
+     "o": [
+      [
+       "close",
+       "Cierre"
+      ],
+      [
+       "open",
+       "Apertura"
+      ],
+      [
+       "high",
+       "Máximo"
+      ],
+      [
+       "low",
+       "Mínimo"
+      ],
+      [
+       "hl2",
+       "(máx+mín)/2"
+      ],
+      [
+       "hlc3",
+       "(máx+mín+cierre)/3"
+      ],
+      [
+       "ohlc4",
+       "(ap+máx+mín+cierre)/4"
+      ]
+     ]
+    },
+    {
+     "k": "mal",
+     "l": "Longitud MA WT",
+     "t": "num",
+     "d": 3,
+     "mn": 1,
+     "mx": 20,
+     "st": 1
+    },
+    {
+     "k": "ob",
+     "l": "Nivel de sobrecompra",
+     "t": "num",
+     "d": 53,
+     "mn": 0,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "os",
+     "l": "Nivel de sobreventa",
+     "t": "num",
+     "d": -53,
+     "mn": -100,
+     "mx": 0,
+     "st": 1
+    }
+   ],
+   "plots": [
+    {
+     "k": "wt1",
+     "l": "Onda 1",
+     "c": "#4FC3F7",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "wt2",
+     "l": "Onda 2",
+     "c": "#1565C0",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Oscilador de ondas que marca agotamiento con cruces en zonas extremas. Base de la señal Lupown.",
+    "perfil": "Swing y cripto.",
+    "ayuda": "Anticipar giros con cruces en extremos y divergencias.",
+    "combina": "Koncorde, divergencias y la tendencia mayor.",
+    "tf": "1h a 1D.",
+    "uso": "Cruce alcista bajo la zona de sobreventa = posible compra (punto verde); al revés en la zona alta.",
+    "esperar": "Buenas señales en extremos; en medio del rango sus cruces valen poco."
+   }
+  },
+  {
+   "id": "sqz",
+   "g": "mom",
+   "name": "Squeeze Momentum (LazyBear)",
+   "draw": "pane",
+   "inputs": [
+    {
+     "k": "bbl",
+     "l": "Longitud BB",
+     "t": "num",
+     "d": 20,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "bbm",
+     "l": "Multiplicador BB",
+     "t": "num",
+     "d": 2,
+     "mn": 0.5,
+     "mx": 5,
+     "st": 0.1
+    },
+    {
+     "k": "kcl",
+     "l": "Longitud KC",
+     "t": "num",
+     "d": 20,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "kcm",
+     "l": "Multiplicador KC",
+     "t": "num",
+     "d": 1.5,
+     "mn": 0.5,
+     "mx": 5,
+     "st": 0.1
+    }
+   ],
+   "plots": [
+    {
+     "k": "mom",
+     "l": "Momentum",
+     "c": "#26A69A",
+     "w": 1,
+     "s": "solid",
+     "o": 70
+    }
+   ],
+   "info": {
+    "que": "Detecta compresiones de volatilidad (Bollinger dentro de Keltner) y mide hacia dónde se libera el impulso.",
+    "perfil": "Swing y day trading; de los favoritos de los traders de impulso.",
+    "ayuda": "Anticipar movimientos explosivos tras periodos de calma.",
+    "combina": "ADX y volumen para confirmar la ruptura.",
+    "tf": "1h a 1D.",
+    "uso": "Cuando termina el squeeze, entra en la dirección del histograma.",
+    "esperar": "Indica que viene movimiento, no siempre en qué dirección hasta que se libera."
+   }
+  },
+  {
+   "id": "div",
+   "g": "mom",
+   "name": "Divergencias",
+   "draw": "none",
+   "inputs": [
+    {
+     "k": "osc",
+     "l": "Oscilador",
+     "t": "sel",
+     "d": "RSI",
+     "o": [
+      [
+       "RSI",
+       "RSI"
+      ],
+      [
+       "MACD",
+       "MACD"
+      ],
+      [
+       "WaveTrend",
+       "WaveTrend"
+      ]
+     ]
+    },
+    {
+     "k": "lbl",
+     "l": "Pivote a la izquierda",
+     "t": "num",
+     "d": 5,
+     "mn": 1,
+     "mx": 50,
+     "st": 1
+    },
+    {
+     "k": "lbr",
+     "l": "Pivote a la derecha",
+     "t": "num",
+     "d": 5,
+     "mn": 1,
+     "mx": 50,
+     "st": 1
+    },
+    {
+     "k": "rmax",
+     "l": "Rango máximo de búsqueda",
+     "t": "num",
+     "d": 60,
+     "mn": 5,
+     "mx": 300,
+     "st": 1
+    },
+    {
+     "k": "rmin",
+     "l": "Rango mínimo de búsqueda",
+     "t": "num",
+     "d": 5,
+     "mn": 1,
+     "mx": 50,
+     "st": 1
+    },
+    {
+     "k": "bull",
+     "l": "Alcistas",
+     "t": "bool",
+     "d": true
+    },
+    {
+     "k": "hbull",
+     "l": "Alcistas ocultas",
+     "t": "bool",
+     "d": true
+    },
+    {
+     "k": "bear",
+     "l": "Bajistas",
+     "t": "bool",
+     "d": true
+    },
+    {
+     "k": "hbear",
+     "l": "Bajistas ocultas",
+     "t": "bool",
+     "d": true
+    }
+   ],
+   "plots": [
+    {
+     "k": "bull",
+     "l": "Alcista",
+     "c": "#089981",
+     "w": 2,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "bear",
+     "l": "Bajista",
+     "c": "#F23645",
+     "w": 2,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Marca cuando el precio y un oscilador van en direcciones opuestas.",
+    "perfil": "Todos; muy valorado en swing.",
+    "ayuda": "Anticipar agotamiento de tendencia (regulares) o su continuación (ocultas).",
+    "combina": "Soportes, resistencias y volumen.",
+    "tf": "1h a 1D.",
+    "uso": "Divergencia alcista en soporte = posible giro. Espera la confirmación de la vela.",
+    "esperar": "Pueden encadenarse varias antes del giro real. Confírmala siempre."
+   }
+  },
+  {
+   "id": "bb",
+   "g": "vola",
+   "name": "Bandas de Bollinger",
+   "draw": "ov",
+   "inputs": [
+    {
+     "k": "len",
+     "l": "Longitud",
+     "t": "num",
+     "d": 20,
+     "mn": 1,
+     "mx": 200,
+     "st": 1
+    },
+    {
+     "k": "mat",
+     "l": "Tipo MA básica",
+     "t": "sel",
+     "d": "SMA",
+     "o": [
+      [
+       "SMA",
+       "SMA"
+      ],
+      [
+       "EMA",
+       "EMA"
+      ],
+      [
+       "WMA",
+       "WMA"
+      ],
+      [
+       "RMA",
+       "RMA"
+      ]
+     ]
+    },
+    {
+     "k": "src",
+     "l": "Fuente",
+     "t": "sel",
+     "d": "close",
+     "o": [
+      [
+       "close",
+       "Cierre"
+      ],
+      [
+       "open",
+       "Apertura"
+      ],
+      [
+       "high",
+       "Máximo"
+      ],
+      [
+       "low",
+       "Mínimo"
+      ],
+      [
+       "hl2",
+       "(máx+mín)/2"
+      ],
+      [
+       "hlc3",
+       "(máx+mín+cierre)/3"
+      ],
+      [
+       "ohlc4",
+       "(ap+máx+mín+cierre)/4"
+      ]
+     ]
+    },
+    {
+     "k": "mult",
+     "l": "DesvEst",
+     "t": "num",
+     "d": 2,
+     "mn": 0.1,
+     "mx": 5,
+     "st": 0.1
+    },
+    {
+     "k": "off",
+     "l": "Desplazamiento",
+     "t": "num",
+     "d": 0,
+     "mn": -50,
+     "mx": 50,
+     "st": 1
+    }
+   ],
+   "plots": [
+    {
+     "k": "basis",
+     "l": "Básica",
+     "c": "#FF6D00",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "upper",
+     "l": "Superior",
+     "c": "#2962FF",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "lower",
+     "l": "Inferior",
+     "c": "#2962FF",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "fill",
+     "l": "Fondo",
+     "c": "#2196F3",
+     "w": 1,
+     "s": "solid",
+     "o": 8
+    }
+   ],
+   "info": {
+    "que": "Banda de volatilidad alrededor de una media: se abre cuando hay movimiento y se estrecha en calma.",
+    "perfil": "Todos los perfiles.",
+    "ayuda": "Medir la volatilidad, ver extremos de precio y anticipar rupturas.",
+    "combina": "RSI, Keltner (squeeze) y volumen.",
+    "tf": "Todas.",
+    "uso": "Bandas estrechas anticipan un movimiento fuerte. En tendencia, el precio \"camina\" por la banda.",
+    "esperar": "Tocar la banda no es señal por sí solo; en tendencia puede seguir pegado a ella."
+   }
+  },
+  {
+   "id": "kc",
+   "g": "vola",
+   "name": "Canales de Keltner",
+   "draw": "ov",
+   "inputs": [
+    {
+     "k": "len",
+     "l": "Longitud",
+     "t": "num",
+     "d": 20,
+     "mn": 1,
+     "mx": 200,
+     "st": 1
+    },
+    {
+     "k": "mult",
+     "l": "Multiplicador",
+     "t": "num",
+     "d": 2,
+     "mn": 0.1,
+     "mx": 5,
+     "st": 0.1
+    },
+    {
+     "k": "src",
+     "l": "Fuente",
+     "t": "sel",
+     "d": "close",
+     "o": [
+      [
+       "close",
+       "Cierre"
+      ],
+      [
+       "open",
+       "Apertura"
+      ],
+      [
+       "high",
+       "Máximo"
+      ],
+      [
+       "low",
+       "Mínimo"
+      ],
+      [
+       "hl2",
+       "(máx+mín)/2"
+      ],
+      [
+       "hlc3",
+       "(máx+mín+cierre)/3"
+      ],
+      [
+       "ohlc4",
+       "(ap+máx+mín+cierre)/4"
+      ]
+     ]
+    },
+    {
+     "k": "ema",
+     "l": "Usar media móvil exponencial",
+     "t": "bool",
+     "d": true
+    },
+    {
+     "k": "bs",
+     "l": "Estilo de bandas",
+     "t": "sel",
+     "d": "Rango verdadero promedio",
+     "o": [
+      [
+       "Rango verdadero promedio",
+       "Rango verdadero promedio"
+      ],
+      [
+       "Rango",
+       "Rango"
+      ]
+     ]
+    },
+    {
+     "k": "atrl",
+     "l": "Longitud ATR",
+     "t": "num",
+     "d": 10,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    }
+   ],
+   "plots": [
+    {
+     "k": "basis",
+     "l": "Básica",
+     "c": "#2962FF",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "upper",
+     "l": "Superior",
+     "c": "#2962FF",
+     "w": 1,
+     "s": "dashed",
+     "o": 100
+    },
+    {
+     "k": "lower",
+     "l": "Inferior",
+     "c": "#2962FF",
+     "w": 1,
+     "s": "dashed",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Canal alrededor de una EMA con ancho basado en el ATR. Más suave que Bollinger.",
+    "perfil": "Swing y day trading.",
+    "ayuda": "Seguir tendencias y detectar rupturas de volatilidad.",
+    "combina": "Bollinger (squeeze) y ADX.",
+    "tf": "1h a 1D.",
+    "uso": "Un cierre fuera del canal en dirección de la tendencia confirma impulso.",
+    "esperar": "Menos señales que Bollinger, pero más limpias."
+   }
+  },
+  {
+   "id": "dc",
+   "g": "vola",
+   "name": "Canales de Donchian",
+   "draw": "ov",
+   "inputs": [
+    {
+     "k": "len",
+     "l": "Longitud",
+     "t": "num",
+     "d": 20,
+     "mn": 1,
+     "mx": 300,
+     "st": 1
+    }
+   ],
+   "plots": [
+    {
+     "k": "upper",
+     "l": "Superior",
+     "c": "#2962FF",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "basis",
+     "l": "Básica",
+     "c": "#FF6D00",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "lower",
+     "l": "Inferior",
+     "c": "#2962FF",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Máximo y mínimo de las últimas N velas.",
+    "perfil": "Position y seguidores de tendencia (sistema Turtle).",
+    "ayuda": "Operar rupturas de máximos y mínimos.",
+    "combina": "ATR para el stop y ADX para filtrar.",
+    "tf": "1D y 1W.",
+    "uso": "Compra al romper el máximo de 20 o 55 velas; sal al perder el mínimo de 10 o 20.",
+    "esperar": "Pocas operaciones y muchas pequeñas pérdidas, compensadas por pocas tendencias largas."
+   }
+  },
+  {
+   "id": "atr",
+   "g": "vola",
+   "name": "Rango verdadero medio (ATR)",
+   "draw": "pane",
+   "inputs": [
+    {
+     "k": "len",
+     "l": "Longitud",
+     "t": "num",
+     "d": 14,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "sm",
+     "l": "Suavizado",
+     "t": "sel",
+     "d": "RMA",
+     "o": [
+      [
+       "RMA",
+       "RMA"
+      ],
+      [
+       "SMA",
+       "SMA"
+      ],
+      [
+       "EMA",
+       "EMA"
+      ],
+      [
+       "WMA",
+       "WMA"
+      ]
+     ]
+    }
+   ],
+   "plots": [
+    {
+     "k": "atr",
+     "l": "ATR",
+     "c": "#F23645",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Mide cuánto se mueve el precio en promedio por vela.",
+    "perfil": "Todos; base del plan de stop y objetivos de XStock.",
+    "ayuda": "Dimensionar el stop, los objetivos y el tamaño de la posición.",
+    "combina": "Cualquier sistema de entrada.",
+    "tf": "Todas.",
+    "uso": "Stop a 1,5–2 ATR de la entrada; objetivos en múltiplos del ATR.",
+    "esperar": "No indica dirección, solo volatilidad."
+   }
+  },
+  {
+   "id": "nw",
+   "g": "vola",
+   "name": "Envolvente Nadaraya-Watson",
+   "draw": "ov",
+   "inputs": [
+    {
+     "k": "bw",
+     "l": "Ancho de banda",
+     "t": "num",
+     "d": 8,
+     "mn": 1,
+     "mx": 50,
+     "st": 1
+    },
+    {
+     "k": "mult",
+     "l": "Multiplicador",
+     "t": "num",
+     "d": 3,
+     "mn": 0.5,
+     "mx": 10,
+     "st": 0.1
+    },
+    {
+     "k": "win",
+     "l": "Tamaño de ventana",
+     "t": "num",
+     "d": 500,
+     "mn": 50,
+     "mx": 500,
+     "st": 1
+    },
+    {
+     "k": "src",
+     "l": "Fuente",
+     "t": "sel",
+     "d": "close",
+     "o": [
+      [
+       "close",
+       "Cierre"
+      ],
+      [
+       "open",
+       "Apertura"
+      ],
+      [
+       "high",
+       "Máximo"
+      ],
+      [
+       "low",
+       "Mínimo"
+      ],
+      [
+       "hl2",
+       "(máx+mín)/2"
+      ],
+      [
+       "hlc3",
+       "(máx+mín+cierre)/3"
+      ],
+      [
+       "ohlc4",
+       "(ap+máx+mín+cierre)/4"
+      ]
+     ]
+    }
+   ],
+   "plots": [
+    {
+     "k": "upper",
+     "l": "Superior",
+     "c": "#F23645",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "lower",
+     "l": "Inferior",
+     "c": "#089981",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Envolvente suavizada con regresión de núcleo que marca extremos de precio.",
+    "perfil": "Swing y cripto.",
+    "ayuda": "Ver zonas de reversión a la media de forma visual.",
+    "combina": "RSI y divergencias.",
+    "tf": "1h a 1D.",
+    "uso": "Toques de la banda con agotamiento del oscilador = posible giro.",
+    "esperar": "Atención: la versión clásica repinta (redibuja el pasado). Úsala como referencia visual, no como señal de backtest."
+   }
+  },
+  {
+   "id": "vol",
+   "g": "vol",
+   "name": "Volumen",
+   "draw": "pane",
+   "inputs": [
+    {
+     "k": "mal",
+     "l": "Longitud MA",
+     "t": "num",
+     "d": 20,
+     "mn": 1,
+     "mx": 200,
+     "st": 1
+    },
+    {
+     "k": "col",
+     "l": "Colorear según la vela anterior",
+     "t": "bool",
+     "d": false
+    }
+   ],
+   "plots": [
+    {
+     "k": "up",
+     "l": "Volumen alcista",
+     "c": "#26A69A",
+     "w": 1,
+     "s": "solid",
+     "o": 50
+    },
+    {
+     "k": "dn",
+     "l": "Volumen bajista",
+     "c": "#EF5350",
+     "w": 1,
+     "s": "solid",
+     "o": 50
+    },
+    {
+     "k": "ma",
+     "l": "Volumen MA",
+     "c": "#2196F3",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Cantidad negociada en cada vela.",
+    "perfil": "Todos.",
+    "ayuda": "Validar rupturas, tendencias y giros: el volumen confirma el precio.",
+    "combina": "Con todo; especialmente VRVP y VWAP.",
+    "tf": "Todas.",
+    "uso": "Ruptura con volumen sobre su media = confiable. Subida con volumen decreciente = debilidad.",
+    "esperar": "En el tiempo real gratuito (IEX) el volumen intradía se ve bajo; el histórico es completo."
+   }
+  },
+  {
+   "id": "vrvp",
+   "g": "vol",
+   "name": "Perfil de volumen de rango visible (VRVP)",
+   "draw": "ov",
+   "inputs": [
+    {
+     "k": "layout",
+     "l": "Diseño de las filas",
+     "t": "sel",
+     "d": "Número de filas",
+     "o": [
+      [
+       "Número de filas",
+       "Número de filas"
+      ],
+      [
+       "Ticks por fila",
+       "Ticks por fila"
+      ]
+     ]
+    },
+    {
+     "k": "rows",
+     "l": "Tamaño de la fila",
+     "t": "num",
+     "d": 24,
+     "mn": 4,
+     "mx": 300,
+     "st": 1
+    },
+    {
+     "k": "volm",
+     "l": "Volumen",
+     "t": "sel",
+     "d": "Arriba/Abajo",
+     "o": [
+      [
+       "Arriba/Abajo",
+       "Arriba/Abajo"
+      ],
+      [
+       "Total",
+       "Total"
+      ],
+      [
+       "Delta",
+       "Delta"
+      ]
+     ]
+    },
+    {
+     "k": "va",
+     "l": "Volumen del área de valor",
+     "t": "num",
+     "d": 70,
+     "mn": 10,
+     "mx": 100,
+     "st": 1
+    }
+   ],
+   "plots": [
+    {
+     "k": "upv",
+     "l": "Volumen arriba",
+     "c": "#2962FF",
+     "w": 1,
+     "s": "solid",
+     "o": 30
+    },
+    {
+     "k": "dnv",
+     "l": "Volumen abajo",
+     "c": "#FBC02D",
+     "w": 1,
+     "s": "solid",
+     "o": 30
+    },
+    {
+     "k": "vaup",
+     "l": "Área de valor arriba",
+     "c": "#2962FF",
+     "w": 1,
+     "s": "solid",
+     "o": 70
+    },
+    {
+     "k": "vadn",
+     "l": "Área de valor abajo",
+     "c": "#FBC02D",
+     "w": 1,
+     "s": "solid",
+     "o": 70
+    },
+    {
+     "k": "poc",
+     "l": "POC",
+     "c": "#F23645",
+     "w": 2,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "extra": [
+    {
+     "k": "width",
+     "l": "Ancho (% del cuadro)",
+     "t": "num",
+     "d": 30,
+     "mn": 5,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "place",
+     "l": "Ubicación",
+     "t": "sel",
+     "d": "Derecha",
+     "o": [
+      [
+       "Derecha",
+       "Derecha"
+      ],
+      [
+       "Izquierda",
+       "Izquierda"
+      ]
+     ]
+    }
+   ],
+   "info": {
+    "que": "Histograma horizontal del volumen negociado en cada nivel de precio, para el rango visible del gráfico.",
+    "perfil": "Todos; muy usado por day traders e institucionales.",
+    "ayuda": "Encontrar el POC (precio con más volumen), el área de valor y los vacíos de volumen.",
+    "combina": "VWAP, soportes y resistencias, oferta y demanda.",
+    "tf": "Todas; el rango visible define el periodo analizado.",
+    "uso": "El POC y los bordes del área de valor (VAH y VAL) actúan como imanes y soportes. En zonas de poco volumen el precio se mueve rápido.",
+    "esperar": "Cambia al hacer zoom o desplazar el gráfico porque se calcula sobre lo que ves."
+   }
+  },
+  {
+   "id": "obv",
+   "g": "vol",
+   "name": "On Balance Volume (OBV)",
+   "draw": "pane",
+   "inputs": [
+    {
+     "k": "mat",
+     "l": "Tipo de suavizado",
+     "t": "sel",
+     "d": "EMA",
+     "o": [
+      [
+       "Ninguno",
+       "Ninguno"
+      ],
+      [
+       "SMA",
+       "SMA"
+      ],
+      [
+       "EMA",
+       "EMA"
+      ]
+     ]
+    },
+    {
+     "k": "mal",
+     "l": "Longitud de suavizado",
+     "t": "num",
+     "d": 20,
+     "mn": 1,
+     "mx": 200,
+     "st": 1
+    }
+   ],
+   "plots": [
+    {
+     "k": "obv",
+     "l": "OBV",
+     "c": "#2962FF",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "ma",
+     "l": "Suavizado",
+     "c": "#FF9800",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Suma el volumen de las velas alcistas y resta el de las bajistas.",
+    "perfil": "Swing y position.",
+    "ayuda": "Ver si el volumen acompaña a la tendencia y detectar acumulación.",
+    "combina": "Divergencias con el precio y medias.",
+    "tf": "1D y 1W.",
+    "uso": "OBV haciendo máximos antes que el precio = acumulación (alcista).",
+    "esperar": "Lo que importa es su pendiente y sus divergencias, no su valor."
+   }
+  },
+  {
+   "id": "mfi",
+   "g": "vol",
+   "name": "Índice de flujo de dinero (MFI)",
+   "draw": "pane",
+   "inputs": [
+    {
+     "k": "len",
+     "l": "Longitud",
+     "t": "num",
+     "d": 14,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "ob",
+     "l": "Banda superior",
+     "t": "num",
+     "d": 80,
+     "mn": 50,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "os",
+     "l": "Banda inferior",
+     "t": "num",
+     "d": 20,
+     "mn": 0,
+     "mx": 50,
+     "st": 1
+    }
+   ],
+   "plots": [
+    {
+     "k": "mfi",
+     "l": "MF",
+     "c": "#7E57C2",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Un RSI ponderado por volumen.",
+    "perfil": "Swing.",
+    "ayuda": "Confirmar sobrecompra o sobreventa con participación real.",
+    "combina": "RSI, OBV y VRVP.",
+    "tf": "1h a 1D.",
+    "uso": "Igual que el RSI; las divergencias con el precio pesan más.",
+    "esperar": "Más lento y más confiable que el RSI en activos con buen volumen."
+   }
+  },
+  {
+   "id": "cmf",
+   "g": "vol",
+   "name": "Chaikin Money Flow (CMF)",
+   "draw": "pane",
+   "inputs": [
+    {
+     "k": "len",
+     "l": "Longitud",
+     "t": "num",
+     "d": 20,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    }
+   ],
+   "plots": [
+    {
+     "k": "cmf",
+     "l": "CMF",
+     "c": "#43A047",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Mide la presión compradora o vendedora según dónde cierra cada vela dentro de su rango, ponderado por volumen.",
+    "perfil": "Swing y position.",
+    "ayuda": "Detectar acumulación y distribución.",
+    "combina": "OBV, medias y rupturas.",
+    "tf": "1D.",
+    "uso": "Sobre cero sostenido = acumulación; bajo cero = distribución.",
+    "esperar": "Confirma más de lo que anticipa."
+   }
+  },
+  {
+   "id": "konc",
+   "g": "vol",
+   "name": "Koncorde",
+   "draw": "none",
+   "inputs": [
+    {
+     "k": "scale",
+     "l": "Escala Koncorde",
+     "t": "num",
+     "d": 8,
+     "mn": 1,
+     "mx": 50,
+     "st": 1
+    },
+    {
+     "k": "m",
+     "l": "Media exponencial",
+     "t": "num",
+     "d": 15,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "pvi",
+     "l": "Longitud PVI",
+     "t": "num",
+     "d": 90,
+     "mn": 1,
+     "mx": 300,
+     "st": 1
+    },
+    {
+     "k": "nvi",
+     "l": "Longitud NVI",
+     "t": "num",
+     "d": 90,
+     "mn": 1,
+     "mx": 300,
+     "st": 1
+    },
+    {
+     "k": "mfi",
+     "l": "Longitud MFI",
+     "t": "num",
+     "d": 14,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "bol",
+     "l": "Longitud oscilador Bollinger",
+     "t": "num",
+     "d": 25,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "mult",
+     "l": "Multiplicador desv. estándar",
+     "t": "num",
+     "d": 2,
+     "mn": 0.1,
+     "mx": 5,
+     "st": 0.1
+    }
+   ],
+   "plots": [
+    {
+     "k": "manos",
+     "l": "Manos fuertes",
+     "c": "#2962FF",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "min",
+     "l": "Minoristas",
+     "c": "#4CAF50",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "tend",
+     "l": "Tendencia",
+     "c": "#F23645",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Combina volumen positivo y negativo (PVI/NVI), MFI y otros osciladores para separar \"manos fuertes\" de minoristas.",
+    "perfil": "Swing; muy popular en la comunidad hispana.",
+    "ayuda": "Ver si el dinero institucional está entrando o saliendo.",
+    "combina": "WaveTrend y VRVP.",
+    "tf": "4h y 1D.",
+    "uso": "Manos fuertes (azul) creciendo bajo cero mientras el precio cae = posible acumulación.",
+    "esperar": "Interpretación más subjetiva; úsalo como contexto."
+   }
+  },
+  {
+   "id": "whale",
+   "g": "vol",
+   "name": "Detección de ballenas",
+   "draw": "none",
+   "inputs": [
+    {
+     "k": "val",
+     "l": "Valor ballena",
+     "t": "num",
+     "d": 30,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "inv",
+     "l": "Mostrar ballena invertida",
+     "t": "bool",
+     "d": false
+    }
+   ],
+   "plots": [
+    {
+     "k": "w",
+     "l": "Ballena",
+     "c": "#00BCD4",
+     "w": 2,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "wi",
+     "l": "Ballena invertida",
+     "c": "#FF9800",
+     "w": 2,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Marca velas con picos de volumen y movimiento anormales, típicos de grandes participantes.",
+    "perfil": "Cripto y swing.",
+    "ayuda": "Ver dónde entra el dinero grande.",
+    "combina": "VRVP y oferta y demanda.",
+    "tf": "1h a 1D.",
+    "uso": "Una ballena compradora en soporte refuerza una entrada.",
+    "esperar": "Muestra actividad, no intención: puede ser cierre de posiciones."
+   }
+  },
+  {
+   "id": "rvol",
+   "g": "vol",
+   "name": "Volumen relativo",
+   "draw": "none",
+   "inputs": [
+    {
+     "k": "len",
+     "l": "Longitud",
+     "t": "num",
+     "d": 20,
+     "mn": 1,
+     "mx": 200,
+     "st": 1
+    },
+    {
+     "k": "thr",
+     "l": "Umbral de alerta",
+     "t": "num",
+     "d": 1.5,
+     "mn": 1,
+     "mx": 5,
+     "st": 0.1
+    }
+   ],
+   "plots": [
+    {
+     "k": "rv",
+     "l": "Volumen relativo",
+     "c": "#FF9800",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Volumen actual dividido por su promedio.",
+    "perfil": "Day trading y swing.",
+    "ayuda": "Encontrar acciones \"en juego\" con interés inusual.",
+    "combina": "Rupturas, VWAP y noticias.",
+    "tf": "30m a 1D.",
+    "uso": "Sobre 1,5 en una ruptura = confirmación.",
+    "esperar": "Alto volumen relativo en noticias puede revertir rápido."
+   }
+  },
+  {
+   "id": "fib",
+   "g": "lvl",
+   "name": "Retroceso de Fibonacci automático",
+   "draw": "ov",
+   "inputs": [
+    {
+     "k": "bars",
+     "l": "Velas de referencia",
+     "t": "num",
+     "d": 126,
+     "mn": 20,
+     "mx": 500,
+     "st": 1
+    },
+    {
+     "k": "ext",
+     "l": "Extender líneas a la izquierda",
+     "t": "bool",
+     "d": false
+    },
+    {
+     "k": "lbl",
+     "l": "Mostrar precios",
+     "t": "bool",
+     "d": true
+    }
+   ],
+   "plots": [
+    {
+     "k": "lv",
+     "l": "Niveles",
+     "c": "#787B86",
+     "w": 1,
+     "s": "dashed",
+     "o": 100
+    },
+    {
+     "k": "golden",
+     "l": "Zona 0,5–0,618",
+     "c": "#2962FF",
+     "w": 1,
+     "s": "solid",
+     "o": 12
+    }
+   ],
+   "info": {
+    "que": "Niveles 23,6 %, 38,2 %, 50 %, 61,8 % y 78,6 % entre el máximo y el mínimo de un tramo.",
+    "perfil": "Todos.",
+    "ayuda": "Anticipar dónde puede terminar un retroceso.",
+    "combina": "Medias, VRVP y velas de giro.",
+    "tf": "1h en adelante.",
+    "uso": "En tendencia, busca entradas entre 50 % y 61,8 % (zona dorada) con confirmación.",
+    "esperar": "Funciona como zona, no como precio exacto."
+   }
+  },
+  {
+   "id": "piv",
+   "g": "lvl",
+   "name": "Puntos pivote estándar",
+   "draw": "ov",
+   "inputs": [
+    {
+     "k": "type",
+     "l": "Tipo",
+     "t": "sel",
+     "d": "Tradicional",
+     "o": [
+      [
+       "Tradicional",
+       "Tradicional"
+      ],
+      [
+       "Fibonacci",
+       "Fibonacci"
+      ],
+      [
+       "Woodie",
+       "Woodie"
+      ],
+      [
+       "Clásico",
+       "Clásico"
+      ],
+      [
+       "Camarilla",
+       "Camarilla"
+      ]
+     ]
+    },
+    {
+     "k": "tf",
+     "l": "Temporalidad del pivote",
+     "t": "sel",
+     "d": "Auto",
+     "o": [
+      [
+       "Auto",
+       "Auto"
+      ],
+      [
+       "Diario",
+       "Diario"
+      ],
+      [
+       "Semanal",
+       "Semanal"
+      ],
+      [
+       "Mensual",
+       "Mensual"
+      ],
+      [
+       "Trimestral",
+       "Trimestral"
+      ],
+      [
+       "Anual",
+       "Anual"
+      ]
+     ]
+    },
+    {
+     "k": "back",
+     "l": "Número de pivotes atrás",
+     "t": "num",
+     "d": 1,
+     "mn": 1,
+     "mx": 15,
+     "st": 1
+    }
+   ],
+   "plots": [
+    {
+     "k": "p",
+     "l": "P",
+     "c": "#FF9800",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "r",
+     "l": "R",
+     "c": "#F23645",
+     "w": 1,
+     "s": "dashed",
+     "o": 100
+    },
+    {
+     "k": "s",
+     "l": "S",
+     "c": "#089981",
+     "w": 1,
+     "s": "dashed",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Niveles calculados con el máximo, mínimo y cierre del periodo anterior.",
+    "perfil": "Day trading y swing.",
+    "ayuda": "Tener soportes y resistencias objetivos que miran muchos traders.",
+    "combina": "VWAP y volumen.",
+    "tf": "30m a 4h (pivote diario o semanal); 1D con pivote mensual.",
+    "uso": "Sobre P = sesgo alcista; R1 y R2 son objetivos; S1 y S2 son soportes.",
+    "esperar": "Más útiles en activos líquidos, donde muchos los vigilan."
+   }
+  },
+  {
+   "id": "sd",
+   "g": "lvl",
+   "name": "Zonas de oferta y demanda",
+   "draw": "none",
+   "inputs": [
+    {
+     "k": "look",
+     "l": "Rango de búsqueda",
+     "t": "num",
+     "d": 200,
+     "mn": 20,
+     "mx": 1000,
+     "st": 1
+    },
+    {
+     "k": "low",
+     "l": "Umbral de nodos de bajo volumen %",
+     "t": "num",
+     "d": 15,
+     "mn": 0,
+     "mx": 50,
+     "st": 1
+    }
+   ],
+   "plots": [
+    {
+     "k": "sup",
+     "l": "Oferta",
+     "c": "#F23645",
+     "w": 1,
+     "s": "solid",
+     "o": 20
+    },
+    {
+     "k": "dem",
+     "l": "Demanda",
+     "c": "#089981",
+     "w": 1,
+     "s": "solid",
+     "o": 20
+    }
+   ],
+   "info": {
+    "que": "Zonas donde el precio salió con fuerza, dejando órdenes pendientes.",
+    "perfil": "Swing y day trading.",
+    "ayuda": "Ubicar entradas y objetivos con buena relación riesgo/beneficio.",
+    "combina": "VRVP, Fibonacci y velas de giro.",
+    "tf": "1h a 1D.",
+    "uso": "Compra en el primer retorno a una zona de demanda fresca, con stop debajo.",
+    "esperar": "Cada visita debilita la zona."
+   }
+  },
+  {
+   "id": "fvg",
+   "g": "lvl",
+   "name": "Fair Value Gaps (FVG)",
+   "draw": "none",
+   "inputs": [
+    {
+     "k": "max",
+     "l": "Máximo de FVG a mostrar",
+     "t": "num",
+     "d": 10,
+     "mn": 1,
+     "mx": 100,
+     "st": 1
+    },
+    {
+     "k": "mid",
+     "l": "Empezar en la vela media",
+     "t": "bool",
+     "d": true
+    },
+    {
+     "k": "filled",
+     "l": "Mostrar FVG ya llenados",
+     "t": "bool",
+     "d": false
+    }
+   ],
+   "plots": [
+    {
+     "k": "bu",
+     "l": "FVG alcista",
+     "c": "#089981",
+     "w": 1,
+     "s": "solid",
+     "o": 20
+    },
+    {
+     "k": "be",
+     "l": "FVG bajista",
+     "c": "#F23645",
+     "w": 1,
+     "s": "solid",
+     "o": 20
+    }
+   ],
+   "info": {
+    "que": "Huecos entre tres velas donde el precio se movió sin negociar en ambos sentidos.",
+    "perfil": "Day trading y Smart Money Concepts.",
+    "ayuda": "Anticipar zonas a las que el precio tiende a volver.",
+    "combina": "Order Blocks y estructura de mercado.",
+    "tf": "30m a 4h.",
+    "uso": "En tendencia alcista, compra el retorno a un FVG alcista sin llenar.",
+    "esperar": "Muchos se llenan sin reacción; prioriza los que van a favor de la tendencia."
+   }
+  },
+  {
+   "id": "ob",
+   "g": "lvl",
+   "name": "Order Blocks",
+   "draw": "none",
+   "inputs": [
+    {
+     "k": "per",
+     "l": "Periodos relevantes",
+     "t": "num",
+     "d": 5,
+     "mn": 1,
+     "mx": 20,
+     "st": 1
+    },
+    {
+     "k": "thr",
+     "l": "Movimiento mínimo %",
+     "t": "num",
+     "d": 0,
+     "mn": 0,
+     "mx": 10,
+     "st": 0.1
+    },
+    {
+     "k": "wicks",
+     "l": "Usar mechas (máximo/mínimo)",
+     "t": "bool",
+     "d": false
+    }
+   ],
+   "plots": [
+    {
+     "k": "bu",
+     "l": "OB alcista",
+     "c": "#089981",
+     "w": 1,
+     "s": "solid",
+     "o": 25
+    },
+    {
+     "k": "be",
+     "l": "OB bajista",
+     "c": "#F23645",
+     "w": 1,
+     "s": "solid",
+     "o": 25
+    }
+   ],
+   "info": {
+    "que": "Última vela contraria antes de un impulso fuerte; zona donde se ubicaron órdenes grandes.",
+    "perfil": "Day trading y Smart Money Concepts.",
+    "ayuda": "Definir zonas precisas de entrada y stop.",
+    "combina": "FVG, oferta y demanda, volumen.",
+    "tf": "30m a 4h.",
+    "uso": "Entra en el retorno al bloque con stop al otro lado.",
+    "esperar": "Subjetivo; mejor cuando coincide con otras zonas."
+   }
+  },
+  {
+   "id": "rs",
+   "g": "lvl",
+   "name": "Fuerza relativa vs. SPY",
+   "draw": "none",
+   "inputs": [
+    {
+     "k": "idx",
+     "l": "Índice de comparación",
+     "t": "sel",
+     "d": "SPY",
+     "o": [
+      [
+       "SPY",
+       "SPY"
+      ],
+      [
+       "QQQ",
+       "QQQ"
+      ],
+      [
+       "IWM",
+       "IWM"
+      ],
+      [
+       "DIA",
+       "DIA"
+      ]
+     ]
+    },
+    {
+     "k": "len",
+     "l": "Longitud",
+     "t": "num",
+     "d": 63,
+     "mn": 5,
+     "mx": 252,
+     "st": 1
+    }
+   ],
+   "plots": [
+    {
+     "k": "rs",
+     "l": "Fuerza relativa",
+     "c": "#FF9800",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Rendimiento de la acción comparado con el índice.",
+    "perfil": "Swing y position.",
+    "ayuda": "Elegir líderes: acciones que suben más que el mercado.",
+    "combina": "Medias y fundamentales.",
+    "tf": "1D y 1W.",
+    "uso": "Prioriza acciones con fuerza relativa creciente y positiva.",
+    "esperar": "Los líderes también caen más en correcciones fuertes."
+   }
+  }
+ ]
+}

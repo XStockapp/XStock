@@ -28,7 +28,7 @@ with left:
             days = c2.number_input("Vence en (días)", 1, 365, 7, 1)
             quota = 0
             note = st.text_input("Nota interna (opcional)", placeholder="p. ej. compañero de trading")
-            ok = st.form_submit_button("Generar invitación", type="primary", use_container_width=True)
+            ok = st.form_submit_button("Generar invitación", type="primary", width="stretch")
         if ok:
             inv = db.create_invite(me["email"], quota, uses, days, email, note, me.get("name") or "")
             st.session_state["last_invite"] = inv
@@ -44,10 +44,10 @@ with left:
                    f"Regístrate aquí: {link}")
             st.text_area("Mensaje listo para enviar", msg, height=110)
             c1, c2 = st.columns(2)
-            c1.link_button("Enviar por WhatsApp", f"https://wa.me/?text={quote(msg)}", use_container_width=True)
+            c1.link_button("Enviar por WhatsApp", f"https://wa.me/?text={quote(msg)}", width="stretch")
             if inv.get("email"):
                 c2.link_button("Enviar por correo", f"mailto:{inv['email']}?subject={quote('Invitación a XStock')}&body={quote(msg)}",
-                               use_container_width=True)
+                               width="stretch")
             st.caption(f"Vence: {str(inv['expires_at'])[:10]} · usos: {inv['max_uses']} · "
                        + (f"solo para {inv['email']}" if inv.get("email") else "cualquier correo"))
 
@@ -73,11 +73,11 @@ with right:
     else:
         colr = {"Activa": NEUTRAL, "Usada": GREEN, "Vencida": MUTED, "Revocada": RED}
         sel = st.dataframe(df.style.map(lambda v: f"color: {colr.get(v, MUTED)}; font-weight: 600", subset=["Estado"]),
-                           hide_index=True, use_container_width=True, height=420, on_select="rerun",
+                           hide_index=True, width="stretch", height=420, on_select="rerun",
                            selection_mode="multi-row", key="inv_table")
         picked = df.iloc[sel.selection.rows] if sel and sel.selection.rows else df.iloc[0:0]
         c1, c2 = st.columns(2)
-        if c1.button(f"Revocar seleccionadas ({len(picked)})", disabled=picked.empty, use_container_width=True):
+        if c1.button(f"Revocar seleccionadas ({len(picked)})", disabled=picked.empty, width="stretch"):
             for c in picked["Código"]:
                 db.revoke_invite(c)
             st.toast("Invitaciones revocadas")

@@ -53,7 +53,7 @@ def personalizar(kind: str, key: str, col=None, tecnicas: bool = True) -> dict:
     cur = market.prefs(S, kind)
     op = market.OPCIONES[kind]
     host = col or st
-    with host.popover("⚙️ Personalizar", use_container_width=True):
+    with host.popover("⚙️ Personalizar", width="stretch"):
         st.markdown("**Rendimiento**")
         perf = st.pills("Rendimiento", op["perf"], selection_mode="multi", default=cur["perf"], key=f"{key}_perf",
                         label_visibility="collapsed")

@@ -59,61 +59,39 @@ if NEEDS_ONBOARDING:
 else:
     pages = st.navigation({"XStock": _main, "Administración": _admin} if ADMIN else _main)
 
+def _admin_ia():
+    provs = ["Alpaca con respaldo de Yahoo (gratis)", "Alpha Vantage (premium)"]
+    cfg["proveedor"] = st.selectbox("Proveedor de precios del análisis", provs,
+                                    index=1 if str(cfg.get("proveedor", "")).startswith("Alpha ") else 0,
+                                    help="Alpaca entrega todo el mercado (SIP) con 15 minutos de retraso e historial desde 2016; "
+                                         "si falla o faltan sus claves se usa Yahoo. El escáner también usa Alpaca. "
+                                         "Con Alpha Vantage premium el análisis usa su historial diario.")
+    from core import alpaca as _alp
+    st.caption("✅ Claves de Alpaca cargadas desde los secrets" if _alp.available()
+               else "⚠️ Faltan ALPACA_API_KEY y ALPACA_SECRET_KEY: se usará Yahoo")
+    cfg["modelo"] = st.selectbox("Modelo de IA", list(MODELOS), index=list(MODELOS).index(cfg["modelo"])
+                                 if cfg["modelo"] in MODELOS else 0)
+    if store.secret("ANTHROPIC_API_KEY"):
+        st.caption("✅ Anthropic API key cargada desde los secrets")
+    else:
+        cfg["anthropic_key"] = st.text_input("Anthropic API key", cfg["anthropic_key"], type="password",
+                                             help="console.anthropic.com → API Keys. Sin clave se usa síntesis por reglas.")
+    if store.secret("ALPHAVANTAGE_API_KEY"):
+        st.caption("✅ Alpha Vantage key cargada desde los secrets")
+    else:
+        cfg["alphavantage_key"] = st.text_input("Alpha Vantage API key (gratis)", cfg["alphavantage_key"], type="password",
+                                                help="alphavantage.co/support/#api-key — respaldo de fundamentales.")
+    if st.button("Guardar configuración", width="stretch"):
+        store.save_config(cfg)
+        st.success("Guardado en datos/config.json")
+
+
+from core import user_menu  # noqa: E402
+
 with st.sidebar:
-    st.divider()
-    if not NEEDS_ONBOARDING:
-        _P = _profiles.get(st.session_state.trader_profile)
-        st.markdown(f"<div class='small'>Perfil: <b>{_P['icono']} {_P['nombre']}</b> · {' / '.join(_P['tfs'])}</div>",
-                    unsafe_allow_html=True)
-        if st.button("Cambiar perfil y ajustes técnicos", icon=":material/tune:", use_container_width=True):
-            st.session_state.onboarding = True
-            st.session_state.ob_step = 1
-            st.rerun()
-    with st.expander("⚙️ Configuración", expanded=False):
-        cfg["capital"] = st.number_input("Capital de la cuenta (USD)", 100.0, 1e8, float(cfg["capital"]), 500.0)
-        cfg["riesgo_pct"] = st.number_input("Riesgo por operación (%)", 0.1, 5.0, float(cfg["riesgo_pct"]), 0.1)
-        c1, c2 = st.columns(2)
-        cfg["tp_atr"] = c1.number_input("Objetivo (×ATR)", 1.0, 8.0, float(cfg["tp_atr"]), 0.5)
-        cfg["sl_atr"] = c2.number_input("Stop (×ATR)", 0.5, 5.0, float(cfg["sl_atr"]), 0.25)
-        cfg["horizonte"] = st.slider("Horizonte en 1D (sesiones)", 24, 50, min(50, max(24, int(cfg["horizonte"]))),
-                                     help="Velas diarias (1D): mediano-largo plazo, 1 a 3 meses (24–50 sesiones). "
-                                          "Las demás temporalidades usan su horizonte propio (p. ej. 39 velas en 10m).")
-        st.caption("El escáner usa velas 1D. Temporalidad mínima de la app: 10m.")
-        if not ADMIN:
-            st.caption("Estos ajustes valen para esta sesión.")
-    if ADMIN:
-        with st.expander("🔑 IA y datos (administrador)", expanded=False):
-            provs = ["Alpaca con respaldo de Yahoo (gratis)", "Alpha Vantage (premium)"]
-            cfg["proveedor"] = st.selectbox("Proveedor de precios del análisis", provs,
-                                            index=1 if str(cfg.get("proveedor", "")).startswith("Alpha ") else 0,
-                                            help="Alpaca entrega todo el mercado (SIP) con 15 minutos de retraso e historial desde 2016; "
-                                                 "si falla o faltan sus claves se usa Yahoo. El escáner también usa Alpaca. "
-                                                 "Con Alpha Vantage premium el análisis usa su historial diario.")
-            from core import alpaca as _alp
-            st.caption("✅ Claves de Alpaca cargadas desde los secrets" if _alp.available()
-                       else "⚠️ Faltan ALPACA_API_KEY y ALPACA_SECRET_KEY: se usará Yahoo")
-            cfg["modelo"] = st.selectbox("Modelo de IA", list(MODELOS), index=list(MODELOS).index(cfg["modelo"])
-                                         if cfg["modelo"] in MODELOS else 0)
-            if store.secret("ANTHROPIC_API_KEY"):
-                st.caption("✅ Anthropic API key cargada desde los secrets")
-            else:
-                cfg["anthropic_key"] = st.text_input("Anthropic API key", cfg["anthropic_key"], type="password",
-                                                     help="console.anthropic.com → API Keys. Sin clave se usa síntesis por reglas.")
-            if store.secret("ALPHAVANTAGE_API_KEY"):
-                st.caption("✅ Alpha Vantage key cargada desde los secrets")
-            else:
-                cfg["alphavantage_key"] = st.text_input("Alpha Vantage API key (gratis)", cfg["alphavantage_key"], type="password",
-                                                        help="alphavantage.co/support/#api-key — respaldo de fundamentales.")
-            if st.button("Guardar configuración", use_container_width=True):
-                store.save_config(cfg)
-                st.success("Guardado en datos/config.json")
-    wl = store.watchlist()
-    st.caption(f"Watchlist: **{len(wl)}** acciones")
-    st.divider()
-    st.markdown(f"<div class='small'><b>{profile.get('name') or profile['email']}</b><br>"
-                f"<span class='muted'>{profile['email']} · {'Administrador' if ADMIN else 'Invitado'}</span></div>",
-                unsafe_allow_html=True)
-    if profile.get("email") != "owner@local" and st.button("Cerrar sesión", use_container_width=True):
-        auth.logout()
+    if NEEDS_ONBOARDING and st.session_state.get("ob_step", 1) == 1:
+        pass  # en el paso 1 (elegir perfil) el menú todavía no aplica
+    else:
+        user_menu.render(profile, ADMIN, cfg, onboarding=NEEDS_ONBOARDING, extra_admin=_admin_ia)
 
 pages.run()
