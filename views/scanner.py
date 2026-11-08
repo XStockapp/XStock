@@ -26,6 +26,90 @@ if _go:
         st.session_state.ticker = _sym
         st.switch_page("views/analisis.py")
 
+# ---------------------------------------------------------------- tendencias y mayores alzas
+import html  # noqa: E402
+
+import pandas as pd  # noqa: E402
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _movers(tipo: str, mercado: str) -> list[dict]:
+    from core import movers
+    if data._demo():
+        return movers.demo(tipo, mercado)
+    fn = {("tendencias", "Acciones"): movers.acciones_tendencias, ("alzas", "Acciones"): movers.acciones_alzas,
+          ("tendencias", "Cripto"): movers.cripto_tendencias, ("alzas", "Cripto"): movers.cripto_alzas}[(tipo, mercado)]
+    return fn(5)
+
+
+def _px(v):
+    if v is None or pd.isna(v):
+        return "—"
+    return f"${v:,.2f}" if v >= 1 else f"${v:.4g}"
+
+
+def _logo(url, ticker):
+    ini = html.escape(ticker.split("-")[0][:2])
+    img = f"<img src='{html.escape(url)}' alt='' referrerpolicy='no-referrer'>" if url else ""
+    return f"<div class='mv-logo'><span>{ini}</span>{img}</div>"
+
+
+st.markdown(f"""<style>
+.mv-logo{{position:relative;width:28px;height:28px;border-radius:50%;background:#1f2937;color:#c9d1d9;font:600 10px Inter,sans-serif;
+  display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none}}
+.mv-logo img{{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#fff;border-radius:50%}}
+.mv-px{{text-align:right;font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:.92rem;padding-top:6px}}
+.mv-ch{{text-align:right;font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:.92rem;font-weight:600;padding-top:6px;white-space:nowrap}}
+[class*="st-key-mvpanel_"] [data-testid="stHorizontalBlock"]{{flex-wrap:nowrap !important;gap:.5rem !important;align-items:center}}
+[class*="st-key-mvpanel_"] [data-testid="stColumn"]{{min-width:0 !important}}
+[class*="st-key-mvpanel_"] [data-testid="stBaseButton-tertiary"]{{justify-content:flex-start;padding:0;min-height:32px;width:100%;margin:0}}
+[class*="st-key-mvpanel_"] [data-testid="stBaseButton-tertiary"] > div{{justify-content:flex-start;width:100%;min-width:0}}
+[class*="st-key-mvpanel_"] [data-testid="stBaseButton-tertiary"] p{{font-size:.95rem;font-weight:500;text-align:left;margin:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+[class*="st-key-mvpanel_"] [data-testid="stBaseButton-tertiary"]:hover p{{text-decoration:underline}}
+[class*="st-key-mvpanel_"] [data-testid="stColumn"] [data-testid="stElementContainer"]{{margin:0}}
+[class*="st-key-mvpanel_"] .mv-px,[class*="st-key-mvpanel_"] .mv-ch{{padding-top:0}}
+[class*="st-key-mvpanel_"] [data-testid="stColumn"] [data-testid="stMarkdownContainer"]{{margin-bottom:0}}
+[class*="st-key-mvpanel_"] [data-testid="stVerticalBlock"]{{gap:.35rem}}
+</style>""", unsafe_allow_html=True)
+
+
+def _panel(col, tipo: str, titulo: str, ayuda: str):
+    with col.container(border=True, key=f"mvpanel_{tipo}"):
+        h1, h2 = st.columns([1.4, 1], vertical_alignment="center")
+        h1.markdown(f"<div style='font-size:1.1rem;font-weight:600'>{titulo}</div>", unsafe_allow_html=True)
+        mercado = h2.segmented_control(titulo, ["Cripto", "Acciones"], default="Acciones", key=f"mk_{tipo}",
+                                       label_visibility="collapsed") or "Acciones"
+        try:
+            rows = _movers(tipo, mercado)
+        except Exception:
+            rows = []
+        if not rows:
+            st.caption("No disponible en este momento. Vuelve a intentar en unos minutos.")
+            return
+        for i, r in enumerate(rows):
+            c0, c1, c2, c3 = st.columns([0.32, 2.6, 1.15, 0.95], vertical_alignment="center")
+            c0.markdown(_logo(r.get("logo"), r["ticker"]), unsafe_allow_html=True)
+            if c1.button(r["nombre"], key=f"mv_{tipo}_{mercado}_{i}", type="tertiary",
+                         help=f"Analizar {r['ticker']}", use_container_width=True):
+                st.session_state.ticker = r["ticker"]
+                st.switch_page("views/analisis.py")
+            c2.markdown(f"<div class='mv-px'>{_px(r.get('precio'))}</div>", unsafe_allow_html=True)
+            v = r.get("var")
+            if v is None or pd.isna(v):
+                txt, colr = "—", MUTED
+            else:
+                txt, colr = f"{'▲' if v >= 0 else '▼'} {abs(v):.1f}%", GREEN if v >= 0 else RED
+            c3.markdown(f"<div class='mv-ch' style='color:{colr}'>{txt}</div>", unsafe_allow_html=True)
+        st.caption(ayuda)
+
+
+_mc1, _mc2 = st.columns(2)
+_panel(_mc1, "tendencias", "Tendencias",
+       "Acciones más negociadas hoy (volumen en dólares) · Cripto: tendencias de CoinGecko. Clic en un nombre para analizarlo.")
+_panel(_mc2, "alzas", "Mayores alzas",
+       "Mayores subidas del día (precio ≥ $2) · Cripto: mayores subidas 24 h entre las 250 más grandes. Clic en un nombre para analizarlo.")
+
 st.markdown("## Escáner de mercado")
 st.markdown("<div class='muted'>Ranking por <b>valor esperado</b> y <b>probabilidad histórica</b> de alcanzar el "
             "objetivo antes que el stop, con 12 indicadores técnicos profesionales.</div>", unsafe_allow_html=True)
