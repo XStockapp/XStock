@@ -77,8 +77,8 @@ with st.sidebar:
         cfg["sl_atr"] = c2.number_input("Stop (×ATR)", 0.5, 5.0, float(cfg["sl_atr"]), 0.25)
         cfg["horizonte"] = st.slider("Horizonte en 1D (sesiones)", 24, 50, min(50, max(24, int(cfg["horizonte"]))),
                                      help="Velas diarias (1D): mediano-largo plazo, 1 a 3 meses (24–50 sesiones). "
-                                          "Las demás temporalidades usan su horizonte propio (p. ej. 26 velas en 30m).")
-        st.caption("El escáner usa velas 1D. Temporalidad mínima de la app: 30m.")
+                                          "Las demás temporalidades usan su horizonte propio (p. ej. 39 velas en 10m).")
+        st.caption("El escáner usa velas 1D. Temporalidad mínima de la app: 10m.")
         if not ADMIN:
             st.caption("Estos ajustes valen para esta sesión.")
     if ADMIN:

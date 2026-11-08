@@ -11,7 +11,7 @@ import json
 
 from core import profiles, summary
 from core.levels import MODOS
-from core.timeframes import is_crypto, unidad
+from core.timeframes import RANGO_NOMBRE, RANGOS, is_crypto, rango_valido, rango_velas, unidad
 from core.ui import (AMBER, DISCLAIMER, GREEN, MUTED, NEUTRAL, RED, SIGNAL_COLORS, color_for, equity_chart, is_mobile,
                      pill, plot_config, price_chart)
 
@@ -28,6 +28,7 @@ def _run(ticker, tp, sl, hz, acct, risk, av, prov, tf, settings_json):
 PKEY = st.session_state.get("trader_profile")
 PERF = profiles.get(PKEY)
 SETTINGS = profiles.merge_settings(st.session_state.get("technical_settings"))
+saved_range = profiles.saved_range
 
 
 def ok(x):
@@ -63,12 +64,25 @@ def col_score(v, g=15, b=-15):
 
 
 # ---------------------------------------------------------------- barra superior
-c1, ctf, c2, c3 = st.columns([3.6, 2.2, 1, 1.2])
-ticker = c1.text_input("Ticker", st.session_state.get("ticker", "AAPL"), label_visibility="collapsed",
-                       placeholder="Ticker, p. ej. NVDA").strip().upper()
+c1, ctf, crg, c2, c3 = st.columns([2.6, 1.7, 2.3, 1, 1.2], vertical_alignment="bottom")
+ticker = c1.text_input("Símbolo", st.session_state.get("ticker", "AAPL"),
+                       placeholder="Acción o cripto, p. ej. NVDA o BTC-USD").strip().upper()
 _tfs = PERF["tfs"]
 _tf_def = st.session_state.get("default_tf") if st.session_state.get("default_tf") in _tfs else PERF["tf"]
-TF = ctf.segmented_control("Temporalidad", _tfs, default=_tf_def, key="tf_sel", label_visibility="collapsed") or _tf_def
+TF = ctf.segmented_control("Velas", _tfs, default=_tf_def, key="tf_sel",
+                           help="Temporalidad de cada vela. Se guarda como tu temporalidad por defecto.") or _tf_def
+_rk = RANGOS[TF]
+_rng_def = rango_valido(TF, saved_range(SETTINGS, TF))
+rng = crg.segmented_control("Rango visible", _rk, default=_rng_def, key=f"rng_{TF}",
+                            format_func=lambda r: r,
+                            help="Periodo que muestra el gráfico (S = semanas, M = meses, A = años). "
+                                 "Se guarda por temporalidad en tu configuración de indicadores.") or _rng_def
+if TF != st.session_state.get("default_tf") or rng != _rng_def:
+    try:
+        profiles.save_user_view(TF, rng, SETTINGS)
+        SETTINGS = st.session_state.technical_settings
+    except Exception as _e:  # no bloquear el análisis si falla el guardado
+        st.toast(f"No se pudo guardar la vista: {_e}")
 c2.button("Analizar", type="primary", use_container_width=True)
 if not ticker:
     st.stop()
@@ -78,7 +92,7 @@ try:
         A = _run(ticker, cfg["tp_atr"], cfg["sl_atr"], int(cfg["horizonte"]) if TF == "1D" else None,
                  cfg["capital"], cfg["riesgo_pct"], cfg["alphavantage_key"],
                  "alphavantage" if cfg.get("proveedor", "").startswith("Alpha Vantage") else "yahoo",
-                 TF, json.dumps(SETTINGS, sort_keys=True))
+                 TF, json.dumps(profiles.engine_settings(SETTINGS), sort_keys=True))
 except Exception as e:
     st.error(f"No se pudo analizar {ticker}: {e}")
     st.stop()
@@ -119,17 +133,12 @@ st.markdown(
     unsafe_allow_html=True)
 
 # ---------------------------------------------------------------- gráfico + panel vertical
-cc1, cc2, cc3, _ = st.columns([2.2, 1, 1, 3])
-if TF == "1D":
-    _rngs = {"3M": 63, "6M": 126, "1A": 252, "2A": 504}
-else:
-    _rngs = {"60 velas": 60, "120 velas": 120, "250 velas": 250, "500 velas": 500}
-_rk = list(_rngs)
-rng = cc1.segmented_control("Rango", _rk, default=_rk[0] if MOBILE else _rk[1], key=f"rng_{TF}",
-                            label_visibility="collapsed") or _rk[1]
+bars = rango_velas(TF, rng, is_crypto(ticker), len(d))
+cc1, cc2, cc3 = st.columns([3.2, 1, 1])
+cc1.markdown(f"<div class='muted small' style='padding-top:6px'>Gráfico: velas <b>{E(TF)}</b> · "
+             f"{E(RANGO_NOMBRE.get(rng, rng))} · {bars} velas visibles</div>", unsafe_allow_html=True)
 show_vp = cc2.toggle("VRVP", value=True)
 show_bb = cc3.toggle("Bollinger", value=False)
-bars = _rngs[rng]
 
 akey = f"ai_{ticker}_{d.index[-1]:%Y%m%d}_{cfg['tp_atr']}_{cfg['sl_atr']}_{plan['modo_entrada']}_{TF}"
 V = st.session_state.get(akey)

@@ -29,6 +29,9 @@ BASE_SETTINGS = {
     "adx": {"periodo": 14, "umbral": 25},
     "bollinger": {"periodo": 20, "desv": 2.0},
     "fibonacci": {"velas": 126},
+    # Vista del gráfico: temporalidad de velas y rango visible elegidos por el usuario (uno por temporalidad).
+    # No interviene en los cálculos: se guarda junto a los ajustes para recordarlo entre sesiones.
+    "vista": {"rangos": {}},
 }
 
 
@@ -44,7 +47,7 @@ def _s(**over) -> dict:
 
 PERFILES: dict[str, dict] = {
     "day": {
-        "nombre": "Day Trader", "icono": "⚡", "tfs": ["30m", "1h"], "tf": "30m",
+        "nombre": "Day Trader", "icono": "⚡", "tfs": ["10m", "1h"], "tf": "10m",
         "descripcion": "Operaciones de horas a 2–3 días. Prioriza VWAP, la media rápida, RSI y volumen relativo.",
         "settings": _s(mas=[{"tipo": "EMA", "periodo": 9, "color": "#facc15"},
                             {"tipo": "EMA", "periodo": 20, "color": "#ef4444"},
@@ -123,3 +126,35 @@ def ma_color(settings: dict | None, slot: str) -> str:
     if not settings:
         return base[slot]
     return settings["mas"][MA_SLOTS.index(slot)].get("color") or base[slot]
+
+
+def engine_settings(settings: dict) -> dict:
+    """Ajustes que usa el motor de cálculo (sin la vista del gráfico, que no cambia los indicadores)."""
+    return {k: v for k, v in settings.items() if k != "vista"}
+
+
+def save_user_view(tf: str | None = None, rango: str | None = None, settings: dict | None = None,
+                   trader_profile: str | None = None) -> None:
+    """Guarda temporalidad, rango visible y/o ajustes técnicos del usuario actual (Supabase o config local)
+    y actualiza la sesión, para que análisis y configuración de indicadores muestren lo mismo."""
+    import streamlit as st
+
+    from . import db, store
+    ss = st.session_state
+    S = copy.deepcopy(settings if settings is not None else merge_settings(ss.get("technical_settings")))
+    tf = tf or ss.get("default_tf") or get(trader_profile or ss.get("trader_profile"))["tf"]
+    if rango:
+        S.setdefault("vista", {}).setdefault("rangos", {})[tf] = rango
+    tp = trader_profile or ss.get("trader_profile") or DEFAULT_PERFIL
+    email = (ss.get("profile") or {}).get("email")
+    if email and email != "owner@local":
+        db.save_trader_profile(email, tp, S, tf)
+    else:  # modo personal sin base de datos
+        cfg = ss.get("cfg") or store.config()
+        cfg.update({"trader_profile": tp, "technical_settings": copy.deepcopy(S), "default_tf": tf})
+        store.save_config(cfg)
+    ss.trader_profile, ss.technical_settings, ss.default_tf = tp, S, tf
+
+
+def saved_range(settings: dict | None, tf: str) -> str | None:
+    return ((settings or {}).get("vista") or {}).get("rangos", {}).get(tf)

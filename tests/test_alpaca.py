@@ -172,3 +172,32 @@ def test_scanner_batch_uses_alpaca_then_yahoo_for_missing(monkeypatch):
     monkeypatch.setattr(yfinance, "download", fake_download)
     got = data.batch_history(["AAPL", "MSFT", "XYZ"], "2y")
     assert set(got) == {"AAPL", "MSFT", "XYZ"} and asked["part"] == ["XYZ"]
+
+
+def test_10m_bars_regular_session(monkeypatch):
+    t0 = pd.Timestamp("2026-11-02 13:00", tz="UTC")  # 8:00 NY, con premercado
+    rows = [{"t": (t0 + pd.Timedelta(minutes=10 * i)).strftime("%Y-%m-%dT%H:%M:%SZ"), "o": 1, "h": 2, "l": 0.5, "c": 1.5, "v": 1}
+            for i in range(80)]
+    calls = install(monkeypatch, lambda u, p, h: Resp({"bars": {"AAPL": rows}}))
+    df = alpaca.bars("AAPL", "10m")
+    assert calls[0][1]["timeframe"] == "10Min"
+    assert df.index.min().strftime("%H:%M") == "09:30" and df.index.max().strftime("%H:%M") == "15:50"
+    assert len(df) == 39
+
+
+def test_10m_yahoo_fallback_resamples_5m(monkeypatch):
+    monkeypatch.delenv("ALPACA_API_KEY")
+    idx = pd.date_range("2026-11-02 09:30", "2026-11-02 15:55", freq="5min", tz="America/New_York")
+
+    class FakeTicker:
+        def __init__(self, t):
+            pass
+
+        def history(self, **kw):
+            assert kw["interval"] == "5m"
+            return pd.DataFrame({"Open": 1.0, "High": 2.0, "Low": 0.5, "Close": 1.5, "Volume": 10.0}, index=idx)
+
+    import yfinance
+    monkeypatch.setattr(yfinance, "Ticker", FakeTicker)
+    df = data.history_tf("AAPL", "10m")
+    assert len(df) == 39 and df.index[0].strftime("%H:%M") == "09:30" and df["Volume"].iloc[0] == 20
