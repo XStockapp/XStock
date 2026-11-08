@@ -83,11 +83,15 @@ with st.sidebar:
             st.caption("Estos ajustes valen para esta sesión.")
     if ADMIN:
         with st.expander("🔑 IA y datos (administrador)", expanded=False):
-            provs = ["Yahoo Finance (gratis)", "Alpha Vantage (premium)"]
-            cfg["proveedor"] = st.selectbox("Proveedor de datos del análisis", provs,
-                                            index=provs.index(cfg.get("proveedor", provs[0])) if cfg.get("proveedor") in provs else 0,
-                                            help="El escáner masivo siempre usa Yahoo (Alpha Vantage gratis permite ~25 consultas/día). "
-                                                 "Con Alpha Vantage premium el análisis usa su historial y fundamentales.")
+            provs = ["Alpaca con respaldo de Yahoo (gratis)", "Alpha Vantage (premium)"]
+            cfg["proveedor"] = st.selectbox("Proveedor de precios del análisis", provs,
+                                            index=1 if str(cfg.get("proveedor", "")).startswith("Alpha ") else 0,
+                                            help="Alpaca entrega todo el mercado (SIP) con 15 minutos de retraso e historial desde 2016; "
+                                                 "si falla o faltan sus claves se usa Yahoo. El escáner también usa Alpaca. "
+                                                 "Con Alpha Vantage premium el análisis usa su historial diario.")
+            from core import alpaca as _alp
+            st.caption("✅ Claves de Alpaca cargadas desde los secrets" if _alp.available()
+                       else "⚠️ Faltan ALPACA_API_KEY y ALPACA_SECRET_KEY: se usará Yahoo")
             cfg["modelo"] = st.selectbox("Modelo de IA", list(MODELOS), index=list(MODELOS).index(cfg["modelo"])
                                          if cfg["modelo"] in MODELOS else 0)
             if store.secret("ANTHROPIC_API_KEY"):

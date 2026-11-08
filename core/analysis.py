@@ -72,6 +72,6 @@ def full_analysis(ticker: str, tp=3.0, sl=1.5, horizon=None, account=10_000.0, r
     seen = {n["titulo"] for n in news}
     news += [n for n in fv["news"] if n["titulo"] not in seen][: max(0, 12 - len(news))]
     comb = 0.6 * cur + 0.4 * (fscore["score"] if fscore["score"] is not None else 0)
-    return {"ticker": ticker, "tf": tf, "df": d, "tech": tech, "prob": prob, "bt": bt, "metrics": metrics,
+    return {"ticker": ticker, "tf": tf, "fuente": raw.attrs.get("fuente", ""), "df": d, "tech": tech, "prob": prob, "bt": bt, "metrics": metrics,
             "fscore": fscore, "piotroski": pio, "plan": plan, "planes": planes, "news": news, "combinado": comb,
             "finviz": fv, "finviz_items": fv_items, "vprofile": volume_profile(d.tail(180))}

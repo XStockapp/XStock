@@ -172,14 +172,42 @@ def _synthetic(ticker: str, n: int = 600) -> pd.DataFrame:
     return pd.DataFrame({"Open": op, "High": hi, "Low": lo, "Close": close, "Volume": volu}, index=idx)
 
 
+def _years(period: str) -> float:
+    try:
+        return float(period.rstrip("y")) if period.endswith("y") else 5.0
+    except ValueError:
+        return 5.0
+
+
+def _use_alpaca(ticker: str, provider: str) -> bool:
+    from . import alpaca
+    return provider != "alphavantage" and (alpaca.available() or alpaca.is_crypto(ticker))
+
+
+def _tag(df: pd.DataFrame, fuente: str) -> pd.DataFrame:
+    df.attrs["fuente"] = fuente
+    return df
+
+
+ALPACA_FUENTE = "Alpaca (SIP, 15 min de retraso)"
+
+
 def history(ticker: str, period: str = "3y", provider: str = "yahoo", av_key: str = "") -> pd.DataFrame:
     if _demo():
-        return _synthetic(ticker)
+        return _tag(_synthetic(ticker), "Datos de ejemplo")
+    if _use_alpaca(ticker, provider):
+        from . import alpaca
+        try:
+            df = alpaca.bars(ticker, "1D", max(_years(period), 5))
+            if len(df) >= 60:
+                return _tag(df, ALPACA_FUENTE if not alpaca.is_crypto(ticker) else "Alpaca Crypto")
+        except Exception:
+            pass  # cae a Yahoo
     if provider == "alphavantage" and av_key:
         try:
             df = av_daily(ticker, av_key, full=True)
             if len(df) >= 260:
-                return df.tail(1300)
+                return _tag(df.tail(1300), "Alpha Vantage")
         except Exception:
             pass  # cae a Yahoo
     import yfinance as yf
@@ -187,7 +215,7 @@ def history(ticker: str, period: str = "3y", provider: str = "yahoo", av_key: st
     if df.empty:
         raise ValueError(f"Sin datos para {ticker}")
     df.index = pd.to_datetime(df.index).tz_localize(None)
-    return df[["Open", "High", "Low", "Close", "Volume"]].dropna()
+    return _tag(df[["Open", "High", "Low", "Close", "Volume"]].dropna(), "Yahoo Finance")
 
 
 def _synthetic_tf(ticker: str, tf: str, n: int = 600) -> pd.DataFrame:
@@ -221,9 +249,17 @@ def history_tf(ticker: str, tf: str = "1D", provider: str = "yahoo", av_key: str
     from .timeframes import TIMEFRAMES, validate
     tf = validate(tf)
     if tf == "1D":
-        return history(ticker, "5y", provider, av_key)
+        return history(ticker, "10y" if _use_alpaca(ticker, provider) else "5y", provider, av_key)
     if _demo():
-        return _synthetic_tf(ticker, tf)
+        return _tag(_synthetic_tf(ticker, tf), "Datos de ejemplo")
+    if _use_alpaca(ticker, provider):
+        from . import alpaca
+        try:
+            df = alpaca.bars(ticker, tf)
+            if len(df) >= 60:
+                return _tag(df, ALPACA_FUENTE if not alpaca.is_crypto(ticker) else "Alpaca Crypto")
+        except Exception:
+            pass  # cae a Yahoo
     spec = TIMEFRAMES[tf]
     import yfinance as yf
     df = yf.Ticker(ticker).history(period=spec["period"], interval=spec["yf"], auto_adjust=True)
@@ -237,7 +273,7 @@ def history_tf(ticker: str, tf: str = "1D", provider: str = "yahoo", av_key: str
     if spec["resample"]:
         df = df.resample(spec["resample"], origin="start_day", offset="9h30min").agg(
             {"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna()
-    return df
+    return _tag(df, "Yahoo Finance")
 
 
 def batch_history(tickers: list[str], period: str = "2y", chunk: int = 100,
@@ -250,6 +286,20 @@ def batch_history(tickers: list[str], period: str = "2y", chunk: int = 100,
             if progress:
                 progress((i + 1) / len(tickers), t)
         return out
+    from . import alpaca
+    if alpaca.available():  # Alpaca: 100 símbolos por consulta, mucho más rápido y sin bloqueos
+        try:
+            if progress:
+                progress(0.05, f"Descargando {len(tickers)} símbolos desde Alpaca")
+            got = alpaca.batch_bars(list(tickers), "1D", _years(period))
+            out.update({t: d for t, d in got.items() if len(d) >= 30})
+        except Exception:
+            pass
+        tickers = [t for t in tickers if t not in out]  # los que falten van a Yahoo
+        if not tickers:
+            if progress:
+                progress(1.0, "Descarga completa")
+            return out
     import yfinance as yf
     for i in range(0, len(tickers), chunk):
         part = tickers[i:i + chunk]
