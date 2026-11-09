@@ -686,6 +686,24 @@ Plotly.newPlot(gd, fig.data, fig.layout, cfg).then(function(){
     });
   }, true);
   window.addEventListener("mouseup", function(){ if (drag) { drag = null; save(); } }, true);
+  // rueda del ratón como TradingView: sobre el gráfico comprime/estira las velas (borde derecho fijo);
+  // sobre la escala de precios, comprime/estira en vertical
+  gd.addEventListener("wheel", function(ev){
+    const r = gd.getBoundingClientRect(), s = gd._fullLayout._size;
+    const px = ev.clientX - r.left, py = ev.clientY - r.top, z = zone(ev);
+    const inPlot = px >= s.l && px <= s.l + s.w && py >= s.t && py <= s.t + s.h;
+    if (!z && !inPlot) return;
+    ev.preventDefault(); ev.stopPropagation();
+    const L = gd._fullLayout, f = Math.exp(Math.max(-60, Math.min(60, ev.deltaY)) * 0.004);
+    if (z === "y") {
+      const yr = L.yaxis.range, c = (yr[0] + yr[1]) / 2, h = (yr[1] - yr[0]) / 2 * f;
+      Plotly.relayout(gd, {"yaxis.range": [c - h, c + h]});
+    } else {
+      const xr = L[XK].range.map(L[XK].r2l), w = (xr[1] - xr[0]) * f;
+      Plotly.relayout(gd, {[XK + ".range"]: [L[XK].l2r(xr[1] - w), L[XK].l2r(xr[1])]});
+    }
+    clearTimeout(gd._svT); gd._svT = setTimeout(save, 300);
+  }, {passive: false, capture: true});
   gd.addEventListener("dblclick", function(ev){
     const z = zone(ev); if (!z) return;
     ev.stopPropagation();
@@ -713,5 +731,6 @@ def show_chart(fig: go.Figure, view_key: str, mobile: bool = False, container=No
             .replace("%%FIG%%", fig.to_json()))
     with box.container():
         components.html(html, height=h + 4)
-        st.caption("Arrastra la escala de precios o la de tiempo para comprimir o estirar; arrastra el gráfico para "
-                   "desplazarlo; doble clic para restablecer.")
+        st.caption("Rueda del ratón: comprime o estira las velas · Arrastrar la escala de precios (derecha): comprime en "
+                   "vertical · Arrastrar la escala de fechas (abajo): comprime en horizontal · Arrastrar el gráfico: "
+                   "desplaza · Doble clic: restablece.")
