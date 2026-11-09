@@ -63,3 +63,22 @@ def test_migra_configuracion_anterior_una_sola_vez(monkeypatch):
             "ind_sets": {"activo": "default", "sets": {}}})
     U.init_work("swing", force=True)
     assert U.active() == U.DEFAULT
+
+
+def test_renombrar_exportar_importar(monkeypatch):
+    _reset(monkeypatch)
+    U.init_work("swing", force=True)
+    U.work()["rsi"]["in"]["len"] = 9
+    U.save_as("A")
+    U.save_as("B")
+    assert U.rename_set("A", "B")  # ya existe
+    assert U.rename_set("A", "default")  # reservado
+    assert U.rename_set("A", "Alfa") is None and list(U.sets()) == ["Alfa", "B"]
+    data = U.export_json("Alfa").encode()
+    nombre, cfg = U.parse_import(data)
+    assert nombre == "Alfa" and cfg["rsi"]["in"]["len"] == 9
+    assert isinstance(U.parse_import(b"{}"), str) and isinstance(U.parse_import(b"no json"), str)
+    assert U.import_into(U.DEFAULT, nombre, cfg) is None  # desde default: crea «Alfa (2)»
+    assert U.active() == "Alfa (2)" and len(U.sets()) == 3
+    cfg["rsi"]["in"]["len"] = 30
+    assert U.import_into("B", nombre, cfg) is None and U.sets()["B"]["rsi"]["in"]["len"] == 30

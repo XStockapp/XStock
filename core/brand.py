@@ -49,5 +49,5 @@ def sidebar_brand() -> str:
     return (FONTS + "<div style='display:flex;align-items:center;gap:10px;margin:-6px 0 4px'>" + icon_badge(34) +
             "<div><div style='font-family:Sora,system-ui,sans-serif;font-size:20px;font-weight:700;color:#E8ECF2;"
             "letter-spacing:-.02em;line-height:1.05'><span style='color:#1FBF75'>X</span>Stock</div>"
-            f"<div style='font-family:\"IBM Plex Mono\",monospace;font-size:9.5px;letter-spacing:.2em;color:{MUTED};"
+            f"<div style='font-family:\"IBM Plex Mono\",monospace;font-size:11px;letter-spacing:.18em;color:{MUTED};"
             "text-transform:uppercase;margin-top:2px'>Trading · Data · Analytics</div></div></div>")

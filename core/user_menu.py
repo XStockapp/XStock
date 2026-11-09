@@ -24,17 +24,26 @@ SECCIONES = [("ind", "Indicadores", ":material/stacked_line_chart:"), ("est", "E
              ("wl", "Watchlist", ":material/visibility:"), ("pf", "Portafolio", ":material/account_balance_wallet:"),
              ("al", "Alertas", ":material/notifications:"), ("cf", "Configuración", ":material/settings:"),
              ("pr", "Perfil", ":material/person:")]
-_DASHES = [("solid", "───"), ("dashed", "‒ ‒ ‒"), ("dotted", "·····")]
+_DASHES = [("solid", "──"), ("dashed", "‒ ‒"), ("dotted", "···")]
 
 CSS = """<style>
 [class*="st-key-iset_"] button { justify-content: flex-start; min-height: 34px; }
 [class*="st-key-iset_"] button > div { justify-content: flex-start; width: 100%; }
 [class*="st-key-iset_"] [data-testid="stPopover"] button div[aria-hidden="true"] { display: none; }
+[class*="st-key-iset_"] [data-testid="stHorizontalBlock"] { gap: 4px; }
+[class*="st-key-iset_"] [data-testid="stPopover"] button, [class*="st-key-iset_"] [data-testid="stDownloadButton"] button {
+  min-height: 34px; padding: 0 !important; justify-content: center; }
+[class*="st-key-iset_"] [data-testid="stDownloadButton"] button > div { justify-content: center; }
+[class*="st-key-iset_on_"] input { border: 1px solid #2962FF; background: #161B22; font-size: 12.5px; height: 34px; }
 [class*="st-key-iset_"] [data-testid="stPopover"] button > div { justify-content: center; }
 [class*="st-key-iset_"] button p { font-size: 12.5px; }
 [class*="st-key-iset_on_"] button:disabled { border-color: #2962FF; color: #E6EDF3; opacity: 1; background: #161B22; }
 [class*="st-key-iset_def_"] button p { color: #8B949E; }
 [class*="st-key-iset_"] [data-testid="stPopover"] button { justify-content: center; }
+.st-key-usr_ind_footer [data-testid="stPopover"] button { padding: 0 !important; justify-content: center; }
+.st-key-usr_ind_footer [data-testid="stPopover"] button div[aria-hidden="true"] { display: none; }
+.st-key-usr_ind_footer [data-testid="stPopover"] button > div { justify-content: center; }
+.st-key-usr_ind_footer button { padding-left: 8px !important; padding-right: 8px !important; }
 .usr-need { border: 1px solid #D29922; border-radius: 6px; padding: 6px 9px; font-size: 12px; line-height: 1.45; margin-bottom: 6px; }
 /* Barra lateral: barra de desplazamiento siempre visible */
 [data-testid="stSidebarContent"] { scrollbar-width: thin; scrollbar-color: #484F58 transparent; }
@@ -231,6 +240,73 @@ def save_as(name: str) -> str | None:
     return None
 
 
+def rename_set(old: str, new: str) -> str | None:
+    """Renombra una configuración conservando su lugar en la lista. Devuelve un error o None."""
+    ss = st.session_state
+    new = _clean_name(new)
+    if old not in sets() or new == old:
+        return None
+    if not new:
+        return "El nombre no puede quedar vacío."
+    if new.lower() == DEFAULT or new in sets():
+        return f"Ya existe una configuración «{new}»." if new in sets() else "«default» está reservado."
+    ss.ind_sets = {(new if k == old else k): v for k, v in ss.ind_sets.items()}
+    if ss.ind_active == old:
+        ss.ind_active = new
+    persist(tf=ss.get("ob_tf"))
+    return None
+
+
+FORMATO = "xstock-indicadores"
+
+
+def export_json(name: str) -> str:
+    """Archivo de respaldo o para compartir: la configuración con su nombre y perfil."""
+    ss = st.session_state
+    cfg = work() if name == active() else (ss.ind_sets.get(name) or _default_cfg(ss.get("ind_perfil")))
+    return json.dumps({"formato": FORMATO, "version": 1, "nombre": name, "perfil": ss.get("ind_perfil"),
+                       "config": cfg}, ensure_ascii=False, indent=1)
+
+
+def parse_import(data: bytes) -> tuple[str, dict] | str:
+    """Lee un archivo exportado. Devuelve (nombre, config) o un mensaje de error."""
+    try:
+        d = json.loads(data.decode("utf-8"))
+    except Exception:
+        return "El archivo no es un JSON válido."
+    if not isinstance(d, dict) or d.get("formato") != FORMATO or not isinstance(d.get("config"), dict):
+        return "El archivo no es una configuración de indicadores de XStock."
+    known = {c["id"] for c in I.CATALOGO}
+    if not known & set(d["config"]):
+        return "El archivo no contiene indicadores reconocibles."
+    perfil = st.session_state.get("ind_perfil")
+    cfg = I.merge_config(d["config"], perfil, profiles.default_settings(perfil))
+    errs = I.validar(cfg)
+    if errs:
+        return " ".join(errs)
+    return _clean_name(d.get("nombre")) or "Importada", cfg
+
+
+def import_into(target: str, name: str, cfg: dict) -> str | None:
+    """Importa en una configuración existente (la reemplaza) o, desde «default», crea una nueva."""
+    ss = st.session_state
+    if target != DEFAULT and target in sets():
+        ss.ind_sets[target] = copy.deepcopy(cfg)
+        if ss.ind_active == target:
+            load_set(target)
+        else:
+            persist(tf=ss.get("ob_tf"))
+        return None
+    if len(sets()) >= MAX_SETS:
+        return f"Máximo {MAX_SETS} configuraciones: elimina una para importar otra."
+    base, n = (name if name.lower() != DEFAULT else "Importada"), 2
+    while name in sets() or name.lower() == DEFAULT:
+        name, n = f"{base[:26]} ({n})", n + 1
+    ss.ind_sets[name] = copy.deepcopy(cfg)
+    load_set(name)
+    return None
+
+
 def load_set(name: str) -> None:
     """Activa una configuración (o «default») y la aplica al gráfico."""
     ss = st.session_state
@@ -344,25 +420,68 @@ def _item(c: dict, cfg: dict):
                 it["conf"] = True  # se configuró: queda en la lista principal
 
 
+def _rename_cb(old: str, key: str):
+    err = rename_set(old, st.session_state.get(key, old))
+    if err:
+        st.session_state[key] = old
+        st.session_state.iset_err = err
+
+
+def _import_ui(i: int, target: str):
+    ss = st.session_state
+    with st.popover("", icon=":material/upload:", width="stretch",
+                    help="Importar configuración desde un archivo" if target == DEFAULT
+                    else f"Importar un archivo en «{target}» (reemplaza su contenido)"):
+        st.caption("Crea una configuración nueva a partir de un archivo exportado de XStock." if target == DEFAULT
+                   else f"Reemplaza «{target}» con la configuración del archivo.")
+        f = st.file_uploader("Archivo .json", type=["json"], key=f"iset_imp_{i}_{ss.get('imp_rev', 0)}",
+                             label_visibility="collapsed")
+        if f is not None:
+            res = parse_import(f.getvalue())
+            if isinstance(res, str):
+                st.warning(res)
+            else:
+                err = import_into(target, *res)
+                if err:
+                    st.warning(err)
+                else:
+                    ss.imp_rev = ss.get("imp_rev", 0) + 1
+                    st.toast("Configuración importada", icon="✅")
+                    st.rerun()
+
+
 def _sets_list():
-    """Configuraciones guardadas: «default» (valores del perfil, solo lectura) y hasta 5 con nombre."""
+    """Configuraciones: «default» (valores del perfil, solo lectura) y hasta 5 con nombre.
+    Clic: activar · clic sobre la activa: renombrar · exportar, importar y eliminar en cada fila."""
+    ss = st.session_state
     act, names = active(), list(sets())
     st.markdown(f"<div class='ind-grp'>Configuraciones · {len(names)}/{MAX_SETS}</div>", unsafe_allow_html=True)
+    if ss.get("iset_err"):
+        st.warning(ss.pop("iset_err"))
     for i, name in enumerate([DEFAULT] + names):
         on = name == act
         state = "on" if on else ("def" if name == DEFAULT else "off")
         with st.container(key=f"iset_{state}_{i}"):
+            a, ex, im, de = st.columns([0.61, 0.13, 0.13, 0.13], gap="xsmall")
             if name == DEFAULT:
                 label = "default · valores del perfil" + (" · modificada" if on and dirty() else "")
-                if st.button(label, key=f"iset_btn_{i}", width="stretch", disabled=on):
+                if a.button(label, key=f"iset_btn_{i}", width="stretch", disabled=on):
                     load_set(DEFAULT)
                     st.rerun()
-            else:
-                a, b = st.columns([0.85, 0.15])
-                if a.button(name, key=f"iset_btn_{i}", width="stretch", disabled=on):
-                    load_set(name)
-                    st.rerun()
-                with b.popover("✕", width="stretch", help=f"Eliminar «{name}»"):
+            elif on:  # segundo clic sobre la activa: se edita el nombre
+                k = f"iset_name_{i}_{name}"
+                a.text_input("Nombre", value=name, key=k, max_chars=30, label_visibility="collapsed",
+                             on_change=_rename_cb, args=(name, k), help="Haz clic para renombrar")
+            elif a.button(name, key=f"iset_btn_{i}", width="stretch", help="Clic para activar; clic de nuevo para renombrar"):
+                load_set(name)
+                st.rerun()
+            ex.download_button("", data=export_json(name), file_name=f"xstock-{name.replace(' ', '_')}.json",
+                               mime="application/json", key=f"iset_exp_{i}", icon=":material/download:",
+                               on_click="ignore", width="stretch", help=f"Exportar «{name}» a un archivo")
+            with im:
+                _import_ui(i, name)
+            if name != DEFAULT:
+                with de.popover("", icon=":material/delete:", width="stretch", help=f"Eliminar «{name}»"):
                     st.caption(f"¿Eliminar la configuración «{name}»? No se puede deshacer.")
                     if st.button("Eliminar", key=f"iset_del_{i}", width="stretch"):
                         delete_set(name)
@@ -400,13 +519,14 @@ def _footer():
             st.markdown("<div class='usr-need'>Modificaste <b>default</b>. Ponle un nombre y pulsa <b>Guardar config</b> "
                         "para conservar estos cambios.</div>", unsafe_allow_html=True)
         elif active() != DEFAULT:
-            st.caption(f"Los cambios se guardan solos en «{active()}».")
+            st.caption(f"Los cambios se guardan solos en «{active()}». «Guardar como» crea una configuración nueva.")
         else:
             st.caption("Estás usando «default». Para personalizarla, guárdala con un nombre.")
-        n1, n2 = st.columns([0.55, 0.45], vertical_alignment="bottom")
-        nombre = n1.text_input("Nombre de la configuración", key=f"usr_ind_name_{ss.get('ind_rev', 0)}", max_chars=30,
-                               placeholder="Nombre (p. ej. Cripto 1h)", label_visibility="collapsed")
-        if n2.button("Guardar config", key="usr_ind_save", type="primary", width="stretch", disabled=bool(errs)):
+        nombre = st.text_input("Nombre de la configuración", key=f"usr_ind_name_{ss.get('ind_rev', 0)}", max_chars=30,
+                               placeholder="Nombre de la configuración nueva", label_visibility="collapsed")
+        f1, f2, f3 = st.columns([0.47, 0.37, 0.16])
+        if f1.button("Guardar config" if active() == DEFAULT else "Guardar como", key="usr_ind_save",
+                     type="primary", width="stretch", disabled=bool(errs)):
             err = save_as(nombre)
             if err:
                 st.warning(err)
@@ -414,11 +534,12 @@ def _footer():
                 st.toast(f"Configuración «{_clean_name(nombre)}» guardada", icon="✅")
                 ss.ind_rev = ss.get("ind_rev", 0) + 1  # cierra el panel de indicadores
                 st.rerun()
-        f1, f2 = st.columns(2)
-        if f1.button("Descartar cambios", key="usr_ind_cancel", width="stretch", disabled=not dirty()):
+        if f2.button("Descartar", key="usr_ind_cancel", width="stretch", disabled=not dirty(),
+                     help="Descarta los cambios sin guardar"):
             cancel()
             st.rerun()
-        with f2.popover("Restablecer", width="stretch"):
+        with f3.popover("", icon=":material/restart_alt:", width="stretch",
+                        help="Restablecer: volver a los valores del perfil"):
             st.caption("Vuelve a los indicadores y parámetros sugeridos para tu perfil en la configuración activa.")
             if st.button("Volver a los valores del perfil", key="usr_ind_reset", width="stretch"):
                 reset_profile_defaults()
