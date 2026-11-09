@@ -651,6 +651,43 @@ Plotly.newPlot(gd, fig.data, fig.layout, cfg).then(function(){
   if (saved && saved.x) Plotly.relayout(gd, {[XK + ".range"]: saved.x});
   const save = function(){ try { localStorage.setItem(KEY, JSON.stringify({x: gd._fullLayout[XK].range, y: gd._fullLayout.yaxis.range})); } catch(e) {} };
   gd.on("plotly_relayout", save);
+  // Etiquetas sin amontonarse: las de la escala derecha se apilan con separación mínima (como TradingView)
+  // y los textos dentro del gráfico que se pisan se ocultan hasta que vuelva a haber espacio.
+  let busy = false;
+  function declutter(){
+    if (busy) return;
+    const L = gd._fullLayout, ya = L.yaxis, anns = (gd.layout.annotations || []);
+    if (!anns.length || !ya || !ya.l2p) return;
+    const upd = {}, GAP = 17, tags = [], inner = [];
+    anns.forEach(function(a, i){
+      if (a.yref !== "y" || typeof a.y !== "number") return;
+      const py = ya._offset + ya.l2p(a.y);
+      if (a.xref === "paper" && a.x >= 1) tags.push({i: i, py: py});
+      else {
+        const px = a.xref === "paper" ? L._size.l + a.x * L._size.w
+                   : (L.xaxis.l2p ? L.xaxis._offset + L.xaxis.l2p(L.xaxis.r2l(a.x)) : 0);
+        inner.push({i: i, py: py, px: px, w: String(a.text || "").replace(/<[^>]+>/g, "").length * 6});
+      }
+    });
+    tags.sort(function(a, b){ return a.py - b.py; });
+    let last = -1e9;
+    tags.forEach(function(t){
+      const want = Math.max(t.py, last + GAP), shift = -(want - t.py);
+      if (Math.abs((anns[t.i].yshift || 0) - shift) > 0.5) upd["annotations[" + t.i + "].yshift"] = shift;
+      last = want;
+    });
+    inner.sort(function(a, b){ return a.py - b.py; });
+    const shown = [];
+    inner.forEach(function(t){
+      const clash = shown.some(function(o){ return Math.abs(o.py - t.py) < 15 && Math.abs(o.px - t.px) < Math.max(o.w, t.w); });
+      const vis = !clash;
+      if ((anns[t.i].visible !== false) !== vis) upd["annotations[" + t.i + "].visible"] = vis;
+      if (vis) shown.push(t);
+    });
+    if (Object.keys(upd).length) { busy = true; Plotly.relayout(gd, upd).then(function(){ busy = false; }); }
+  }
+  gd.on("plotly_relayout", function(){ requestAnimationFrame(declutter); });
+  declutter();
   function zone(ev){
     const r = gd.getBoundingClientRect(), s = gd._fullLayout._size, ya = gd._fullLayout.yaxis;
     const px = ev.clientX - r.left, py = ev.clientY - r.top;
