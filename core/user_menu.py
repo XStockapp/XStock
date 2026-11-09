@@ -11,7 +11,6 @@ Barra izquierda: menú USER (Indicadores, Estrategias, Watchlist, Portafolio, Al
 """
 from __future__ import annotations
 
-import copy
 import json
 
 import streamlit as st
@@ -28,20 +27,25 @@ _DASHES = [("solid", "───"), ("dashed", "‒ ‒ ‒"), ("dotted", "···
 
 CSS = """<style>
 section[data-testid="stSidebar"][data-collapsed="false"] { width: 384px !important; min-width: 384px !important; max-width: 92vw !important; }
-[class*="st-key-usr_"] button { justify-content: flex-start; }
-[class*="st-key-usr_"] button > div { justify-content: flex-start; width: 100%; }
-[class*="st-key-usr_"] button p { font-size: 13px; font-weight: 600; }
-[class*="st-key-usr_hdr"] button p { letter-spacing: .08em; }
+.st-key-usr_hdr > div > details > summary p { font-size: 13px; font-weight: 600; letter-spacing: .08em; }
+[class*="st-key-usr_sec_"] > div > details > summary p, .st-key-usr_otros > div > details > summary p { font-size: 13px; font-weight: 600; }
+.st-key-usr_hdr > div > details > [data-testid="stExpanderDetails"] { padding: 8px 6px; }
+[class*="st-key-usr_sec_"] > div > details > [data-testid="stExpanderDetails"],
+.st-key-usr_otros > div > details > [data-testid="stExpanderDetails"] { padding: 8px 4px; }
+[class*="st-key-usr_wl_"] button { justify-content: flex-start; }
 [class*="st-key-indrow_"] [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: .35rem !important; align-items: flex-start; }
 [class*="st-key-indrow_"] [data-testid="stColumn"] { min-width: 0 !important; }
 [class*="st-key-indrow_"] [data-testid="stCheckbox"] { padding-top: 10px; }
 [class*="st-key-indrow_"] [data-testid="stExpander"] summary p { font-size: 13px; font-weight: 500; }
-[class*="st-key-indrow_"] [data-testid="stPopover"] button { min-height: 38px; padding: 0 6px; }
-[class*="st-key-indrow_"] [data-testid="stPopover"] button [data-testid="stIconMaterial"] { display: none; }
-[class*="st-key-indrow_"] [data-testid="stPopover"] button p { font-size: 15px; }
+[class*="st-key-indrow_"] [data-testid="stPopover"] button { min-height: 38px; padding: 0 !important; width: 100%; justify-content: center; }
+[class*="st-key-indrow_"] [data-testid="stPopover"] button > div { justify-content: center; width: 100%; gap: 0; }
+[class*="st-key-indrow_"] [data-testid="stPopover"] button div[aria-hidden="true"] { display: none; }
+[class*="st-key-indrow_"] [data-testid="stPopover"] button div { overflow: visible; min-width: 0; }
+[class*="st-key-indrow_"] [data-testid="stPopover"] button p { font-size: 16px; line-height: 1; margin: 0; overflow: visible; }
 [class*="st-key-indrow_"] [data-testid="stNumberInputContainer"] button { width: 20px; }
 [class*="st-key-indrow_"] [data-testid="stSelectbox"] [data-baseweb="select"] > div { padding-left: 6px; }
-[class*="st-key-indrow_"] [data-testid="stTab"] p { font-size: 12.5px; }
+[class*="st-key-indrow_"] [data-testid="stTab"] p { font-size: 12px; }
+[class*="st-key-indrow_"] [data-baseweb="tab-list"] { gap: 10px; }
 .ind-ficha dt { color: #8B949E; font-size: 11px; margin-top: 8px; }
 .ind-ficha dd { margin: 2px 0 0 0; font-size: 12.5px; line-height: 1.5; }
 .ind-grp { color: #8B949E; font-size: 11.5px; margin: 10px 0 2px; }
@@ -153,16 +157,16 @@ def _ficha(c: dict) -> str:
 def _item(c: dict, cfg: dict):
     iid, it = c["id"], cfg[c["id"]]
     with st.container(key=f"indrow_{iid}"):
-        a, b, d = st.columns([0.09, 0.78, 0.13])
+        a, b, d = st.columns([0.08, 0.77, 0.15])
         on = a.checkbox(f"Activar {c['name']}", it["on"], key=f"{W}on_{iid}", label_visibility="collapsed")
         if on != it["on"]:
             it["on"] = on
             it["conf"] = it["conf"] or on
-        with d.popover("ⓘ", help=f"Qué es y cómo usar {c['name']}"):
+        with d.popover("ⓘ", width="stretch", help=f"Qué es y cómo usar {c['name']}"):
             st.markdown(_ficha(c), unsafe_allow_html=True)
         with b.expander(c["name"] + (" · pronto en el gráfico" if iid in I.SIN_GRAFICO else "")):
             before = json.dumps(it, sort_keys=True)
-            t1, t2, t3 = st.tabs(["Entradas de datos", "Estilo", "Visibilidad"])
+            t1, t2, t3 = st.tabs(["Entradas", "Estilo", "Visibilidad"])
             with t1:
                 for f in c["inputs"]:
                     _field(it, iid, f, "in_")
@@ -201,19 +205,14 @@ def indicadores_panel(con_guardar: bool = True):
         if cfg[c["id"]]["conf"]:
             _item(c, cfg)
     otros = [c for c in I.CATALOGO if not cfg[c["id"]]["conf"]]
-    ss = st.session_state
-    lbl = f"Otros indicadores · {len(otros)}"
-    if st.button(lbl, key="usr_otros", icon=":material/expand_more:" if ss.get("usr_otros_open") else ":material/chevron_right:",
-                 width="stretch"):
-        ss.usr_otros_open = not ss.get("usr_otros_open")
-        st.rerun()
-    if ss.get("usr_otros_open"):
-        for g, gname in I.GRUPOS:
-            items = [c for c in otros if c["g"] == g]
-            if items:
-                st.markdown(f"<div class='ind-grp'>{gname}</div>", unsafe_allow_html=True)
-                for c in items:
-                    _item(c, cfg)
+    with st.expander(f"Otros indicadores · {len(otros)}", key="usr_otros", on_change="rerun") as exp:
+        if exp.open:  # se construye solo al abrir (son ~28 indicadores con sus controles)
+            for g, gname in I.GRUPOS:
+                items = [c for c in otros if c["g"] == g]
+                if items:
+                    st.markdown(f"<div class='ind-grp'>{gname}</div>", unsafe_allow_html=True)
+                    for c in items:
+                        _item(c, cfg)
     if con_guardar:
         _footer()
 
@@ -243,59 +242,55 @@ def _footer():
 
 
 # ---------------------------------------------------------------- menú USER
-def _sec_header(k: str, label: str, icon: str, extra: str = "") -> bool:
-    ss = st.session_state
-    secs = ss.setdefault("usr_secs", {})
-    open_ = bool(secs.get(k))
-    if st.button(f"{label}{extra}", key=f"usr_sec_{k}", icon=":material/expand_more:" if open_ else ":material/chevron_right:",
-                 width="stretch"):
-        secs[k] = not open_
-        st.rerun()
-    return open_
+def _snapshot(cfg: dict) -> str:
+    return json.dumps([work(), cfg], sort_keys=True, default=str)
 
 
 def render(profile: dict, admin: bool, cfg: dict, onboarding: bool = False, extra_admin=None):
     """Dibuja el menú USER en la barra lateral. `extra_admin` dibuja los ajustes de IA y datos (solo admin)."""
     st.markdown(CSS, unsafe_allow_html=True)
-    ss = st.session_state
     init_work()
-    if st.button("USER", key="usr_hdr", icon=":material/expand_more:" if ss.get("usr_open", True) else ":material/chevron_right:",
-                 width="stretch"):
-        ss.usr_open = not ss.get("usr_open", True)
-        st.rerun()
-    if not ss.get("usr_open", True):
-        return
-    foc = focus_mode()
-    if foc:
-        st.markdown(f"<div class='usr-focus'>Tienes <b>{len(I.activos(work()))}</b> indicadores activos. El resto del menú "
-                    "se oculta hasta que guardes la configuración.</div>", unsafe_allow_html=True)
-    if onboarding:
-        ss.setdefault("usr_secs", {})["ind"] = True
-    for k, label, icon in SECCIONES:
-        if foc and k != "ind":
-            continue
-        if onboarding and k not in ("ind", "pr"):
-            continue
-        extra = f" · {len(I.activos(work()))} activos" if k == "ind" else ""
-        if not _sec_header(k, label, icon, extra):
-            continue
-        with st.container(border=True):
-            if k == "ind":
-                indicadores_panel(con_guardar=True)
-            elif k == "est":
-                _estrategias()
-            elif k == "wl":
-                _watchlist()
-            elif k == "pf":
-                st.caption("Cartera simulada: registra operaciones y compara el pronóstico inicial con el actualizado. "
-                           "Disponible en la fase 5.")
-            elif k == "al":
-                st.caption("Alertas por correo electrónico (precio, señal, entrada, stop y objetivos) con vencimiento. "
-                           "Disponible en la fase 6.")
-            elif k == "cf":
-                _configuracion(cfg, admin, extra_admin)
-            elif k == "pr":
-                _perfil(profile, admin)
+    _menu(profile, admin, cfg, onboarding, extra_admin)
+
+
+@st.fragment
+def _menu(profile: dict, admin: bool, cfg: dict, onboarding: bool, extra_admin):
+    """Fragmento: abrir y cerrar secciones no recarga la página ni el gráfico. Abrir/cerrar los desplegables
+    ocurre en el navegador; solo si cambia un valor (indicadores o configuración) se recarga la app para
+    redibujar el gráfico."""
+    init_work()
+    before = _snapshot(cfg)
+    with st.expander("USER", expanded=True, key="usr_hdr"):
+        foc = focus_mode()
+        if foc:
+            st.markdown(f"<div class='usr-focus'>Tienes <b>{len(I.activos(work()))}</b> indicadores activos. El resto del "
+                        "menú se oculta hasta que guardes la configuración.</div>", unsafe_allow_html=True)
+        for k, label, icon in SECCIONES:
+            if foc and k != "ind":
+                continue
+            if onboarding and k not in ("ind", "pr"):
+                continue
+            extra = f" · {len(I.activos(work()))} activos" if k == "ind" else ""
+            with st.expander(f"{label}{extra}", expanded=(k == "ind" and (onboarding or foc)), icon=icon,
+                             key=f"usr_sec_{k}"):
+                if k == "ind":
+                    indicadores_panel(con_guardar=True)
+                elif k == "est":
+                    _estrategias()
+                elif k == "wl":
+                    _watchlist()
+                elif k == "pf":
+                    st.caption("Cartera simulada: registra operaciones y compara el pronóstico inicial con el actualizado. "
+                               "Disponible en la fase 5.")
+                elif k == "al":
+                    st.caption("Alertas por correo electrónico (precio, señal, entrada, stop y objetivos) con vencimiento. "
+                               "Disponible en la fase 6.")
+                elif k == "cf":
+                    _configuracion(cfg, admin, extra_admin)
+                elif k == "pr":
+                    _perfil(profile, admin)
+    if _snapshot(cfg) != before:
+        st.rerun(scope="app")  # cambió un valor: redibujar el gráfico con la nueva configuración
 
 
 def _estrategias():

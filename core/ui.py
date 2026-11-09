@@ -92,6 +92,15 @@ header[data-testid="stHeader"] {{ background: transparent; height: 2.6rem; }}
   .stTabs [data-baseweb="tab-list"] {{ overflow-x: auto; flex-wrap: nowrap; }}
   .bias-top {{ flex-wrap: wrap; gap: 2px 10px; }}
 }}
+/* Navegación lateral: mismas cajas que el menú USER; los títulos de sección quedan sin recuadro */
+[data-testid="stSidebarNav"] li:has(a[href$="/watchlist"]) {{ display: none; }}
+[data-testid="stSidebarNavItems"] li {{ margin-bottom: 8px; }}
+[data-testid="stSidebarNavLink"] {{ border: 1px solid {BORDER}; border-radius: 6px; padding: 8px 12px; min-height: 40px;
+  background: transparent; margin: 0; }}
+[data-testid="stSidebarNavLink"]:hover {{ background: {PANEL}; }}
+[data-testid="stSidebarNavLink"][aria-current="page"] {{ border-color: {ACCENT}; background: {PANEL}; }}
+[data-testid="stSidebarNavLink"] span {{ font-size: 13px !important; font-weight: 600; color: {TXT} !important; }}
+[data-testid="stNavSectionHeader"] {{ border: none; padding-left: 2px; font-size: 12px; color: {MUTED}; }}
 </style>
 """
 
