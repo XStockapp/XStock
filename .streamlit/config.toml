@@ -1,3 +1,7 @@
+[server]
+# sirve /app/static/plotly.min.js para el gráfico interactivo (core/ui.py · show_chart)
+enableStaticServing = true
+
 [browser]
 gatherUsageStats = false
 

@@ -12,8 +12,8 @@ import json
 from core import profiles, summary
 from core.levels import MODOS
 from core.timeframes import RANGO_NOMBRE, RANGOS, is_crypto, rango_valido, rango_velas, unidad
-from core.ui import (AMBER, DISCLAIMER, GREEN, MUTED, NEUTRAL, RED, SIGNAL_COLORS, color_for, equity_chart, is_mobile,
-                     pill, plot_config, price_chart)
+from core.ui import (AMBER, show_chart, DISCLAIMER, GREEN, MUTED, NEUTRAL, RED, SIGNAL_COLORS, color_for, equity_chart, is_mobile,
+                     pill, price_chart)
 
 cfg = st.session_state.cfg
 E = html.escape
@@ -222,7 +222,7 @@ panel += "</div>"
 if MOBILE:
     panel = panel.replace("<div class='mp'>", "<div class='mp mp-cols'>", 1)
 right.markdown(panel, unsafe_allow_html=True)
-chart_box.plotly_chart(_fig, width="stretch", config=plot_config(MOBILE))
+show_chart(_fig, f"{ticker}|{TF}|{rng}", MOBILE, container=chart_box)
 
 # ---------------------------------------------------------------- informe IA + fundamentales clave
 la, lb = (st.container(), st.container()) if MOBILE else st.columns([1.55, 1], gap="small")

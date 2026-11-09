@@ -68,7 +68,8 @@ def merge_config(saved: dict | None, perfil: str | None = None, engine: dict | N
         if iid not in cfg or not isinstance(it, dict):
             continue
         base = cfg[iid]
-        base["on"], base["conf"] = bool(it.get("on", base["on"])), bool(it.get("conf", base["conf"]))
+        base["on"] = bool(it.get("on", base["on"]))
+        base["conf"] = bool(it.get("conf", base["conf"])) and base["on"]  # desactivado = en «Otros indicadores»
         base["in"].update({k: v for k, v in (it.get("in") or {}).items() if k in base["in"]})
         for pk, ps in (it.get("st") or {}).items():
             if pk in base["st"] and isinstance(ps, dict):
@@ -303,17 +304,50 @@ def fib_levels(df: pd.DataFrame, p: dict) -> dict:
     return {"x0": w.index[0], "levels": [(k, H - (H - L) * k) for k in (0, .236, .382, .5, .618, .786, 1)]}
 
 
+def _pivots_idx(s: np.ndarray, lb: int, low: bool) -> list[int]:
+    out = []
+    for i in range(lb, len(s) - lb):
+        w = s[i - lb:i + lb + 1]
+        if np.isnan(w).any():
+            continue
+        left, right = w[:lb], w[lb + 1:]
+        if (low and s[i] < left.min() and s[i] <= right.min()) or (not low and s[i] > left.max() and s[i] >= right.max()):
+            out.append(i)
+    return out
+
+
+def divergencias(df: pd.DataFrame, osc: pd.Series, lb: int = 5, min_gap: int = 5, max_gap: int = 60) -> list[tuple]:
+    """Divergencias regulares entre precio y oscilador (pivotes confirmados como en TradingView).
+    Devuelve [(t1, v1, t2, v2, "bull"|"bear")] con los puntos del oscilador."""
+    o = osc.to_numpy(dtype=float)
+    out = []
+    for low, kind in ((True, "bull"), (False, "bear")):
+        px = (df["Low"] if low else df["High"]).to_numpy(dtype=float)
+        piv = _pivots_idx(o, lb, low)
+        for a, b in zip(piv, piv[1:]):
+            if not (min_gap <= b - a <= max_gap):
+                continue
+            if low and o[b] > o[a] and px[b] < px[a]:
+                out.append((osc.index[a], o[a], osc.index[b], o[b], kind))
+            if not low and o[b] < o[a] and px[b] > px[a]:
+                out.append((osc.index[a], o[a], osc.index[b], o[b], kind))
+    return out
+
+
 def pane(df: pd.DataFrame, iid: str, p: dict) -> dict | None:
     """Panel inferior: {"title", "lines": [(plot, serie)], "hist": (plot, serie) | None, "zone": (lo, hi) | None,
     "refs": [niveles], "range": (min, max) | None}"""
     c = df["Close"]
     if iid == "rsi":
-        r = _rsi(src_of(df, p.get("src", "close")), int(_num(p["len"], 14)))
+        n = int(_num(p["len"], 14))
+        r = _rsi(src_of(df, p.get("src", "close")), n)
         lines = [("rsi", r)]
         if p.get("mat") not in (None, "Ninguna"):
             lines.append(("ma", ma(p["mat"], r, p.get("mal", 14))))
-        lo, hi = _num(p["os"], 30), _num(p["ob"], 70)
-        return {"title": f"RSI {int(_num(p['len'], 14))}", "lines": lines, "zone": (lo, hi), "refs": [hi, 50, lo], "range": (0, 100)}
+        lo, mid, hi = _num(p["os"], 30), _num(p.get("mid"), 50), _num(p["ob"], 70)
+        divs = divergencias(df, r, int(_num(p.get("divlb"), 5))) if p.get("div", True) else []
+        return {"title": f"RSI {n}", "lines": lines, "zone": (lo, hi), "fill": "bg", "bands": "bands",
+                "refs": [hi, mid, lo], "range": (0, 100), "divs": divs}
     if iid == "macd":
         s = src_of(df, p.get("src", "close"))
         f, sl = ma(p.get("mao", "EMA"), s, p["fast"]), ma(p.get("mao", "EMA"), s, p["slow"])
@@ -356,9 +390,21 @@ def pane(df: pd.DataFrame, iid: str, p: dict) -> dict | None:
         return {"title": f"WaveTrend {ch} {av}", "lines": [("wt1", w1), ("wt2", w1.rolling(int(_num(p["mal"], 3))).mean())],
                 "refs": [_num(p["ob"], 53), 0, _num(p["os"], -53)]}
     if iid == "sqz":
-        n = int(_num(p["kcl"], 20))
-        mid = ((_hh(df["High"], n) + _ll(df["Low"], n)) / 2 + c.rolling(n).mean()) / 2
-        return {"title": "Squeeze Momentum", "lines": [], "hist": ("mom", _lsma(c - mid, n)), "refs": [0]}
+        n, kn = int(_num(p["bbl"], 20)), int(_num(p["kcl"], 20))
+        basis, dev = c.rolling(n).mean(), _num(p["bbm"], 2) * c.rolling(n).std(ddof=0)
+        rng = _tr(df) if p.get("tr", True) else (df["High"] - df["Low"])
+        kma, krg = c.rolling(kn).mean(), rng.rolling(kn).mean() * _num(p["kcm"], 1.5)
+        sq_on = ((basis - dev) > (kma - krg)) & ((basis + dev) < (kma + krg))
+        mid = ((_hh(df["High"], kn) + _ll(df["Low"], kn)) / 2 + kma) / 2
+        val = _lsma(c - mid, kn)
+        prev = val.shift()
+        col = np.where(val >= 0, np.where(val > prev, "up1", "up2"), np.where(val < prev, "dn1", "dn2"))
+        return {"title": "Momentum Squeeze", "lines": [], "hist": ("up1", val), "hcols": pd.Series(col, index=val.index),
+                "dots": pd.Series(np.where(sq_on, "sqon", "sqoff"), index=val.index), "refs": []}
+    if iid == "mom":
+        n = int(_num(p["len"], 10))
+        s_ = src_of(df, p.get("src", "close"))
+        return {"title": f"Momentum {n}", "lines": [("mom", s_ - s_.shift(n))], "refs": [0]}
     if iid == "adx":
         adx, pdi, ndi = _adx(df, int(_num(p["smooth"], 14)), int(_num(p["di"], 14)))
         return {"title": f"ADX {p['smooth']} {p['di']}", "lines": [("adx", adx), ("pdi", pdi), ("ndi", ndi)],
