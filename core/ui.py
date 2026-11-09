@@ -651,6 +651,43 @@ Plotly.newPlot(gd, fig.data, fig.layout, cfg).then(function(){
   if (saved && saved.x) Plotly.relayout(gd, {[XK + ".range"]: saved.x});
   const save = function(){ try { localStorage.setItem(KEY, JSON.stringify({x: gd._fullLayout[XK].range, y: gd._fullLayout.yaxis.range})); } catch(e) {} };
   gd.on("plotly_relayout", save);
+  // Etiquetas sin amontonarse: las de la escala derecha se apilan con separación mínima (como TradingView)
+  // y los textos dentro del gráfico que se pisan se ocultan hasta que vuelva a haber espacio.
+  let busy = false;
+  function declutter(){
+    if (busy) return;
+    const L = gd._fullLayout, ya = L.yaxis, anns = (gd.layout.annotations || []);
+    if (!anns.length || !ya || !ya.l2p) return;
+    const upd = {}, GAP = 17, tags = [], inner = [];
+    anns.forEach(function(a, i){
+      if (a.yref !== "y" || typeof a.y !== "number") return;
+      const py = ya._offset + ya.l2p(a.y);
+      if (a.xref === "paper" && a.x >= 1) tags.push({i: i, py: py});
+      else {
+        const px = a.xref === "paper" ? L._size.l + a.x * L._size.w
+                   : (L.xaxis.l2p ? L.xaxis._offset + L.xaxis.l2p(L.xaxis.r2l(a.x)) : 0);
+        inner.push({i: i, py: py, px: px, w: String(a.text || "").replace(/<[^>]+>/g, "").length * 6});
+      }
+    });
+    tags.sort(function(a, b){ return a.py - b.py; });
+    let last = -1e9;
+    tags.forEach(function(t){
+      const want = Math.max(t.py, last + GAP), shift = -(want - t.py);
+      if (Math.abs((anns[t.i].yshift || 0) - shift) > 0.5) upd["annotations[" + t.i + "].yshift"] = shift;
+      last = want;
+    });
+    inner.sort(function(a, b){ return a.py - b.py; });
+    const shown = [];
+    inner.forEach(function(t){
+      const clash = shown.some(function(o){ return Math.abs(o.py - t.py) < 15 && Math.abs(o.px - t.px) < Math.max(o.w, t.w); });
+      const vis = !clash;
+      if ((anns[t.i].visible !== false) !== vis) upd["annotations[" + t.i + "].visible"] = vis;
+      if (vis) shown.push(t);
+    });
+    if (Object.keys(upd).length) { busy = true; Plotly.relayout(gd, upd).then(function(){ busy = false; }); }
+  }
+  gd.on("plotly_relayout", function(){ requestAnimationFrame(declutter); });
+  declutter();
   function zone(ev){
     const r = gd.getBoundingClientRect(), s = gd._fullLayout._size, ya = gd._fullLayout.yaxis;
     const px = ev.clientX - r.left, py = ev.clientY - r.top;
@@ -686,6 +723,24 @@ Plotly.newPlot(gd, fig.data, fig.layout, cfg).then(function(){
     });
   }, true);
   window.addEventListener("mouseup", function(){ if (drag) { drag = null; save(); } }, true);
+  // rueda del ratón como TradingView: sobre el gráfico comprime/estira las velas (borde derecho fijo);
+  // sobre la escala de precios, comprime/estira en vertical
+  gd.addEventListener("wheel", function(ev){
+    const r = gd.getBoundingClientRect(), s = gd._fullLayout._size;
+    const px = ev.clientX - r.left, py = ev.clientY - r.top, z = zone(ev);
+    const inPlot = px >= s.l && px <= s.l + s.w && py >= s.t && py <= s.t + s.h;
+    if (!z && !inPlot) return;
+    ev.preventDefault(); ev.stopPropagation();
+    const L = gd._fullLayout, f = Math.exp(Math.max(-60, Math.min(60, ev.deltaY)) * 0.004);
+    if (z === "y") {
+      const yr = L.yaxis.range, c = (yr[0] + yr[1]) / 2, h = (yr[1] - yr[0]) / 2 * f;
+      Plotly.relayout(gd, {"yaxis.range": [c - h, c + h]});
+    } else {
+      const xr = L[XK].range.map(L[XK].r2l), w = (xr[1] - xr[0]) * f;
+      Plotly.relayout(gd, {[XK + ".range"]: [L[XK].l2r(xr[1] - w), L[XK].l2r(xr[1])]});
+    }
+    clearTimeout(gd._svT); gd._svT = setTimeout(save, 300);
+  }, {passive: false, capture: true});
   gd.addEventListener("dblclick", function(ev){
     const z = zone(ev); if (!z) return;
     ev.stopPropagation();
@@ -713,5 +768,6 @@ def show_chart(fig: go.Figure, view_key: str, mobile: bool = False, container=No
             .replace("%%FIG%%", fig.to_json()))
     with box.container():
         components.html(html, height=h + 4)
-        st.caption("Arrastra la escala de precios o la de tiempo para comprimir o estirar; arrastra el gráfico para "
-                   "desplazarlo; doble clic para restablecer.")
+        st.caption("Rueda del ratón: comprime o estira las velas · Arrastrar la escala de precios (derecha): comprime en "
+                   "vertical · Arrastrar la escala de fechas (abajo): comprime en horizontal · Arrastrar el gráfico: "
+                   "desplaza · Doble clic: restablece.")
