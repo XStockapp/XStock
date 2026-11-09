@@ -370,15 +370,49 @@ def price_chart(d: pd.DataFrame, plan: dict | None = None, vp: dict | None = Non
         st_all = ind[iid]["st"]
         first = next((st_all[k] for k, _ in pn["lines"] if st_all.get(k, {}).get("v")), None)
         if pn.get("zone"):
-            zc = first["c"] if first else MUTED
-            fig.add_hrect(y0=pn["zone"][0], y1=pn["zone"][1], fillcolor=_rgba_hex(zc, 0.08), line_width=0, row=r_, col=1)
-        for lvl in pn.get("refs", []):
-            fig.add_hline(y=lvl, line=dict(color="rgba(139,148,158,.45)", width=1, dash="dot"), row=r_, col=1)
+            fs = st_all.get(pn.get("fill") or "")
+            if fs is None:
+                zc = first["c"] if first else MUTED
+                fig.add_hrect(y0=pn["zone"][0], y1=pn["zone"][1], fillcolor=_rgba_hex(zc, 0.08), line_width=0, row=r_, col=1, exclude_empty_subplots=False)
+            elif fs["v"]:
+                fig.add_hrect(y0=pn["zone"][0], y1=pn["zone"][1], fillcolor=_rgba_hex(fs["c"], fs["o"] / 100), line_width=0,
+                              row=r_, col=1, exclude_empty_subplots=False)
+        bs = st_all.get(pn.get("bands") or "")
+        if bs is None or bs["v"]:
+            bl = _ln(bs) if bs else dict(color="rgba(139,148,158,.45)", width=1, dash="dot")
+            for lvl in pn.get("refs", []):
+                fig.add_hline(y=lvl, line=bl, row=r_, col=1, exclude_empty_subplots=False)
+        if pn.get("dots") is not None:
+            keys = pn["dots"].reindex(x).fillna("")
+            for k_ in ("sqon", "sqoff"):
+                sd_ = st_all.get(k_)
+                m_ = keys == k_
+                if sd_ and sd_["v"] and m_.any():
+                    fig.add_trace(go.Scatter(x=x[m_.to_numpy()], y=[0] * int(m_.sum()), mode="markers", showlegend=False,
+                                             marker=dict(size=3 + float(sd_["w"]), color=_rgba_hex(sd_["c"], sd_["o"] / 100),
+                                                         symbol="x" if k_ == "sqon" else "circle"),
+                                             hoverinfo="skip"), r_, 1)
+        for kind in ("bull", "bear"):
+            sk = st_all.get(kind)
+            segs = [s_ for s_ in pn.get("divs", []) if s_[4] == kind and s_[0] >= x[0]]
+            if sk and sk["v"] and segs:
+                xs, ys = [], []
+                for t1, v1, t2, v2, _ in segs:
+                    xs += [t1, t2, None]
+                    ys += [v1, v2, None]
+                fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines", line=_ln(sk), showlegend=False, hoverinfo="skip",
+                                         connectgaps=False), r_, 1)
         if pn.get("hist"):
             hk, hs = pn["hist"]
             sth = st_all.get(hk)
-            if sth and sth["v"]:
-                hv = hs.reindex(x)
+            hv = hs.reindex(x)
+            if pn.get("hcols") is not None:  # histograma de varios colores (cada barra indica su estilo)
+                keys = pn["hcols"].reindex(x).fillna("")
+                hc = [(_rgba_hex(st_all[k_]["c"], st_all[k_]["o"] / 100) if k_ in st_all and st_all[k_]["v"]
+                       else "rgba(0,0,0,0)") for k_ in keys]
+                fig.add_trace(go.Bar(x=x, y=hv, marker_color=hc, marker_line_width=0, showlegend=False,
+                                     hovertemplate="%{y:.2f}<extra></extra>"), r_, 1)
+            elif sth and sth["v"]:
                 hc = np.where(hv >= 0, _rgba_hex(sth["c"], sth["o"] / 100), _rgba_hex(RED, sth["o"] / 100))
                 fig.add_trace(go.Bar(x=x, y=hv, marker_color=hc, showlegend=False, hovertemplate="%{y:.2f}<extra></extra>"), r_, 1)
         for k, ser in pn["lines"]:

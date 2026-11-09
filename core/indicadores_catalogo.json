@@ -800,6 +800,15 @@
      "st": 1
     },
     {
+     "k": "mid",
+     "l": "Banda media",
+     "t": "num",
+     "d": 50,
+     "mn": 0,
+     "mx": 100,
+     "st": 1
+    },
+    {
      "k": "os",
      "l": "Banda inferior",
      "t": "num",
@@ -812,7 +821,7 @@
      "k": "mat",
      "l": "Tipo de MA",
      "t": "sel",
-     "d": "SMA",
+     "d": "Ninguna",
      "o": [
       [
        "Ninguna",
@@ -840,6 +849,21 @@
      "mn": 1,
      "mx": 100,
      "st": 1
+    },
+    {
+     "k": "div",
+     "l": "Mostrar divergencias",
+     "t": "bool",
+     "d": true
+    },
+    {
+     "k": "divlb",
+     "l": "Pivote divergencias (velas a cada lado)",
+     "t": "num",
+     "d": 5,
+     "mn": 2,
+     "mx": 20,
+     "st": 1
     }
    ],
    "plots": [
@@ -858,6 +882,38 @@
      "w": 1,
      "s": "solid",
      "o": 100
+    },
+    {
+     "k": "bands",
+     "l": "Bandas",
+     "c": "#787B86",
+     "w": 1,
+     "s": "dashed",
+     "o": 70
+    },
+    {
+     "k": "bg",
+     "l": "Fondo",
+     "c": "#7E57C2",
+     "w": 1,
+     "s": "solid",
+     "o": 12
+    },
+    {
+     "k": "bull",
+     "l": "Divergencia alcista",
+     "c": "#26A69A",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "bear",
+     "l": "Divergencia bajista",
+     "c": "#EF5350",
+     "w": 1,
+     "s": "solid",
+     "o": 100
     }
    ],
    "info": {
@@ -866,8 +922,80 @@
     "ayuda": "Detectar sobrecompra y sobreventa, divergencias y la fuerza del impulso.",
     "combina": "ADX (en tendencia, 70/30 se sostiene mucho tiempo), divergencias, soportes y resistencias.",
     "tf": "Todas; más confiable desde 1h.",
-    "uso": "En tendencia alcista, compra cuando el RSI rebota en 40-50. En rango, vende en 70 y compra en 30.",
+    "uso": "En tendencia alcista, compra cuando el RSI rebota en 40-50. En rango, vende en 70 y compra en 30. Las divergencias se marcan con líneas verdes (alcistas) y rojas (bajistas).",
     "esperar": "Sobrecompra no significa vender: en tendencias fuertes el RSI se queda arriba. Sus mejores señales son las divergencias."
+   }
+  },
+  {
+   "id": "mom",
+   "g": "mom",
+   "name": "Momentum",
+   "draw": "pane",
+   "inputs": [
+    {
+     "k": "len",
+     "l": "Longitud",
+     "t": "num",
+     "d": 10,
+     "mn": 1,
+     "mx": 200,
+     "st": 1
+    },
+    {
+     "k": "src",
+     "l": "Fuente",
+     "t": "sel",
+     "d": "close",
+     "o": [
+      [
+       "close",
+       "Cierre"
+      ],
+      [
+       "open",
+       "Apertura"
+      ],
+      [
+       "high",
+       "Máximo"
+      ],
+      [
+       "low",
+       "Mínimo"
+      ],
+      [
+       "hl2",
+       "(máx+mín)/2"
+      ],
+      [
+       "hlc3",
+       "(máx+mín+cierre)/3"
+      ],
+      [
+       "ohlc4",
+       "(ap+máx+mín+cierre)/4"
+      ]
+     ]
+    }
+   ],
+   "plots": [
+    {
+     "k": "mom",
+     "l": "Momentum",
+     "c": "#2962FF",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    }
+   ],
+   "info": {
+    "que": "Diferencia entre el precio actual y el de hace n velas.",
+    "perfil": "Todos los perfiles.",
+    "ayuda": "Medir la velocidad del movimiento y detectar cuando pierde fuerza.",
+    "combina": "RSI, MACD y tendencia (medias móviles).",
+    "tf": "Todas.",
+    "uso": "Sobre cero el impulso es alcista; cruces de cero confirman cambios. Una tendencia que sigue con momentum decreciente avisa agotamiento.",
+    "esperar": "Es muy sensible y no tiene límites fijos: úsalo para confirmar, no como señal única."
    }
   },
   {
@@ -1386,7 +1514,7 @@
   {
    "id": "sqz",
    "g": "mom",
-   "name": "Squeeze Momentum (LazyBear)",
+   "name": "Momentum Squeeze (SQZMOM · LazyBear)",
    "draw": "pane",
    "inputs": [
     {
@@ -1395,7 +1523,7 @@
      "t": "num",
      "d": 20,
      "mn": 1,
-     "mx": 100,
+     "mx": 200,
      "st": 1
     },
     {
@@ -1403,7 +1531,7 @@
      "l": "Multiplicador BB",
      "t": "num",
      "d": 2,
-     "mn": 0.5,
+     "mn": 0.1,
      "mx": 5,
      "st": 0.1
     },
@@ -1413,7 +1541,7 @@
      "t": "num",
      "d": 20,
      "mn": 1,
-     "mx": 100,
+     "mx": 200,
      "st": 1
     },
     {
@@ -1421,19 +1549,65 @@
      "l": "Multiplicador KC",
      "t": "num",
      "d": 1.5,
-     "mn": 0.5,
+     "mn": 0.1,
      "mx": 5,
      "st": 0.1
+    },
+    {
+     "k": "tr",
+     "l": "Usar rango verdadero (KC)",
+     "t": "bool",
+     "d": true
     }
    ],
    "plots": [
     {
-     "k": "mom",
-     "l": "Momentum",
-     "c": "#26A69A",
+     "k": "up1",
+     "l": "Alza creciente",
+     "c": "#00E676",
      "w": 1,
      "s": "solid",
-     "o": 70
+     "o": 100
+    },
+    {
+     "k": "up2",
+     "l": "Alza debilitándose",
+     "c": "#1B8A4B",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "dn1",
+     "l": "Baja creciente",
+     "c": "#FF1744",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "dn2",
+     "l": "Baja debilitándose",
+     "c": "#8B1A2B",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "sqon",
+     "l": "Compresión activa",
+     "c": "#E6EDF3",
+     "w": 1,
+     "s": "solid",
+     "o": 100
+    },
+    {
+     "k": "sqoff",
+     "l": "Compresión liberada",
+     "c": "#787B86",
+     "w": 1,
+     "s": "solid",
+     "o": 100
     }
    ],
    "info": {

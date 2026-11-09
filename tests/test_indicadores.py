@@ -9,7 +9,7 @@ from core.data import _synthetic, _synthetic_tf
 
 
 def test_catalogo_completo():
-    assert len(I.CATALOGO) == 34
+    assert len(I.CATALOGO) == 35
     ids = {c["id"] for c in I.CATALOGO}
     assert {"ma", "vrvp", "rsi", "macd", "wt", "konc", "fvg", "ob"} <= ids
     for c in I.CATALOGO:

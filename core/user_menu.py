@@ -59,6 +59,23 @@ def _saved_settings() -> dict:
     return profiles.merge_settings(st.session_state.get("technical_settings"))
 
 
+def _num_norm(o):
+    if isinstance(o, bool) or o is None:
+        return o
+    if isinstance(o, (int, float)):
+        return float(o)
+    if isinstance(o, dict):
+        return {str(k): _num_norm(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_num_norm(v) for v in o]
+    return o
+
+
+def _canon(o) -> str:
+    """JSON comparable: 2 y 2.0 cuentan igual (los campos numéricos devuelven float)."""
+    return json.dumps(_num_norm(o), sort_keys=True, default=str)
+
+
 def init_work(perfil: str | None = None, force: bool = False) -> None:
     """Prepara la copia de trabajo a partir de lo guardado (o de los valores del perfil si es nuevo)."""
     ss = st.session_state
@@ -70,7 +87,7 @@ def init_work(perfil: str | None = None, force: bool = False) -> None:
     base_engine = S if same else profiles.default_settings(perfil)
     cfg = I.merge_config(S.get("indicadores") if same else None, perfil, base_engine)
     ss.ind_work = cfg
-    ss.ind_saved = json.dumps(cfg, sort_keys=True)
+    ss.ind_saved = _canon(cfg)
     ss.ind_perfil = perfil
     _clear_widgets()
 
@@ -81,7 +98,7 @@ def work() -> dict:
 
 
 def dirty() -> bool:
-    return json.dumps(work(), sort_keys=True) != st.session_state.get("ind_saved")
+    return _canon(work()) != st.session_state.get("ind_saved")
 
 
 def focus_mode() -> bool:
@@ -104,9 +121,12 @@ def save(trader_profile: str | None = None, tf: str | None = None) -> list[str]:
     perfil = trader_profile or ss.get("ind_perfil") or ss.get("trader_profile")
     base = _saved_settings() if perfil == ss.get("trader_profile") else profiles.default_settings(perfil)
     base["vista"] = _saved_settings().get("vista") or base.get("vista")
+    for it in cfg.values():  # los desactivados pasan a «Otros indicadores» (conservan su configuración)
+        if not it["on"]:
+            it["conf"] = False
     S = I.to_engine(cfg, base)
     profiles.save_user_view(tf=tf, settings=S, trader_profile=perfil)
-    ss.ind_saved = json.dumps(cfg, sort_keys=True)
+    ss.ind_saved = _canon(cfg)
     ss.ind_saved_once = True
     return []
 
@@ -165,7 +185,7 @@ def _item(c: dict, cfg: dict):
         with d.popover("ⓘ", width="stretch", help=f"Qué es y cómo usar {c['name']}"):
             st.markdown(_ficha(c), unsafe_allow_html=True)
         with b.expander(c["name"] + (" · pronto en el gráfico" if iid in I.SIN_GRAFICO else "")):
-            before = json.dumps(it, sort_keys=True)
+            before = _canon(it)
             t1, t2, t3 = st.tabs(["Entradas", "Estilo", "Visibilidad"])
             with t1:
                 for f in c["inputs"]:
@@ -195,7 +215,7 @@ def _item(c: dict, cfg: dict):
             if it["conf"] and st.button("Mover a «Otros indicadores»", key=f"{W}mv_{iid}", type="tertiary"):
                 it["conf"], it["on"] = False, False
                 st.rerun()
-            if json.dumps(it, sort_keys=True) != before:
+            if _canon(it) != before:
                 it["conf"] = True  # se configuró: queda en la lista principal
 
 
@@ -205,7 +225,9 @@ def indicadores_panel(con_guardar: bool = True):
         if cfg[c["id"]]["conf"]:
             _item(c, cfg)
     otros = [c for c in I.CATALOGO if not cfg[c["id"]]["conf"]]
-    with st.expander(f"Otros indicadores · {len(otros)}", key="usr_otros", on_change="rerun") as exp:
+    # La etiqueta no lleva el número: cambiarla reiniciaría el desplegable. El número se muestra con CSS.
+    st.markdown(f"<style>.st-key-usr_otros > div > details > summary p::after{{content:' · {len(otros)}'}}</style>", unsafe_allow_html=True)
+    with st.expander("Otros indicadores", key="usr_otros", on_change="rerun") as exp:
         if exp.open:  # se construye solo al abrir (son ~28 indicadores con sus controles)
             for g, gname in I.GRUPOS:
                 items = [c for c in otros if c["g"] == g]
@@ -243,7 +265,7 @@ def _footer():
 
 # ---------------------------------------------------------------- menú USER
 def _snapshot(cfg: dict) -> str:
-    return json.dumps([work(), cfg], sort_keys=True, default=str)
+    return _canon([work(), cfg])
 
 
 def render(profile: dict, admin: bool, cfg: dict, onboarding: bool = False, extra_admin=None):
