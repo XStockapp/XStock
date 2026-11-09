@@ -34,6 +34,8 @@ BASE_SETTINGS = {
     "vista": {"rangos": {}},
     # Panel de indicadores (menú USER › Indicadores): ver core/indicators.py
     "indicadores": {},
+    # configuraciones de indicadores con nombre (máx. 5) y la activa; "default" = valores del perfil
+    "ind_sets": {"activo": "default", "sets": {}},
 }
 
 
@@ -132,7 +134,7 @@ def ma_color(settings: dict | None, slot: str) -> str:
 
 def engine_settings(settings: dict) -> dict:
     """Ajustes que usa el motor de cálculo (sin la vista del gráfico, que no cambia los indicadores)."""
-    return {k: v for k, v in settings.items() if k not in ("vista", "indicadores")}
+    return {k: v for k, v in settings.items() if k not in ("vista", "indicadores", "ind_sets")}
 
 
 def save_user_view(tf: str | None = None, rango: str | None = None, settings: dict | None = None,

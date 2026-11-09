@@ -11,6 +11,7 @@ Barra izquierda: menú USER (Indicadores, Estrategias, Watchlist, Portafolio, Al
 """
 from __future__ import annotations
 
+import copy
 import json
 
 import streamlit as st
@@ -26,6 +27,15 @@ SECCIONES = [("ind", "Indicadores", ":material/stacked_line_chart:"), ("est", "E
 _DASHES = [("solid", "───"), ("dashed", "‒ ‒ ‒"), ("dotted", "·····")]
 
 CSS = """<style>
+[class*="st-key-iset_"] button { justify-content: flex-start; min-height: 34px; }
+[class*="st-key-iset_"] button > div { justify-content: flex-start; width: 100%; }
+[class*="st-key-iset_"] [data-testid="stPopover"] button div[aria-hidden="true"] { display: none; }
+[class*="st-key-iset_"] [data-testid="stPopover"] button > div { justify-content: center; }
+[class*="st-key-iset_"] button p { font-size: 12.5px; }
+[class*="st-key-iset_on_"] button:disabled { border-color: #2962FF; color: #E6EDF3; opacity: 1; background: #161B22; }
+[class*="st-key-iset_def_"] button p { color: #8B949E; }
+[class*="st-key-iset_"] [data-testid="stPopover"] button { justify-content: center; }
+.usr-need { border: 1px solid #D29922; border-radius: 6px; padding: 6px 9px; font-size: 12px; line-height: 1.45; margin-bottom: 6px; }
 /* Barra lateral: barra de desplazamiento siempre visible */
 [data-testid="stSidebarContent"] { scrollbar-width: thin; scrollbar-color: #484F58 transparent; }
 [data-testid="stSidebarContent"]::-webkit-scrollbar { width: 8px; }
@@ -91,8 +101,13 @@ def _canon(o) -> str:
     return json.dumps(_num_norm(o), sort_keys=True, default=str)
 
 
+DEFAULT = "default"
+MAX_SETS = 5
+MIGRADA = "Mi configuración"
+
+
 def init_work(perfil: str | None = None, force: bool = False) -> None:
-    """Prepara la copia de trabajo a partir de lo guardado (o de los valores del perfil si es nuevo)."""
+    """Prepara la copia de trabajo con la configuración activa (o «default», los valores del perfil)."""
     ss = st.session_state
     perfil = perfil or ss.get("ob_profile") or ss.get("trader_profile")
     if not force and "ind_work" in ss and ss.get("ind_perfil") == perfil:
@@ -100,11 +115,30 @@ def init_work(perfil: str | None = None, force: bool = False) -> None:
     S = _saved_settings()
     same = perfil == ss.get("trader_profile")
     base_engine = S if same else profiles.default_settings(perfil)
-    cfg = I.merge_config(S.get("indicadores") if same else None, perfil, base_engine)
+    store_ = (S.get("ind_sets") or {}) if same else {}
+    sets = copy.deepcopy(store_.get("sets") or {})
+    activo = store_.get("activo") or DEFAULT
+    raw = ss.get("technical_settings")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except Exception:
+            raw = None
+    legacy = isinstance(raw, dict) and "ind_sets" not in raw  # guardado antes de existir las configuraciones
+    if same and legacy and not sets and S.get("indicadores"):
+        # configuración guardada antes de existir las configuraciones con nombre: se conserva con nombre
+        sets, activo = {MIGRADA: copy.deepcopy(S["indicadores"])}, MIGRADA
+    if activo not in sets:
+        activo = DEFAULT
+    ss.ind_sets, ss.ind_active, ss.ind_perfil = sets, activo, perfil
+    cfg = I.merge_config(sets[activo], perfil, base_engine) if activo != DEFAULT else _default_cfg(perfil)
     ss.ind_work = cfg
     ss.ind_saved = _canon(cfg)
-    ss.ind_perfil = perfil
     _clear_widgets()
+
+
+def _default_cfg(perfil: str | None) -> dict:
+    return I.default_config(perfil, profiles.default_settings(perfil))
 
 
 def work() -> dict:
@@ -112,12 +146,27 @@ def work() -> dict:
     return st.session_state.ind_work
 
 
+def active() -> str:
+    init_work()
+    return st.session_state.ind_active
+
+
+def sets() -> dict:
+    init_work()
+    return st.session_state.ind_sets
+
+
 def dirty() -> bool:
     return _canon(work()) != st.session_state.get("ind_saved")
 
 
+def needs_name() -> bool:
+    """Se modificó «default»: hay que ponerle nombre para conservar los cambios."""
+    return active() == DEFAULT and dirty()
+
+
 def focus_mode() -> bool:
-    return len(I.activos(work())) > I.MAX_SIN_ENFOQUE and dirty()
+    return len(I.activos(work())) > I.MAX_SIN_ENFOQUE and needs_name()
 
 
 def _clear_widgets():
@@ -126,8 +175,8 @@ def _clear_widgets():
             del st.session_state[k]
 
 
-def save(trader_profile: str | None = None, tf: str | None = None) -> list[str]:
-    """Guarda la configuración completa de indicadores y sincroniza el motor. Devuelve errores si los hay."""
+def persist(trader_profile: str | None = None, tf: str | None = None) -> list[str]:
+    """Guarda la configuración activa (y la lista de configuraciones) y sincroniza el motor."""
     cfg = work()
     errs = I.validar(cfg)
     if errs:
@@ -136,24 +185,85 @@ def save(trader_profile: str | None = None, tf: str | None = None) -> list[str]:
     perfil = trader_profile or ss.get("ind_perfil") or ss.get("trader_profile")
     base = _saved_settings() if perfil == ss.get("trader_profile") else profiles.default_settings(perfil)
     base["vista"] = _saved_settings().get("vista") or base.get("vista")
-    for it in cfg.values():  # los desactivados pasan a «Otros indicadores» (conservan su configuración)
-        if not it["on"]:
-            it["conf"] = False
     S = I.to_engine(cfg, base)
+    S["ind_sets"] = {"activo": ss.ind_active, "sets": copy.deepcopy(ss.ind_sets)}
     profiles.save_user_view(tf=tf, settings=S, trader_profile=perfil)
-    ss.ind_saved = _canon(cfg)
-    ss.ind_saved_once = True
+    if ss.ind_active != DEFAULT:
+        ss.ind_saved = _canon(cfg)
     return []
 
 
+def autosave() -> None:
+    """Los cambios en una configuración con nombre se guardan solos (en «default» hay que ponerle nombre)."""
+    ss = st.session_state
+    if active() == DEFAULT or not dirty() or I.validar(work()):
+        return
+    ss.ind_sets[ss.ind_active] = copy.deepcopy(work())
+    persist(tf=ss.get("ob_tf"))
+
+
+def _clean_name(name: str) -> str:
+    return " ".join(str(name or "").split())[:30]
+
+
+def save_as(name: str) -> str | None:
+    """Guarda la copia de trabajo como configuración con nombre y la activa. Devuelve un error o None."""
+    ss = st.session_state
+    name = _clean_name(name)
+    if not name:
+        return "Escribe un nombre para la configuración."
+    if name.lower() == DEFAULT:
+        return "«default» está reservado: usa otro nombre."
+    if name not in sets() and len(sets()) >= MAX_SETS:
+        return f"Máximo {MAX_SETS} configuraciones: elimina una para guardar otra."
+    errs = I.validar(work())
+    if errs:
+        return " ".join(errs)
+    cfg = work()
+    for it in cfg.values():  # los desactivados pasan a «Otros indicadores» (conservan su configuración)
+        if not it["on"]:
+            it["conf"] = False
+    ss.ind_sets[name] = copy.deepcopy(cfg)
+    ss.ind_active = name
+    persist(tf=ss.get("ob_tf"))
+    ss.ind_saved = _canon(cfg)
+    ss.ind_saved_once = True
+    return None
+
+
+def load_set(name: str) -> None:
+    """Activa una configuración (o «default») y la aplica al gráfico."""
+    ss = st.session_state
+    if name != DEFAULT and name not in sets():
+        return
+    perfil = ss.get("ind_perfil") or ss.get("trader_profile")
+    ss.ind_active = name
+    cfg = (_default_cfg(perfil) if name == DEFAULT
+           else I.merge_config(ss.ind_sets[name], perfil, profiles.default_settings(perfil)))
+    ss.ind_work = cfg
+    ss.ind_saved = _canon(cfg)
+    _clear_widgets()
+    persist(tf=ss.get("ob_tf"))
+
+
+def delete_set(name: str) -> None:
+    ss = st.session_state
+    if name in sets():
+        del ss.ind_sets[name]
+        if ss.ind_active == name:
+            load_set(DEFAULT)
+        else:
+            persist(tf=ss.get("ob_tf"))
+
+
 def cancel():
-    init_work(force=True)
+    """Descarta los cambios sin guardar de la configuración activa."""
+    load_set(active())
 
 
 def reset_profile_defaults():
     ss = st.session_state
-    perfil = ss.get("ind_perfil") or ss.get("trader_profile")
-    ss.ind_work = I.default_config(perfil, profiles.default_settings(perfil))
+    ss.ind_work = _default_cfg(ss.get("ind_perfil") or ss.get("trader_profile"))
     _clear_widgets()
 
 
@@ -234,7 +344,33 @@ def _item(c: dict, cfg: dict):
                 it["conf"] = True  # se configuró: queda en la lista principal
 
 
+def _sets_list():
+    """Configuraciones guardadas: «default» (valores del perfil, solo lectura) y hasta 5 con nombre."""
+    act, names = active(), list(sets())
+    st.markdown(f"<div class='ind-grp'>Configuraciones · {len(names)}/{MAX_SETS}</div>", unsafe_allow_html=True)
+    for i, name in enumerate([DEFAULT] + names):
+        on = name == act
+        state = "on" if on else ("def" if name == DEFAULT else "off")
+        with st.container(key=f"iset_{state}_{i}"):
+            if name == DEFAULT:
+                label = "default · valores del perfil" + (" · modificada" if on and dirty() else "")
+                if st.button(label, key=f"iset_btn_{i}", width="stretch", disabled=on):
+                    load_set(DEFAULT)
+                    st.rerun()
+            else:
+                a, b = st.columns([0.85, 0.15])
+                if a.button(name, key=f"iset_btn_{i}", width="stretch", disabled=on):
+                    load_set(name)
+                    st.rerun()
+                with b.popover("✕", width="stretch", help=f"Eliminar «{name}»"):
+                    st.caption(f"¿Eliminar la configuración «{name}»? No se puede deshacer.")
+                    if st.button("Eliminar", key=f"iset_del_{i}", width="stretch"):
+                        delete_set(name)
+                        st.rerun()
+
+
 def indicadores_panel(con_guardar: bool = True):
+    _sets_list()
     cfg = work()
     for c in I.CATALOGO:
         if cfg[c["id"]]["conf"]:
@@ -255,27 +391,36 @@ def indicadores_panel(con_guardar: bool = True):
 
 
 def _footer():
+    ss = st.session_state
     with st.container(key="usr_ind_footer"):
         errs = I.validar(work())
         for e in errs:
             st.warning(e)
-        d = dirty()
-        st.caption("Cambios sin guardar" if d else "Todo guardado")
+        if needs_name():
+            st.markdown("<div class='usr-need'>Modificaste <b>default</b>. Ponle un nombre y pulsa <b>Guardar config</b> "
+                        "para conservar estos cambios.</div>", unsafe_allow_html=True)
+        elif active() != DEFAULT:
+            st.caption(f"Los cambios se guardan solos en «{active()}».")
+        else:
+            st.caption("Estás usando «default». Para personalizarla, guárdala con un nombre.")
+        n1, n2 = st.columns([0.55, 0.45], vertical_alignment="bottom")
+        nombre = n1.text_input("Nombre de la configuración", key=f"usr_ind_name_{ss.get('ind_rev', 0)}", max_chars=30,
+                               placeholder="Nombre (p. ej. Cripto 1h)", label_visibility="collapsed")
+        if n2.button("Guardar config", key="usr_ind_save", type="primary", width="stretch", disabled=bool(errs)):
+            err = save_as(nombre)
+            if err:
+                st.warning(err)
+            else:
+                st.toast(f"Configuración «{_clean_name(nombre)}» guardada", icon="✅")
+                ss.ind_rev = ss.get("ind_rev", 0) + 1  # cierra el panel de indicadores
+                st.rerun()
         f1, f2 = st.columns(2)
-        if f1.button("Cancelar", key="usr_ind_cancel", width="stretch", disabled=not d):
+        if f1.button("Descartar cambios", key="usr_ind_cancel", width="stretch", disabled=not dirty()):
             cancel()
             st.rerun()
-        if f2.button("Guardar", key="usr_ind_save", type="primary", width="stretch", disabled=bool(errs)):
-            e2 = save(tf=st.session_state.get("ob_tf"))
-            if e2:
-                st.warning(" ".join(e2))
-            else:
-                st.toast("Configuración de indicadores guardada", icon="✅")
-                st.session_state.ind_rev = st.session_state.get("ind_rev", 0) + 1  # cierra el panel de indicadores
-                st.rerun()
-        with st.popover("Valores por defecto", width="stretch"):
-            st.caption("Vuelve a los indicadores y parámetros sugeridos para tu perfil. No se guarda hasta pulsar Guardar.")
-            if st.button("Restablecer configuración del perfil", key="usr_ind_reset", width="stretch"):
+        with f2.popover("Restablecer", width="stretch"):
+            st.caption("Vuelve a los indicadores y parámetros sugeridos para tu perfil en la configuración activa.")
+            if st.button("Volver a los valores del perfil", key="usr_ind_reset", width="stretch"):
                 reset_profile_defaults()
                 st.rerun()
 
@@ -303,7 +448,7 @@ def _menu(profile: dict, admin: bool, cfg: dict, onboarding: bool, extra_admin):
         foc = focus_mode()
         if foc:
             st.markdown(f"<div class='usr-focus'>Tienes <b>{len(I.activos(work()))}</b> indicadores activos. El resto del "
-                        "menú se oculta hasta que guardes la configuración.</div>", unsafe_allow_html=True)
+                        "menú se oculta hasta que la guardes con un nombre.</div>", unsafe_allow_html=True)
         for k, label, icon in SECCIONES:
             if foc and k != "ind":
                 continue
@@ -329,6 +474,7 @@ def _menu(profile: dict, admin: bool, cfg: dict, onboarding: bool, extra_admin):
                 elif k == "pr":
                     _perfil(profile, admin)
     if _snapshot(cfg) != before:
+        autosave()  # configuración con nombre: guardado automático
         st.rerun(scope="app")  # cambió un valor: redibujar el gráfico con la nueva configuración
 
 
