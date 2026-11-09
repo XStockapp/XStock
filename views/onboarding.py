@@ -88,11 +88,12 @@ with st.container(border=True):
                       settings=profiles.default_settings(k), ind=cfg_ind)
     show_chart(fig, f"muestra|{SAMPLE}|{tf}")
 
-ok = st.session_state.get("ind_saved_once") and not user_menu.dirty()
+ok = not user_menu.needs_name()
 h1, h2 = st.columns([3, 1.2], vertical_alignment="center")
-h1.caption("Configuración guardada. Ya puedes analizar con todas las herramientas de la plataforma." if ok else
-           "Guarda tu configuración de indicadores (botón Guardar del panel izquierdo) para continuar.")
+h1.caption(f"Configuración «{user_menu.active()}» lista. Ya puedes analizar con todas las herramientas de la plataforma."
+           if ok else "Modificaste «default»: ponle un nombre y pulsa «Guardar config» en el panel izquierdo para continuar.")
 if h2.button("Entrar a la plataforma", type="primary", width="stretch", disabled=not ok):
+    user_menu.persist(trader_profile=k, tf=st.session_state.get("ob_tf"))
     st.session_state.onboarding = False
     st.session_state.ob_step = 1
     st.session_state.pop("ob_tf", None)
