@@ -23,14 +23,14 @@ h1, h2, h3 {{ letter-spacing: -0.01em; line-height: 1.3; }}
 [data-testid="stSidebar"] {{ border-right: 1px solid {BORDER}; }}
 code, .mono {{ font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }}
 .kpi {{ background: {PANEL}; border: 1px solid {BORDER}; border-radius: 8px; padding: 8px 10px; height: 100%; }}
-.kpi .lbl {{ color: {MUTED}; font-size: 0.66rem; text-transform: uppercase; letter-spacing: .07em; }}
+.kpi .lbl {{ color: {MUTED}; font-size: max(11px, 0.66rem); text-transform: uppercase; letter-spacing: .07em; }}
 .kpi .val {{ font-family: 'JetBrains Mono', monospace; font-size: 1.1rem; font-weight: 600; margin-top: 2px; }}
-.kpi .sub {{ color: {MUTED}; font-size: 0.7rem; margin-top: 1px; }}
-.pill {{ display:inline-block; padding: 2px 9px; border-radius: 999px; font-size: .72rem; font-weight: 600; margin-right: 4px; }}
+.kpi .sub {{ color: {MUTED}; font-size: max(11px, 0.7rem); margin-top: 1px; }}
+.pill {{ display:inline-block; padding: 2px 9px; border-radius: 999px; font-size: max(11px, .72rem); font-weight: 600; margin-right: 4px; }}
 .brand {{ font-weight: 700; font-size: 1.1rem; letter-spacing: -.01em; }}
 .brand span {{ color: {GREEN}; }}
-.muted {{ color: {MUTED}; font-size: .8rem; }}
-.small {{ font-size: .78rem; }}
+.muted {{ color: {MUTED}; font-size: max(11px, .8rem); }}
+.small {{ font-size: max(11px, .78rem); }}
 .bigpx {{ font-family: 'JetBrains Mono', monospace; font-size: 1.4rem; font-weight: 600; }}
 /* encabezado de la acción */
 .qhead {{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin: 2px 0 4px; }}
@@ -39,34 +39,34 @@ code, .mono {{ font-family: 'JetBrains Mono', monospace; font-variant-numeric: t
 .qhead .qch {{ font-family: 'JetBrains Mono', monospace; font-size: .95rem; }}
 /* panel vertical de métricas */
 .mp {{ background: {PANEL}; border: 1px solid {BORDER}; border-radius: 8px; padding: 6px 10px 8px; }}
-.mp-h {{ color: {MUTED}; font-size: .64rem; text-transform: uppercase; letter-spacing: .08em; margin: 8px 0 2px;
+.mp-h {{ color: {MUTED}; font-size: max(11px, .64rem); text-transform: uppercase; letter-spacing: .08em; margin: 8px 0 2px;
          border-bottom: 1px solid {BORDER}; padding-bottom: 2px; }}
 .mp-h:first-child {{ margin-top: 2px; }}
-.mp-r {{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size: .8rem; padding: 2px 0; }}
+.mp-r {{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size: max(11px, .8rem); padding: 2px 0; }}
 .mp-r b {{ font-family: 'JetBrains Mono', monospace; font-size: .88rem; white-space: nowrap; }}
-.mp-s {{ color: {MUTED}; font-size: .68rem; margin: -2px 0 3px; line-height: 1.25; }}
+.mp-s {{ color: {MUTED}; font-size: max(11px, .68rem); margin: -2px 0 3px; line-height: 1.25; }}
 /* informe IA */
-.sec {{ font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: {MUTED}; font-weight: 600; padding-top: 6px; }}
-.sec2 {{ font-size: .7rem; text-transform: uppercase; letter-spacing: .07em; color: {MUTED}; font-weight: 600; margin: 8px 0 3px; }}
+.sec {{ font-size: max(11px, .72rem); text-transform: uppercase; letter-spacing: .08em; color: {MUTED}; font-weight: 600; padding-top: 6px; }}
+.sec2 {{ font-size: max(11px, .7rem); text-transform: uppercase; letter-spacing: .07em; color: {MUTED}; font-weight: 600; margin: 8px 0 3px; }}
 .rep p.lead {{ font-size: .92rem; margin: 6px 0 4px; line-height: 1.45; }}
-.rep-b {{ background: #0D1117; border: 1px solid {BORDER}; border-radius: 6px; padding: 7px 9px; font-size: .8rem; line-height: 1.45; height: 100%; }}
-ul.tl {{ margin: 0; padding-left: 16px; font-size: .8rem; line-height: 1.45; }}
+.rep-b {{ background: #0D1117; border: 1px solid {BORDER}; border-radius: 6px; padding: 7px 9px; font-size: max(11px, .8rem); line-height: 1.45; height: 100%; }}
+ul.tl {{ margin: 0; padding-left: 16px; font-size: max(11px, .8rem); line-height: 1.45; }}
 ul.tl li {{ margin: 2px 0; }}
-table.qt-tab {{ width: 100%; border-collapse: collapse; font-size: .78rem; }}
-table.qt-tab th {{ text-align: left; color: {MUTED}; font-weight: 500; font-size: .66rem; text-transform: uppercase; letter-spacing: .05em;
+table.qt-tab {{ width: 100%; border-collapse: collapse; font-size: max(11px, .78rem); }}
+table.qt-tab th {{ text-align: left; color: {MUTED}; font-weight: 500; font-size: max(11px, .66rem); text-transform: uppercase; letter-spacing: .05em;
                   border-bottom: 1px solid {BORDER}; padding: 4px 6px; }}
 table.qt-tab td {{ border-bottom: 1px solid {BORDER}; padding: 4px 6px; vertical-align: top; }}
 table.qt-tab td.n {{ font-family: 'JetBrains Mono', monospace; white-space: nowrap; }}
 /* fundamentales clave */
 .fr {{ display:grid; grid-template-columns: 10px 1fr auto; gap: 0 8px; align-items: baseline; padding: 3px 0; border-bottom: 1px dashed {BORDER}; }}
 .fr .dot {{ width: 8px; height: 8px; border-radius: 50%; display: inline-block; }}
-.fr .fm {{ font-size: .8rem; font-weight: 600; }}
-.fr .fv {{ font-family: 'JetBrains Mono', monospace; font-size: .8rem; }}
-.fr .fl {{ grid-column: 2 / 4; color: {MUTED}; font-size: .7rem; line-height: 1.3; }}
+.fr .fm {{ font-size: max(11px, .8rem); font-weight: 600; }}
+.fr .fv {{ font-family: 'JetBrains Mono', monospace; font-size: max(11px, .8rem); }}
+.fr .fl {{ grid-column: 2 / 4; color: {MUTED}; font-size: max(11px, .7rem); line-height: 1.3; }}
 .fr .fb {{ opacity: .7; }}
 .verdict {{ border-radius: 10px; padding: 12px 14px; border: 1px solid {BORDER}; background: {PANEL}; }}
 .verdict h2 {{ margin: 0 0 4px 0; font-size: 1.3rem; }}
-.disclaimer {{ color: {MUTED}; font-size: .68rem; border-top: 1px solid {BORDER}; padding-top: 6px; margin-top: 16px; }}
+.disclaimer {{ color: {MUTED}; font-size: max(11px, .68rem); border-top: 1px solid {BORDER}; padding-top: 6px; margin-top: 16px; }}
 div[data-testid="stDataFrame"] {{ border: 1px solid {BORDER}; border-radius: 8px; }}
 /* ocultar barra de Streamlit (Deploy, menú, íconos de GitHub) */
 [data-testid="stToolbarActions"], [data-testid="stAppDeployButton"], [data-testid="stMainMenu"], [data-testid="stDecoration"],
@@ -80,7 +80,7 @@ header[data-testid="stHeader"] {{ background: transparent; height: 2.6rem; }}
   .qhead {{ gap: 6px; }}
   .qhead .qt {{ font-size: 1.2rem; }}
   .qhead .qpx {{ font-size: 1.1rem; }}
-  .qhead .muted {{ width: 100%; font-size: .72rem; }}
+  .qhead .muted {{ width: 100%; font-size: max(11px, .72rem); }}
   .kpi {{ padding: 6px 8px; }}
   .kpi .val {{ font-size: .98rem; }}
   .mp {{ padding: 4px 8px 6px; }}
@@ -92,6 +92,9 @@ header[data-testid="stHeader"] {{ background: transparent; height: 2.6rem; }}
   .stTabs [data-baseweb="tab-list"] {{ overflow-x: auto; flex-wrap: nowrap; }}
   .bias-top {{ flex-wrap: wrap; gap: 2px 10px; }}
 }}
+/* Campos: sin el aviso "Press Enter to apply · n/m" de Streamlit, que se encima con el texto en campos angostos */
+[data-testid="InputInstructions"] {{ display: none !important; }}
+[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {{ font-size: max(11px, .8rem) !important; }}
 /* Navegación lateral: mismas cajas que el menú USER; los títulos de sección quedan sin recuadro */
 [data-testid="stSidebarNav"] li:has(a[href$="/watchlist"]) {{ display: none; }}
 [data-testid="stSidebarNavItems"] li {{ margin-bottom: 8px; }}
@@ -528,7 +531,7 @@ def bias_bar(n_long: int, n_short: int, strong_long: int = 0, strong_short: int 
     else:
         lab, c = "BAJISTA", RED
     return (f"<div style='margin:2px 0 6px'>"
-            f"<div class='bias-top' style='display:flex;justify-content:space-between;font-size:.78rem;margin-bottom:3px'>"
+            f"<div class='bias-top' style='display:flex;justify-content:space-between;font-size:max(11px, .78rem);margin-bottom:3px'>"
             f"<span style='color:{GREEN}'><b>▲ LONG {pl:.0f}%</b> · {n_long} acciones · {strong_long} fuertes</span>"
             f"<span>Sesgo del mercado: <b style='color:{c}'>{lab}</b></span>"
             f"<span style='color:{RED}'>{strong_short} fuertes · {n_short} acciones · <b>SHORT {100 - pl:.0f}% ▼</b></span></div>"
