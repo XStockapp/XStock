@@ -26,6 +26,21 @@ SECCIONES = [("ind", "Indicadores", ":material/stacked_line_chart:"), ("est", "E
 _DASHES = [("solid", "───"), ("dashed", "‒ ‒ ‒"), ("dotted", "·····")]
 
 CSS = """<style>
+/* Barra lateral: barra de desplazamiento siempre visible */
+[data-testid="stSidebarContent"] { scrollbar-width: thin; scrollbar-color: #484F58 transparent; }
+[data-testid="stSidebarContent"]::-webkit-scrollbar { width: 8px; }
+[data-testid="stSidebarContent"]::-webkit-scrollbar-thumb { background: #484F58; border-radius: 4px; }
+/* Indicadores abierto: ocupa toda la columna izquierda (oculta navegación y las demás secciones de USER) */
+section[data-testid="stSidebar"]:has([class*="st-key-usr_sec_ind"] > div > details[open]) [data-testid="stSidebarNav"],
+section[data-testid="stSidebar"]:has([class*="st-key-usr_sec_ind"] > div > details[open]) [data-testid="stSidebarNavSeparator"],
+section[data-testid="stSidebar"]:has([class*="st-key-usr_sec_ind"] > div > details[open]) [class*="st-key-usr_sec_"]:not([class*="st-key-usr_sec_ind"]) { display: none !important; }
+/* …y su lista se desplaza dentro del panel, con Guardar siempre a la vista */
+[class*="st-key-usr_sec_ind"] > div > details > [data-testid="stExpanderDetails"] {
+  max-height: calc(100vh - 180px); overflow-y: auto; scrollbar-width: thin; scrollbar-color: #484F58 transparent; }
+[class*="st-key-usr_sec_ind"] > div > details > [data-testid="stExpanderDetails"]::-webkit-scrollbar { width: 8px; }
+[class*="st-key-usr_sec_ind"] > div > details > [data-testid="stExpanderDetails"]::-webkit-scrollbar-thumb { background: #484F58; border-radius: 4px; }
+[data-testid="stLayoutWrapper"]:has(> .st-key-usr_ind_footer) { position: sticky; bottom: -8px; z-index: 5;
+  background: #161B22; border-top: 1px solid #30363D; padding: 8px 0 6px; }
 section[data-testid="stSidebar"][data-collapsed="false"] { width: 384px !important; min-width: 384px !important; max-width: 92vw !important; }
 .st-key-usr_hdr > div > details > summary p { font-size: 13px; font-weight: 600; letter-spacing: .08em; }
 [class*="st-key-usr_sec_"] > div > details > summary p, .st-key-usr_otros > div > details > summary p { font-size: 13px; font-weight: 600; }
@@ -240,27 +255,29 @@ def indicadores_panel(con_guardar: bool = True):
 
 
 def _footer():
-    errs = I.validar(work())
-    for e in errs:
-        st.warning(e)
-    d = dirty()
-    st.caption("Cambios sin guardar" if d else "Todo guardado")
-    f1, f2 = st.columns(2)
-    if f1.button("Cancelar", key="usr_ind_cancel", width="stretch", disabled=not d):
-        cancel()
-        st.rerun()
-    if f2.button("Guardar", key="usr_ind_save", type="primary", width="stretch", disabled=bool(errs)):
-        e2 = save(tf=st.session_state.get("ob_tf"))
-        if e2:
-            st.warning(" ".join(e2))
-        else:
-            st.toast("Configuración de indicadores guardada", icon="✅")
+    with st.container(key="usr_ind_footer"):
+        errs = I.validar(work())
+        for e in errs:
+            st.warning(e)
+        d = dirty()
+        st.caption("Cambios sin guardar" if d else "Todo guardado")
+        f1, f2 = st.columns(2)
+        if f1.button("Cancelar", key="usr_ind_cancel", width="stretch", disabled=not d):
+            cancel()
             st.rerun()
-    with st.popover("Valores por defecto", width="stretch"):
-        st.caption("Vuelve a los indicadores y parámetros sugeridos para tu perfil. No se guarda hasta pulsar Guardar.")
-        if st.button("Restablecer configuración del perfil", key="usr_ind_reset", width="stretch"):
-            reset_profile_defaults()
-            st.rerun()
+        if f2.button("Guardar", key="usr_ind_save", type="primary", width="stretch", disabled=bool(errs)):
+            e2 = save(tf=st.session_state.get("ob_tf"))
+            if e2:
+                st.warning(" ".join(e2))
+            else:
+                st.toast("Configuración de indicadores guardada", icon="✅")
+                st.session_state.ind_rev = st.session_state.get("ind_rev", 0) + 1  # cierra el panel de indicadores
+                st.rerun()
+        with st.popover("Valores por defecto", width="stretch"):
+            st.caption("Vuelve a los indicadores y parámetros sugeridos para tu perfil. No se guarda hasta pulsar Guardar.")
+            if st.button("Restablecer configuración del perfil", key="usr_ind_reset", width="stretch"):
+                reset_profile_defaults()
+                st.rerun()
 
 
 # ---------------------------------------------------------------- menú USER
@@ -294,7 +311,7 @@ def _menu(profile: dict, admin: bool, cfg: dict, onboarding: bool, extra_admin):
                 continue
             extra = f" · {len(I.activos(work()))} activos" if k == "ind" else ""
             with st.expander(f"{label}{extra}", expanded=(k == "ind" and (onboarding or foc)), icon=icon,
-                             key=f"usr_sec_{k}"):
+                             key=f"usr_sec_{k}" + (f"_r{st.session_state.get('ind_rev', 0)}" if k == "ind" else "")):
                 if k == "ind":
                     indicadores_panel(con_guardar=True)
                 elif k == "est":
