@@ -9,3 +9,6 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# plotly.js se genera al arrancar (core/ui.py)
+static/plotly.min.js

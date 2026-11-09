@@ -323,7 +323,7 @@ def price_chart(d: pd.DataFrame, plan: dict | None = None, vp: dict | None = Non
         lv_all = [e, sl, t1, t2]
         lo, hi = min([lo] + lv_all), max([hi] + lv_all)
     # --- Perfil de volumen (VRVP) con POC y área de valor ---
-    vp_axis = None
+    vp_axis, wpct, pv = None, 100.0, {}
     if "vrvp" in act and vp and len(vp.get("precios", [])):
         sv, pv = ind["vrvp"]["st"], ind["vrvp"]["in"]
         pr = np.asarray(vp["precios"], float)
@@ -435,20 +435,26 @@ def price_chart(d: pd.DataFrame, plan: dict | None = None, vp: dict | None = Non
     top = 6 if mobile else 10 + 20 * leg_rows
     fig.update_layout(template="plotly_dark", paper_bgcolor=BG, plot_bgcolor=BG,
                       height=(560 if mobile else 600) + (110 if mobile else 140) * len(panes) + top,
-                      margin=dict(l=2, r=86 if mobile else 92, t=top, b=6), xaxis_rangeslider_visible=False, barmode="overlay",
+                      margin=dict(l=2, r=86 if mobile else 92, t=top, b=6 if mobile else 26), xaxis_rangeslider_visible=False, barmode="overlay",
                       showlegend=not mobile,
                       hovermode="x unified", dragmode=False if mobile else "pan", bargap=0.15,
                       legend=dict(orientation="h", yanchor="bottom", y=1.0, x=0, font=dict(size=10), bgcolor="rgba(0,0,0,0)",
                                   traceorder="normal"),
-                      font=dict(family="Inter", color=TXT, size=11))
+                      font=dict(family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif", color=TXT, size=11))
+    x_right = max(x_end, fx(max(2, int(len(x) * 0.03))))
+    if plan and vp_axis and pv.get("place", "Derecha") != "Izquierda" and wpct <= 60:
+        # deja libre la franja del VRVP: el pronóstico termina antes de que empiece el perfil
+        fut = int((times or {}).get("sesiones_a_objetivo_2") or 18) + 3
+        total = (len(x) + fut) / max(0.3, 1 - wpct / 100 - 0.03)
+        x_right = max(x_right, fx(int(np.ceil(total - len(x)))))
     for r_ in range(1, n_rows + 1):
         fig.update_xaxes(gridcolor="#1C2128", rangebreaks=rangebreaks(tf, crypto), showspikes=True, spikecolor="#484F58",
-                         spikethickness=1, range=[x[0], max(x_end, fx(max(2, int(len(x) * 0.03))))], row=r_, col=1)
+                         spikethickness=1, range=[x[0], x_right], row=r_, col=1)
     if vp_axis:
         fig.update_layout(xaxis20=vp_axis)
-    fig.update_yaxes(gridcolor="#1C2128", side="right", tickfont=dict(size=10, family="JetBrains Mono"))
+    fig.update_yaxes(gridcolor="#1C2128", side="right", tickfont=dict(size=10, family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"))
     fig.update_yaxes(range=[lo - pad, hi + pad], row=1, col=1, secondary_y=False)
-    fig.update_yaxes(range=[0, float(d["Volume"].max()) * 4], visible=False, row=1, col=1, secondary_y=True)
+    fig.update_yaxes(range=[0, float(d["Volume"].max()) * 4], visible=False, fixedrange=True, row=1, col=1, secondary_y=True)
     return fig
 
 
@@ -607,3 +613,105 @@ def kpi_row(items: list[tuple]) -> str:
         f"<div class='kpi'><div class='lbl'>{lbl}</div><div class='val' style='color:{c}'>{val}</div>"
         f"<div class='sub'>{sub}</div></div>" for lbl, val, sub, c in items)
     return f"<div class='kpi-grid'>{cells}</div>"
+
+
+# ---------------------------------------------------------------- gráfico interactivo (escalas como TradingView)
+_STATIC = __import__("pathlib").Path(__file__).resolve().parent.parent / "static" / "plotly.min.js"
+
+
+def _ensure_plotlyjs() -> bool:
+    try:
+        if not _STATIC.exists():
+            from plotly.offline import get_plotlyjs
+            _STATIC.parent.mkdir(exist_ok=True)
+            _STATIC.write_text(get_plotlyjs(), encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
+_CHART_JS = r"""
+<style>html,body{margin:0;padding:0;background:transparent}</style>
+<div id="c" style="width:100%;height:%%H%%px"></div>
+<script src="/app/static/plotly.min.js"></script>
+<script>
+(function(){
+const fig = %%FIG%%, KEY = "xs_view_" + %%KEY%%;
+const gd = document.getElementById("c");
+const cfg = {displaylogo:false, scrollZoom:false, responsive:true,
+             modeBarButtonsToRemove:["select2d","lasso2d","autoScale2d"]};
+let saved = null;
+try { saved = JSON.parse(localStorage.getItem(KEY) || "null"); } catch(e) {}
+if (saved && saved.y) { fig.layout.yaxis = Object.assign(fig.layout.yaxis || {}, {range: saved.y}); }
+Plotly.newPlot(gd, fig.data, fig.layout, cfg).then(function(){
+  // eje de tiempo maestro: los demás paneles lo siguen con "matches"
+  const XK = Object.keys(gd._fullLayout).filter(function(k){ return /^xaxis\d*$/.test(k) && k !== "xaxis20"; })
+               .find(function(k){ return !gd._fullLayout[k].matches; }) || "xaxis";
+  const L = gd._fullLayout, X0 = L[XK].range.slice(), Y0 = L.yaxis.range.slice();
+  if (saved && saved.x) Plotly.relayout(gd, {[XK + ".range"]: saved.x});
+  const save = function(){ try { localStorage.setItem(KEY, JSON.stringify({x: gd._fullLayout[XK].range, y: gd._fullLayout.yaxis.range})); } catch(e) {} };
+  gd.on("plotly_relayout", save);
+  function zone(ev){
+    const r = gd.getBoundingClientRect(), s = gd._fullLayout._size, ya = gd._fullLayout.yaxis;
+    const px = ev.clientX - r.left, py = ev.clientY - r.top;
+    const pTop = s.t + (1 - ya.domain[1]) * s.h, pBot = s.t + (1 - ya.domain[0]) * s.h;
+    if (px > s.l + s.w && py >= pTop && py <= pBot) return "y";       // escala de precios
+    if (py > s.t + s.h && px >= s.l && px <= s.l + s.w) return "x";    // escala de tiempo
+    return null;
+  }
+  let drag = null, raf = 0;
+  gd.addEventListener("mousemove", function(ev){
+    if (!drag) gd.style.cursor = ({y:"ns-resize", x:"ew-resize"})[zone(ev)] || "";
+  });
+  gd.addEventListener("mousedown", function(ev){
+    const z = zone(ev); if (!z || ev.button !== 0) return;
+    ev.preventDefault(); ev.stopPropagation();
+    const L = gd._fullLayout;
+    drag = {z: z, x: ev.clientX, y: ev.clientY,
+            xr: L[XK].range.map(L[XK].r2l), yr: L.yaxis.range.slice()};
+  }, true);
+  window.addEventListener("mousemove", function(ev){
+    if (!drag) return;
+    ev.preventDefault();
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(function(){
+      const L = gd._fullLayout;
+      if (drag.z === "y") {          // arrastrar hacia abajo comprime, hacia arriba estira
+        const f = Math.exp((ev.clientY - drag.y) * 0.006), c = (drag.yr[0] + drag.yr[1]) / 2, h = (drag.yr[1] - drag.yr[0]) / 2 * f;
+        Plotly.relayout(gd, {"yaxis.range": [c - h, c + h]});
+      } else {                        // hacia la izquierda comprime las velas (más historia), a la derecha las estira
+        const f = Math.exp((drag.x - ev.clientX) * 0.006), r1 = drag.xr[1], w = (drag.xr[1] - drag.xr[0]) * f;
+        Plotly.relayout(gd, {[XK + ".range"]: [L[XK].l2r(r1 - w), L[XK].l2r(r1)]});
+      }
+    });
+  }, true);
+  window.addEventListener("mouseup", function(){ if (drag) { drag = null; save(); } }, true);
+  gd.addEventListener("dblclick", function(ev){
+    const z = zone(ev); if (!z) return;
+    ev.stopPropagation();
+    Plotly.relayout(gd, z === "y" ? {"yaxis.range": Y0} : {[XK + ".range"]: X0});
+  }, true);
+  gd.on("plotly_doubleclick", function(){ Plotly.relayout(gd, {[XK + ".range"]: X0, "yaxis.range": Y0}); try{localStorage.removeItem(KEY);}catch(e){} return false; });
+});
+})();
+</script>
+"""
+
+
+def show_chart(fig: go.Figure, view_key: str, mobile: bool = False, container=None) -> None:
+    """Gráfico de precio con escalas de TradingView: arrastrar la escala de precios comprime/estira en vertical,
+    arrastrar la de tiempo comprime/estira en horizontal, arrastrar el gráfico desplaza libremente y doble clic
+    restablece. La vista se recuerda por símbolo, velas y rango. En celular usa el gráfico nativo."""
+    box = container or st
+    if mobile or not _ensure_plotlyjs():
+        box.plotly_chart(fig, width="stretch", config=plot_config(mobile))
+        return
+    import json as _json
+    import streamlit.components.v1 as components
+    h = int(fig.layout.height or 700)
+    html = (_CHART_JS.replace("%%H%%", str(h)).replace("%%KEY%%", _json.dumps(view_key))
+            .replace("%%FIG%%", fig.to_json()))
+    with box.container():
+        components.html(html, height=h + 4)
+        st.caption("Arrastra la escala de precios o la de tiempo para comprimir o estirar; arrastra el gráfico para "
+                   "desplazarlo; doble clic para restablecer.")

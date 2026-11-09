@@ -42,7 +42,7 @@ from core import data, user_menu  # noqa: E402
 from core import indicators as IND  # noqa: E402
 from core.technical import volume_profile  # noqa: E402
 from core.timeframes import is_crypto, rango_velas  # noqa: E402
-from core.ui import price_chart  # noqa: E402
+from core.ui import price_chart, show_chart  # noqa: E402
 
 k = st.session_state.get("ob_profile") or saved_key or profiles.DEFAULT_PERFIL
 P = profiles.get(k)
@@ -86,7 +86,7 @@ with st.container(border=True):
                 unsafe_allow_html=True)
     fig = price_chart(raw, None, vp, None, bars=bars, tf=tf, crypto=is_crypto(SAMPLE),
                       settings=profiles.default_settings(k), ind=cfg_ind)
-    st.plotly_chart(fig, width="stretch", config={"displaylogo": False, "scrollZoom": True})
+    show_chart(fig, f"muestra|{SAMPLE}|{tf}")
 
 ok = st.session_state.get("ind_saved_once") and not user_menu.dirty()
 h1, h2 = st.columns([3, 1.2], vertical_alignment="center")
