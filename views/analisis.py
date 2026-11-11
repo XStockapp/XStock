@@ -443,7 +443,7 @@ with left:
             show_chart(projection_chart(d, plan, times, vpa, bars=bars, tf=TF, crypto=is_crypto(ticker), mobile=MOBILE),
                        f"pj|{ticker}|{TF}|{rng}", MOBILE)
         elif VISTAS[_vista] == "tv":
-            tv.show(ticker, TF, height=560 if not MOBILE else 420)
+            tv.show(ticker, TF, height=680 if not MOBILE else 460)
             st.caption("TradingView es solo visual: dibuja y marca libremente. El análisis, el plan y la probabilidad "
                        "se calculan con tus indicadores y estrategia de XStock (vista «XStock»)."
                        + (f" Velas de {TF} no existen en TradingView: se muestra {tv.SIN_EQUIVALENTE[TF]}."
