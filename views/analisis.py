@@ -12,7 +12,7 @@ import json
 from core import profiles
 from core.levels import MODOS
 from core.timeframes import RANGO_NOMBRE, RANGOS, is_crypto, rango_valido, rango_velas, unidad
-from core.ui import (AMBER, show_chart, DISCLAIMER, GREEN, MUTED, NEUTRAL, RED, SIGNAL_COLORS, color_for, equity_chart, is_mobile,
+from core.ui import (AMBER, projection_chart, show_chart, DISCLAIMER, GREEN, MUTED, NEUTRAL, RED, SIGNAL_COLORS, color_for, equity_chart, is_mobile,
                      pill, price_chart)
 
 cfg = st.session_state.cfg
@@ -192,46 +192,9 @@ st.markdown(
          f"<span class='muted'>({len(_act)} activos)</span>")
     + "</div>", unsafe_allow_html=True)
 
-# ---------------------------------------------------------------- gráfico + plan de ejecución
 bars = rango_velas(TF, rng, is_crypto(ticker), len(d))
 akey = f"ai_{ticker}_{d.index[-1]:%Y%m%d}_{cfg['tp_atr']}_{cfg['sl_atr']}_{plan['modo_entrada']}_{TF}"
 V = st.session_state.get(akey)
-if MOBILE:
-    left, right = st.container(), st.container()
-else:
-    left, right = st.columns([3.15, 1.2], gap="small")
-
-with left:
-    with st.container(border=True, key="x_chartcard"):
-        g1, g2 = st.columns([2.6, 2], vertical_alignment="center")
-        g1.markdown(f"<div class='x-tb'><b>{E(ticker)}</b><span class='muted'>· {E(TF)} · "
-                    f"{E(RANGO_NOMBRE.get(rng, rng))}</span><span class='x-chip'>Indicadores ({len(_act)} activos)</span>"
-                    "</div>", unsafe_allow_html=True)
-        VISTAS = {"Gráfico avanzado": "tv", "XStock": "xs"}
-        _vista = g2.segmented_control("Vista del gráfico", list(VISTAS), default="Gráfico avanzado", key="x_vista",
-                                      label_visibility="collapsed",
-                                      help="Gráfico avanzado: TradingView para dibujar, marcar y sumar sus indicadores "
-                                           "(solo visual). XStock: tus indicadores, el plan y la proyección con los "
-                                           "que se calcula el análisis.") or "Gráfico avanzado"
-        if VISTAS[_vista] == "tv":
-            tv.show(ticker, TF, height=560 if not MOBILE else 420)
-            st.caption("TradingView es solo visual: dibuja y marca libremente. El análisis, el plan y la probabilidad "
-                       "se calculan con tus indicadores y estrategia de XStock (vista «XStock»)."
-                       + (f" Velas de {TF} no existen en TradingView: se muestra {tv.SIN_EQUIVALENTE[TF]}."
-                          if TF in tv.SIN_EQUIVALENTE else ""))
-        else:
-            from core.technical import volume_profile
-            _pv = IND_CFG["vrvp"]["in"]
-            _rows = int(IND._num(_pv.get("rows"), 24))
-            if _pv.get("layout") == "Ticks por fila":  # tamaño de fila en ticks de $0.01 → cantidad de filas
-                _span = float(d.tail(bars)["High"].max() - d.tail(bars)["Low"].min())
-                _rows = int(max(4, min(300, round(_span / (_rows * 0.01)))))
-            _vp = (volume_profile(d.tail(bars), bins=max(4, min(300, _rows)), value_area=IND._num(_pv.get("va"), 70) / 100)
-                   if "vrvp" in _act else None)
-            _fig = price_chart(d, plan, _vp, V, bars=bars, times=times, mobile=MOBILE, tf=TF, crypto=is_crypto(ticker),
-                               settings=SETTINGS, ind=IND_CFG)
-            show_chart(_fig, f"{ticker}|{TF}|{rng}", MOBILE)
-
 
 def row(label, val, color="#E6EDF3", sub=""):
     return (f"<div class='mp-i'><div class='mp-r'><span>{label}</span><b style='color:{color}'>{val}</b></div>"
@@ -249,89 +212,12 @@ good = [i for i in items if i["score"] >= 35]
 bad = [i for i in items if i["score"] <= -35][::-1]
 neu = [i for i in items if -35 < i["score"] < 35]
 
-with right:
-    _lado = "COMPRA" if "COMPRA" in plan["direccion"] else "VENTA"
-    _orden = f"{_lado} {'LIMIT' if plan['modo_entrada'] == 'limit' else 'MERCADO'}"
-    _oc = GREEN if _lado == "COMPRA" else RED
-    _sc = AMBER if _wait else GREEN
-
-    def lvl(label, val, color, sub):
-        return (f"<div class='x-lv'><span>{label}</span><b class='num' style='color:{color}'>{val}</b>"
-                f"<span class='x-lvs'>{sub}</span></div>")
-
-    t1_ = f" · ~{unidad(TF, times['sesiones_a_objetivo_1'])}" if times else ""
-    t2_ = f" · ~{unidad(TF, times['sesiones_a_objetivo_2'])}" if times else ""
-    st.markdown(
-        f"<div class='x-plan'><div class='x-ph'><span>Plan de ejecución</span>"
-        f"<span class='x-badge' style='color:{_oc};border-color:{_oc}66;background:{_oc}14'>{_orden}</span></div>"
-        f"<div class='x-state' style='border-color:{_sc}66'><b style='color:{_sc}'>{E(plan['estado'])}</b>"
-        + (f"<div class='mp-s'>{E(' · '.join(plan['motivos_impulso']))}</div>" if plan["motivos_impulso"] else
-           "<div class='mp-s'>Impulso de corto plazo a favor de la señal de fondo.</div>")
-        + f"<div class='mp-s'>{E(plan['marco_corto'])}</div></div>"
-        f"<div class='x-entry'><div><div class='x-k'>{'Entrada proyectada' if plan['modo_entrada'] == 'limit' else 'Entrada a mercado'}</div>"
-        f"<div class='x-big num'>{money(plan['entrada'])}</div><div class='mp-s'>{E(plan['tipo_entrada'])}</div></div>"
-        f"<div class='x-lvls'>"
-        + lvl("Stop loss", money(plan["stop"]), RED, f"−{risk_pct * 100:.1f}%")
-        + lvl("TP1", money(plan["objetivo_1"]), GREEN, f"R/B {plan['rr_1']:.1f}{t1_}")
-        + lvl("TP2", money(plan["objetivo_2"]), GREEN, f"R/B {plan['rr_2']:.1f}{t2_}")
-        + "</div></div>"
-        f"<div class='x-size'><span>Tamaño sugerido <b class='num'>{plan['acciones']} acc.</b></span>"
-        f"<span>Riesgo <b class='num' style='color:{RED}'>−{money(plan['riesgo_monetario'])}</b></span></div>"
-        + ("" if plan["modo_entrada"] == "limit" else
-           f"<div class='mp-s'>Alternativa Limit: {money(plan['entrada_proyectada'])} en {E(plan['referencia_proyectada'])}</div>")
-        + "</div>", unsafe_allow_html=True)
-    if st.button("Registrar en portafolio", icon=":material/add_task:", type="primary", width="stretch",
-                 key="x_reg", help="Guarda la operación (entrada, stop, TP1, TP2 y tamaño) en tu portafolio de práctica. "
-                                   "No envía órdenes reales."):
-        from core import portfolio
-        portfolio.registrar(ticker, plan, TF, float(last["Close"]))
-        st.toast(f"{ticker} registrado en el portafolio simulado", icon="✅")
-        st.rerun()  # la barra lateral (USER › Portafolio) se dibuja antes que esta página
-    if st.button("Añadir a watchlist", icon=":material/notifications:", width="stretch", key="x_wl2"):
-        store.add_to_watchlist([{"Ticker": ticker, "Precio": float(last["Close"]), "Señal": None,
-                                 "Prob. ganancia": prob["probabilidad"], "Entrada": plan["entrada"], "Stop": plan["stop"],
-                                 "Objetivo 1": plan["objetivo_1"], "Objetivo 2": plan["objetivo_2"]}])
-        st.toast(f"{ticker} agregado a la watchlist", icon="⭐")
-
-    with st.expander(f"Score multivariable · {comb:+.0f}", expanded=False):
-        st.markdown(
-            "<div class='mp' style='border:none;padding:0;background:transparent'>"
-            + row("Score técnico", f"{ts:+.0f}", col_score(ts))
-            + row("Score fundamental", "—" if fsc is None else f"{fsc:+.0f}", col_score(fsc))
-            + row("Score combinado", f"{comb:+.0f}", col_score(comb), "60% técnico · 40% fundamental")
-            + row("Prob. de ganancia", f"{p * 100:.1f}%", GREEN if p > be + 0.05 else (RED if p < be else NEUTRAL),
-                  f"{prob['casos_similares']} casos · equilibrio {be * 100:.0f}%")
-            + row("Valor esperado", f"{ev:+.2f} R", GREEN if ev > 0.1 else (RED if ev < 0 else NEUTRAL))
-            + row("Piotroski", f"{pio['score']}/{pio['max']}" if pio else "—",
-                  (GREEN if pio["score"] >= 7 else RED if pio["score"] <= 3 else NEUTRAL) if pio else MUTED)
-            + "<div class='mp-h'>Niveles</div>"
-            + row("POC (180d)", money(vpa.get("poc")), AMBER)
-            + row("Área de valor", f"{money(vpa.get('val'))} – {money(vpa.get('vah'))}")
-            + (row("Soporte cercano", money(plan["soportes"][0][0]), GREEN) if plan["soportes"] else "")
-            + (row("Resistencia cercana", money(plan["resistencias"][0][0]), RED) if plan["resistencias"] else "")
-            + row("ATR (14)", f"{money(plan['atr'])} · {plan['atr'] / last['Close'] * 100:.1f}%")
-            + "</div>", unsafe_allow_html=True)
-    with st.expander(f"Métricas atractivas · {len(good)}", expanded=False):
-        st.markdown("".join(frow(i, GREEN) for i in good) or "<div class='muted small'>Ninguna destacada.</div>",
-                    unsafe_allow_html=True)
-    with st.expander(f"Factores de riesgo y valuación · {len(bad)}", expanded=False):
-        st.markdown("".join(frow(i, RED) for i in bad) or "<div class='muted small'>Ninguno destacado.</div>",
-                    unsafe_allow_html=True)
-    with st.expander(f"Métricas neutrales · {len(neu)}", expanded=False):
-        st.markdown("".join(frow(i, NEUTRAL) for i in neu) or "<div class='muted small'>Sin datos.</div>",
-                    unsafe_allow_html=True)
-        bl = fs.get("bloques", {})
-        st.markdown("<div class='sec2'>Puntaje por bloque (peso)</div>" + "".join(
-            f"<div class='mp-r'><span>{E(b)} <span class='muted'>×{BLOCK_W[b]}</span></span>"
-            f"<b style='color:{col_score(v['score'])}'>{sfmt(v['score'])}</b></div>"
-            for b, v in bl.items()), unsafe_allow_html=True)
-
-# ---------------------------------------------------------------- informe del analista (IA)
-with left:
+# ---------------------------------------------------------------- informe del analista (IA): pantalla propia
+def _informe():
+    global V
     with st.container(border=True, key="x_ai"):
         h1, h2 = st.columns([1.6, 2], vertical_alignment="center")
-        h1.markdown("<div class='x-ph' style='margin:0'><span>Informe del analista (IA)</span></div>",
-                    unsafe_allow_html=True)
+        h1.markdown("<div class='x-k'>Motor del informe</div>", unsafe_allow_html=True)
         b1, b2, b3 = h2.columns(3)
         go_claude = b1.button("Claude", icon=":material/auto_awesome:", type="primary" if _is_admin else "secondary",
                               width="stretch", disabled=not (_is_admin and _cl_key),
@@ -518,6 +404,145 @@ with left:
                 st.plotly_chart(equity_chart(bt["trades"]), width="stretch")
             else:
                 st.info("La señal no generó operaciones en el periodo analizado.")
+
+
+if st.session_state.get("x_report"):
+    # pantalla del informe: se comprime hacia la derecha para volver a la vista principal
+    with st.container(key="x_report_screen"):
+        r1, r2 = st.columns([1, 5], vertical_alignment="center")
+        if r1.button("Volver al gráfico", icon=":material/right_panel_close:", width="stretch", key="x_report_close",
+                     help="Comprime el informe hacia la derecha y vuelve a la pantalla principal de la acción"):
+            st.session_state.x_report = False
+            st.rerun()
+        r2.markdown(f"<div class='x-ph' style='margin:0'><span>Informe del analista IA · desglose del pronóstico de "
+                    f"{E(ticker)} ({E(TF)})</span></div>", unsafe_allow_html=True)
+        _informe()
+    st.markdown(DISCLAIMER, unsafe_allow_html=True)
+    st.stop()
+
+# ---------------------------------------------------------------- gráfico + plan de ejecución
+if MOBILE:
+    left, right = st.container(), st.container()
+else:
+    left, right = st.columns([3.15, 1.2], gap="small")
+
+with left:
+    with st.container(border=True, key="x_chartcard"):
+        g1, g2 = st.columns([2.6, 2], vertical_alignment="center")
+        g1.markdown(f"<div class='x-tb'><b>{E(ticker)}</b><span class='muted'>· {E(TF)} · "
+                    f"{E(RANGO_NOMBRE.get(rng, rng))}</span><span class='x-chip'>Indicadores ({len(_act)} activos)</span>"
+                    "</div>", unsafe_allow_html=True)
+        VISTAS = {"Proyección": "pj", "Gráfico avanzado": "tv", "XStock": "xs"}
+        _vista = g2.segmented_control("Vista del gráfico", list(VISTAS), default="Proyección", key="x_vista2",
+                                      label_visibility="collapsed",
+                                      help="Proyección: el plan simplificado (precio, niveles y trayectoria esperada). "
+                                           "Gráfico avanzado: TradingView para dibujar y marcar (solo visual). XStock: "
+                                           "tus indicadores, el plan y la proyección con los que se calcula el análisis.") \
+            or "Proyección"
+        if VISTAS[_vista] == "pj":
+            show_chart(projection_chart(d, plan, times, vpa, bars=bars, tf=TF, crypto=is_crypto(ticker), mobile=MOBILE),
+                       f"pj|{ticker}|{TF}|{rng}", MOBILE)
+        elif VISTAS[_vista] == "tv":
+            tv.show(ticker, TF, height=560 if not MOBILE else 420)
+            st.caption("TradingView es solo visual: dibuja y marca libremente. El análisis, el plan y la probabilidad "
+                       "se calculan con tus indicadores y estrategia de XStock (vista «XStock»)."
+                       + (f" Velas de {TF} no existen en TradingView: se muestra {tv.SIN_EQUIVALENTE[TF]}."
+                          if TF in tv.SIN_EQUIVALENTE else ""))
+        else:
+            from core.technical import volume_profile
+            _pv = IND_CFG["vrvp"]["in"]
+            _rows = int(IND._num(_pv.get("rows"), 24))
+            if _pv.get("layout") == "Ticks por fila":  # tamaño de fila en ticks de $0.01 → cantidad de filas
+                _span = float(d.tail(bars)["High"].max() - d.tail(bars)["Low"].min())
+                _rows = int(max(4, min(300, round(_span / (_rows * 0.01)))))
+            _vp = (volume_profile(d.tail(bars), bins=max(4, min(300, _rows)), value_area=IND._num(_pv.get("va"), 70) / 100)
+                   if "vrvp" in _act else None)
+            _fig = price_chart(d, plan, _vp, V, bars=bars, times=times, mobile=MOBILE, tf=TF, crypto=is_crypto(ticker),
+                               settings=SETTINGS, ind=IND_CFG)
+            show_chart(_fig, f"{ticker}|{TF}|{rng}", MOBILE)
+    if st.button("Informe del analista IA · desglose del pronóstico", icon=":material/left_panel_open:", width="stretch",
+                 key="x_report_open", help="Abre una pantalla dedicada a los detalles del pronóstico: técnico, "
+                                           "fundamental, estrategia y empírico."):
+        st.session_state.x_report = True
+        st.rerun()
+
+
+with right:
+    _lado = "COMPRA" if "COMPRA" in plan["direccion"] else "VENTA"
+    _orden = f"{_lado} {'LIMIT' if plan['modo_entrada'] == 'limit' else 'MERCADO'}"
+    _oc = GREEN if _lado == "COMPRA" else RED
+    _sc = AMBER if _wait else GREEN
+
+    def lvl(label, val, color, sub):
+        return (f"<div class='x-lv'><span>{label}</span><b class='num' style='color:{color}'>{val}</b>"
+                f"<span class='x-lvs'>{sub}</span></div>")
+
+    t1_ = f" · ~{unidad(TF, times['sesiones_a_objetivo_1'])}" if times else ""
+    t2_ = f" · ~{unidad(TF, times['sesiones_a_objetivo_2'])}" if times else ""
+    st.markdown(
+        f"<div class='x-plan'><div class='x-ph'><span>Plan de ejecución</span>"
+        f"<span class='x-badge' style='color:{_oc};border-color:{_oc}66;background:{_oc}14'>{_orden}</span></div>"
+        f"<div class='x-state' style='border-color:{_sc}66'><b style='color:{_sc}'>{E(plan['estado'])}</b>"
+        + (f"<div class='mp-s'>{E(' · '.join(plan['motivos_impulso']))}</div>" if plan["motivos_impulso"] else
+           "<div class='mp-s'>Impulso de corto plazo a favor de la señal de fondo.</div>")
+        + f"<div class='mp-s'>{E(plan['marco_corto'])}</div></div>"
+        f"<div class='x-entry'><div><div class='x-k'>{'Entrada proyectada' if plan['modo_entrada'] == 'limit' else 'Entrada a mercado'}</div>"
+        f"<div class='x-big num'>{money(plan['entrada'])}</div><div class='mp-s'>{E(plan['tipo_entrada'])}</div></div>"
+        f"<div class='x-lvls'>"
+        + lvl("Stop loss", money(plan["stop"]), RED, f"−{risk_pct * 100:.1f}%")
+        + lvl("TP1", money(plan["objetivo_1"]), GREEN, f"R/B {plan['rr_1']:.1f}{t1_}")
+        + lvl("TP2", money(plan["objetivo_2"]), GREEN, f"R/B {plan['rr_2']:.1f}{t2_}")
+        + "</div></div>"
+        f"<div class='x-size'><span>Tamaño sugerido <b class='num'>{plan['acciones']} acc.</b></span>"
+        f"<span>Riesgo <b class='num' style='color:{RED}'>−{money(plan['riesgo_monetario'])}</b></span></div>"
+        + ("" if plan["modo_entrada"] == "limit" else
+           f"<div class='mp-s'>Alternativa Limit: {money(plan['entrada_proyectada'])} en {E(plan['referencia_proyectada'])}</div>")
+        + "</div>", unsafe_allow_html=True)
+    if st.button("Registrar en portafolio", icon=":material/add_task:", type="primary", width="stretch",
+                 key="x_reg", help="Guarda la operación (entrada, stop, TP1, TP2 y tamaño) en tu portafolio de práctica. "
+                                   "No envía órdenes reales."):
+        from core import portfolio
+        portfolio.registrar(ticker, plan, TF, float(last["Close"]))
+        st.toast(f"{ticker} registrado en el portafolio simulado", icon="✅")
+        st.rerun()  # la barra lateral (USER › Portafolio) se dibuja antes que esta página
+    if st.button("Añadir a watchlist", icon=":material/notifications:", width="stretch", key="x_wl2"):
+        store.add_to_watchlist([{"Ticker": ticker, "Precio": float(last["Close"]), "Señal": None,
+                                 "Prob. ganancia": prob["probabilidad"], "Entrada": plan["entrada"], "Stop": plan["stop"],
+                                 "Objetivo 1": plan["objetivo_1"], "Objetivo 2": plan["objetivo_2"]}])
+        st.toast(f"{ticker} agregado a la watchlist", icon="⭐")
+
+    with st.expander(f"Score multivariable · {comb:+.0f}", expanded=False):
+        st.markdown(
+            "<div class='mp' style='border:none;padding:0;background:transparent'>"
+            + row("Score técnico", f"{ts:+.0f}", col_score(ts))
+            + row("Score fundamental", "—" if fsc is None else f"{fsc:+.0f}", col_score(fsc))
+            + row("Score combinado", f"{comb:+.0f}", col_score(comb), "60% técnico · 40% fundamental")
+            + row("Prob. de ganancia", f"{p * 100:.1f}%", GREEN if p > be + 0.05 else (RED if p < be else NEUTRAL),
+                  f"{prob['casos_similares']} casos · equilibrio {be * 100:.0f}%")
+            + row("Valor esperado", f"{ev:+.2f} R", GREEN if ev > 0.1 else (RED if ev < 0 else NEUTRAL))
+            + row("Piotroski", f"{pio['score']}/{pio['max']}" if pio else "—",
+                  (GREEN if pio["score"] >= 7 else RED if pio["score"] <= 3 else NEUTRAL) if pio else MUTED)
+            + "<div class='mp-h'>Niveles</div>"
+            + row("POC (180d)", money(vpa.get("poc")), AMBER)
+            + row("Área de valor", f"{money(vpa.get('val'))} – {money(vpa.get('vah'))}")
+            + (row("Soporte cercano", money(plan["soportes"][0][0]), GREEN) if plan["soportes"] else "")
+            + (row("Resistencia cercana", money(plan["resistencias"][0][0]), RED) if plan["resistencias"] else "")
+            + row("ATR (14)", f"{money(plan['atr'])} · {plan['atr'] / last['Close'] * 100:.1f}%")
+            + "</div>", unsafe_allow_html=True)
+    with st.expander(f"Métricas atractivas · {len(good)}", expanded=False):
+        st.markdown("".join(frow(i, GREEN) for i in good) or "<div class='muted small'>Ninguna destacada.</div>",
+                    unsafe_allow_html=True)
+    with st.expander(f"Factores de riesgo y valuación · {len(bad)}", expanded=False):
+        st.markdown("".join(frow(i, RED) for i in bad) or "<div class='muted small'>Ninguno destacado.</div>",
+                    unsafe_allow_html=True)
+    with st.expander(f"Métricas neutrales · {len(neu)}", expanded=False):
+        st.markdown("".join(frow(i, NEUTRAL) for i in neu) or "<div class='muted small'>Sin datos.</div>",
+                    unsafe_allow_html=True)
+        bl = fs.get("bloques", {})
+        st.markdown("<div class='sec2'>Puntaje por bloque (peso)</div>" + "".join(
+            f"<div class='mp-r'><span>{E(b)} <span class='muted'>×{BLOCK_W[b]}</span></span>"
+            f"<b style='color:{col_score(v['score'])}'>{sfmt(v['score'])}</b></div>"
+            for b, v in bl.items()), unsafe_allow_html=True)
 
 # ---------------------------------------------------------------- niveles y noticias
 _ext = st.expander("Niveles (soportes, resistencias, Fibonacci) y noticias", expanded=False)
