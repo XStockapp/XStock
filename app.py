@@ -48,6 +48,7 @@ _main = [
     st.Page("views/scanner.py", title="Escáner de mercado", icon=":material/radar:", default=True),
     st.Page("views/analisis.py", title="Análisis de acción", icon=":material/candlestick_chart:"),
     st.Page("views/watchlist.py", title="Watchlist", icon=":material/visibility:"),
+    st.Page("views/portafolio.py", title="Portafolio", icon=":material/account_balance_wallet:"),
 ]
 _admin = [
     st.Page("views/admin_invitaciones.py", title="Invitaciones", icon=":material/person_add:"),
@@ -57,7 +58,8 @@ _onb = [st.Page("views/onboarding.py", title="Configurar perfil", icon=":materia
 if NEEDS_ONBOARDING:
     pages = st.navigation(_onb)
 else:
-    pages = st.navigation({"XStock": _main, "Administración": _admin} if ADMIN else _main)
+    pages = st.navigation({"Módulos de mercado": _main, "Sistema & cuenta": _admin} if ADMIN
+                          else {"Módulos de mercado": _main})
 
 def _admin_ia():
     provs = ["Alpaca con respaldo de Yahoo (gratis)", "Alpha Vantage (premium)"]
@@ -93,5 +95,18 @@ with st.sidebar:
         pass  # en el paso 1 (elegir perfil) el menú todavía no aplica
     else:
         user_menu.render(profile, ADMIN, cfg, onboarding=NEEDS_ONBOARDING, extra_admin=_admin_ia)
+    # barra de estado: mercado y fuente de datos (valores reales, sin métricas inventadas)
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo as _Z
+    from core import alpaca as _alp
+    _ny = _dt.now(_Z("America/New_York"))
+    _mins = _ny.hour * 60 + _ny.minute
+    _open = _ny.weekday() < 5 and 570 <= _mins < 960
+    _src = ("DEMO" if os.environ.get("TRADING_DEMO") == "1" else
+            "ALPHA VANTAGE" if str(cfg.get("proveedor", "")).startswith("Alpha") else
+            "ALPACA SIP −15m" if _alp.available() else "YAHOO")
+    st.markdown(f"<div class='x-status'><span><i style='background:{'#26A69A' if _open else '#8B949E'}'></i>"
+                f"NYSE {'ABIERTO' if _open else 'CERRADO'}</span><span>{_ny:%H:%M} NY</span>"
+                f"<span>DATOS {_src}</span></div>", unsafe_allow_html=True)
 
 pages.run()

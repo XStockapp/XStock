@@ -2295,7 +2295,7 @@
      "k": "rows",
      "l": "Tamaño de la fila",
      "t": "num",
-     "d": 24,
+     "d": 300,
      "mn": 4,
      "mx": 300,
      "st": 1

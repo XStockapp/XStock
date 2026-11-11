@@ -95,15 +95,83 @@ header[data-testid="stHeader"] {{ background: transparent; height: 2.6rem; }}
 /* Campos: sin el aviso "Press Enter to apply · n/m" de Streamlit, que se encima con el texto en campos angostos */
 [data-testid="InputInstructions"] {{ display: none !important; }}
 [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {{ font-size: max(11px, .8rem) !important; }}
-/* Navegación lateral: mismas cajas que el menú USER; los títulos de sección quedan sin recuadro */
-[data-testid="stSidebarNav"] li:has(a[href$="/watchlist"]) {{ display: none; }}
-[data-testid="stSidebarNavItems"] li {{ margin-bottom: 8px; }}
-[data-testid="stSidebarNavLink"] {{ border: 1px solid {BORDER}; border-radius: 6px; padding: 8px 12px; min-height: 40px;
+/* ---------- análisis estilo terminal ---------- */
+.num {{ font-family: 'JetBrains Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }}
+.x-chips {{ display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; padding-bottom: 2px; }}
+.x-chip {{ display: inline-flex; align-items: center; gap: 6px; border: 1px solid {BORDER}; background: {PANEL};
+  border-radius: 5px; padding: 3px 8px; font-size: 11px; font-weight: 600; letter-spacing: .04em; color: {TXT}; white-space: nowrap; }}
+.x-chip i {{ width: 7px; height: 7px; border-radius: 50%; display: inline-block; }}
+.x-delta {{ font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; font-size: 12.5px; font-weight: 600;
+  border: 1px solid; border-radius: 4px; padding: 1px 6px; }}
+.x-meta {{ font-size: 12px; }}
+.x-strip {{ display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; border: 1px solid {BORDER}; background: {PANEL};
+  border-radius: 6px; padding: 6px 10px; font-size: 12px; margin: 2px 0 8px; }}
+.x-strip b {{ font-weight: 600; }}
+.x-k {{ color: {MUTED}; text-transform: uppercase; letter-spacing: .06em; font-size: 11px; font-weight: 600; }}
+.x-g {{ display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; padding-right: 10px;
+  margin-right: 2px; border-right: 1px solid {BORDER}; }}
+.x-g:last-child {{ border-right: none; }}
+.x-tb {{ display: flex; align-items: center; gap: 8px; font-size: 13px; flex-wrap: wrap; }}
+.st-key-x_chartcard, .st-key-x_ai {{ background: {PANEL}; }}
+.x-plan {{ background: {PANEL}; border: 1px solid {BORDER}; border-radius: 8px; padding: 9px 11px 10px; margin-bottom: 8px; }}
+.x-ph {{ display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 11px;
+  white-space: nowrap;
+  font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: {TXT}; }}
+.x-badge {{ border: 1px solid; border-radius: 4px; padding: 2px 6px; font-size: 11px; letter-spacing: .04em; white-space: nowrap; }}
+.x-state {{ border: 1px solid; border-radius: 6px; padding: 6px 8px; margin-bottom: 9px; font-size: 13px; background: {BG}; }}
+.x-entry {{ display: grid; grid-template-columns: 1fr; gap: 6px; border: 1px solid {BORDER}; border-radius: 6px; padding: 8px;
+  background: {BG}; }}
+.x-big {{ font-size: 21px; font-weight: 700; color: {TXT}; line-height: 1.2; }}
+.x-lvls {{ display: grid; gap: 3px; border-top: 1px solid {BORDER}; padding-top: 6px; }}
+.x-lv {{ display: grid; grid-template-columns: 1fr auto; gap: 0 8px; font-size: 12px; align-items: baseline; }}
+.x-lv b {{ font-size: 13px; }}
+.x-lvs {{ grid-column: 1 / 3; color: {MUTED}; font-size: 11px; text-align: right; margin-top: -2px; }}
+.x-size {{ display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 12px; color: {MUTED};
+  margin-top: 8px; }}
+.x-size b {{ color: {TXT}; }}
+/* pestañas tipo carpeta (informe del analista) */
+.st-key-x_ai [role="tablist"] {{ gap: 3px; border-bottom: 1px solid {BORDER}; padding: 0 2px; }}
+.st-key-x_ai [data-testid="stTab"] {{ border: 1px solid {BORDER}; border-bottom: none; border-radius: 6px 6px 0 0;
+  padding: 6px 14px; background: {BG}; margin-bottom: -1px; color: {MUTED}; }}
+.st-key-x_ai [data-testid="stTab"][aria-selected="true"] {{ background: {PANEL}; color: {TXT};
+  box-shadow: inset 0 2px 0 {ACCENT}; border-bottom: 1px solid {PANEL}; }}
+.st-key-x_ai [data-testid="stTab"] p {{ font-size: 12.5px; font-weight: 600; }}
+.st-key-x_ai [data-testid="stTab"] > div[data-rac] {{ display: none; }}
+/* pantalla del informe: entra desde la derecha */
+.st-key-x_report_screen {{ animation: xslide .22s ease-out; border-left: 1px solid {BORDER}; padding-left: 12px; }}
+@keyframes xslide {{ from {{ transform: translateX(48px); opacity: 0; }} to {{ transform: none; opacity: 1; }} }}
+/* tarjetas didácticas */
+.dd-intro {{ color: {MUTED}; font-size: 12px; margin: 6px 0 8px; }}
+.dd-h {{ display: flex; align-items: center; gap: 6px; font-size: 12.5px; flex-wrap: wrap; }}
+.dd-p {{ border: 1px solid; border-radius: 4px; padding: 0 5px; font-size: 11px; font-weight: 600; white-space: nowrap; }}
+.dd-a {{ margin-left: auto; font-size: 12px; font-weight: 600; }}
+.dd-q {{ color: {MUTED}; font-size: 11px; line-height: 1.35; margin: 3px 0 0; }}
+.dd-l {{ font-size: 11.5px; line-height: 1.35; color: {TXT}; }}
+.dd-card {{ border: 1px solid {BORDER}; border-radius: 8px; padding: 8px 10px; background: {BG}; margin-bottom: 8px; }}
+.dd-bar {{ position: relative; height: 6px; border-radius: 3px; background: #21262D; margin: 6px 0 4px; }}
+.dd-mid {{ position: absolute; left: 50%; top: -2px; width: 1px; height: 10px; background: {MUTED}; }}
+.dd-fill {{ position: absolute; top: 0; height: 6px; border-radius: 3px; }}
+.dd-ms {{ margin-top: 6px; display: grid; gap: 6px; }}
+.dd-m {{ display: grid; grid-template-columns: 1fr auto; gap: 0 8px; font-size: 11.5px; }}
+.dd-m .dd-bar {{ grid-column: 1 / 3; margin: 2px 0 0; height: 4px; }}
+.dd-m .dd-fill {{ height: 4px; }}
+.dd-mn {{ font-weight: 600; }}
+.dd-ml {{ grid-column: 1 / 3; color: {MUTED}; font-size: 11px; line-height: 1.3; }}
+/* Navegación lateral (estilo terminal): elementos planos, el activo resaltado; títulos de sección en versalitas */
+[data-testid="stSidebarNav"] li:has(a[href$="/watchlist"]), [data-testid="stSidebarNav"] li:has(a[href$="/portafolio"]) {{ display: none; }}
+[data-testid="stSidebarNavItems"] li {{ margin-bottom: 2px; }}
+[data-testid="stSidebarNavLink"] {{ border: 1px solid transparent; border-radius: 6px; padding: 6px 10px; min-height: 34px;
   background: transparent; margin: 0; }}
 [data-testid="stSidebarNavLink"]:hover {{ background: {PANEL}; }}
-[data-testid="stSidebarNavLink"][aria-current="page"] {{ border-color: {ACCENT}; background: {PANEL}; }}
-[data-testid="stSidebarNavLink"] span {{ font-size: 13px !important; font-weight: 600; color: {TXT} !important; }}
-[data-testid="stNavSectionHeader"] {{ border: none; padding-left: 2px; font-size: 12px; color: {MUTED}; }}
+[data-testid="stSidebarNavLink"][aria-current="page"] {{ border-color: {BORDER}; background: {PANEL};
+  box-shadow: inset 2px 0 0 {ACCENT}; }}
+[data-testid="stSidebarNavLink"] span {{ font-size: 13px !important; font-weight: 500; color: {TXT} !important; }}
+[data-testid="stSidebarNavLink"][aria-current="page"] span {{ font-weight: 600; }}
+[data-testid="stNavSectionHeader"] {{ border: none; padding-left: 10px; font-size: 11px; color: {MUTED};
+  text-transform: uppercase; letter-spacing: .08em; font-weight: 600; margin-top: 6px; }}
+.x-status {{ display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; border-top: 1px solid {BORDER};
+  padding: 8px 2px 2px; margin-top: 10px; font-size: 11px; color: {MUTED}; font-family: 'JetBrains Mono', monospace; }}
+.x-status i {{ width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 4px; }}
 </style>
 """
 
@@ -458,6 +526,110 @@ def price_chart(d: pd.DataFrame, plan: dict | None = None, vp: dict | None = Non
     fig.update_yaxes(gridcolor="#1C2128", side="right", tickfont=dict(size=10, family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"))
     fig.update_yaxes(range=[lo - pad, hi + pad], row=1, col=1, secondary_y=False)
     fig.update_yaxes(range=[0, float(d["Volume"].max()) * 4], visible=False, fixedrange=True, row=1, col=1, secondary_y=True)
+    return fig
+
+
+def projection_chart(d: pd.DataFrame, plan: dict, times: dict | None, vpa: dict | None, bars: int = 120,
+                     tf: str = "1D", crypto: bool = False, mobile: bool = False) -> go.Figure:
+    """Gráfico simplificado de proyección: precio en línea, niveles clave y la trayectoria esperada
+    (precio actual → entrada → TP1 → TP2) con las zonas de riesgo y beneficio."""
+    from .timeframes import future_index, rangebreaks
+    t = d.tail(max(30, bars))
+    x = t.index
+    fx = lambda n: future_index(x[-1], n, tf, crypto)
+    last = float(t["Close"].iloc[-1])
+    long = "COMPRA" in str(plan.get("direccion", "")).upper()
+    ent, stp, tp1, tp2 = (float(plan[k]) for k in ("entrada", "stop", "objetivo_1", "objetivo_2"))
+    limit = plan.get("modo_entrada") == "limit"
+    n1 = int((times or {}).get("sesiones_a_objetivo_1") or 10)
+    n2 = max(n1 + 2, int((times or {}).get("sesiones_a_objetivo_2") or 18))
+    ne = max(2, round(n1 * 0.3)) if limit else 0
+    xe, x1, x2 = (fx(ne) if ne else x[-1]), fx(ne + n1), fx(ne + n2)
+    x_end = fx(ne + n2 + max(6, int(len(x) * 0.14)))
+
+    fig = go.Figure()
+    smooth = t["Close"].ewm(span=3, adjust=False).mean()
+    lo = float(min(t["Low"].min(), stp, tp2 if not long else stp, ent))
+    hi = float(max(t["High"].max(), tp2 if long else stp, ent))
+    pad = (hi - lo) * 0.12
+    # área bajo el precio (degradado sutil) y línea suavizada
+    fig.add_trace(go.Scatter(x=x, y=[lo - pad] * len(x), mode="lines", line=dict(width=0), hoverinfo="skip",
+                             showlegend=False))
+    fig.add_trace(go.Scatter(x=x, y=smooth, mode="lines", line=dict(color="#C9D1D9", width=2.2, shape="spline", smoothing=0.8),
+                             fill="tonexty", fillgradient=dict(type="vertical", colorscale=[[0, "rgba(41,98,255,0)"],
+                                                                                            [1, "rgba(41,98,255,.16)"]]),
+                             name="Precio", hovertemplate="%{y:$,.2f}<extra></extra>"))
+    if "EMA21" in t:
+        fig.add_trace(go.Scatter(x=x, y=t["EMA21"], mode="lines", line=dict(color="rgba(255,152,0,.55)", width=1, dash="dot"),
+                                 name="EMA21", hovertemplate="EMA21 %{y:$,.2f}<extra></extra>"))
+    # zonas de riesgo y beneficio en el tramo proyectado
+    zs = xe
+    fig.add_shape(type="rect", x0=zs, x1=x2, y0=ent, y1=tp2, fillcolor="rgba(38,166,154,.08)", line_width=0, layer="below")
+    fig.add_shape(type="rect", x0=zs, x1=x2, y0=ent, y1=stp, fillcolor="rgba(239,83,80,.10)", line_width=0, layer="below")
+    # niveles
+    for y, c, dash in ((tp2, GREEN, "dot"), (tp1, GREEN, "dot"), (ent, ACCENT, "dash"), (stp, RED, "dot")):
+        fig.add_shape(type="line", x0=x[0], x1=x_end, y0=y, y1=y, line=dict(color=_rgba_hex(c, .75), width=1, dash=dash))
+    poc = (vpa or {}).get("poc")
+    if poc and lo - pad < poc < hi + pad:
+        fig.add_shape(type="line", x0=x[0], x1=x_end, y0=poc, y1=poc, line=dict(color=_rgba_hex(RED, .45), width=1, dash="dash"))
+        fig.add_annotation(x=x[min(3, len(x) - 1)], y=poc, text=f"POC ${poc:,.2f}", showarrow=False, xanchor="left",
+                           yanchor="bottom", font=dict(size=11, color=_rgba_hex(RED, .9)), bgcolor="rgba(13,17,23,.85)",
+                           bordercolor=_rgba_hex(RED, .5), borderwidth=1, borderpad=2)
+    # rechazo / soporte reciente (extremo de la ventana opuesto a la dirección)
+    ext_i = t["High"].idxmax() if long else t["Low"].idxmin()
+    ext_v = float(t["High"].max() if long else t["Low"].min())
+    if abs(ext_v / last - 1) > 0.004:
+        near_left = list(x).index(ext_i) < len(x) * 0.15
+        fig.add_annotation(x=ext_i, y=ext_v, text=f"{'Rechazo' if long else 'Soporte'} ${ext_v:,.2f}", showarrow=True,
+                           arrowhead=0, arrowcolor=MUTED, ax=40 if near_left else 0, ay=-22 if long else 22,
+                           xanchor="left" if near_left else "center", font=dict(size=11, color=TXT),
+                           bgcolor="rgba(13,17,23,.9)", bordercolor=_rgba_hex(RED if long else GREEN, .7), borderwidth=1,
+                           borderpad=3)
+    # trayectoria proyectada
+    px_ = [x[-1]] + ([xe] if limit else []) + [x1, x2]
+    py_ = [last] + ([ent] if limit else []) + [tp1, tp2]
+    fig.add_trace(go.Scatter(x=px_, y=py_, mode="lines+markers", line=dict(color=_rgba_hex(GREEN, .9), width=1.6, dash="dash"),
+                             marker=dict(size=[8] + ([9] if limit else []) + [7, 7], color=[TXT] + ([ACCENT] if limit else [])
+                                         + [GREEN, GREEN], line=dict(width=0)),
+                             name="Trayectoria proyectada", hovertemplate="%{y:$,.2f}<extra></extra>"))
+    if limit:
+        fig.add_annotation(x=x[-1], y=last, text=f"Precio actual ${last:,.2f}", showarrow=True, arrowhead=0, ax=-40,
+                           ay=-30 if long else 30, arrowcolor=MUTED, font=dict(size=11, color=TXT),
+                           bgcolor="rgba(13,17,23,.9)", bordercolor=BORDER, borderwidth=1, borderpad=3, xanchor="right")
+    fig.add_annotation(x=xe, y=ent, text=(f"ENTRADA LMT ${ent:,.2f}" if limit else f"ENTRADA MKT ${ent:,.2f} · precio actual"),
+                       showarrow=False, xanchor="right", xshift=-10, yshift=14 if long else -14, font=dict(size=11, color=TXT),
+                       bgcolor="rgba(41,98,255,.25)", bordercolor=ACCENT, borderwidth=1, borderpad=3)
+    # TP1 a la derecha de su punto; TP2 a la izquierda (así no choca con las etiquetas del eje derecho)
+    for y, lbl, xx, side in ((tp1, "TP1", x1, "left"), (tp2, "TP2", x2, "right")):
+        fig.add_annotation(x=xx, y=y, text=f"{lbl} · ${y:,.2f}", showarrow=False, xanchor=side,
+                           xshift=10 if side == "left" else -10, yshift=(12 if y > ent else -12) if side == "right" else 0,
+                           font=dict(size=11, color=GREEN), bgcolor="rgba(13,17,23,.9)", bordercolor=_rgba_hex(GREEN, .6),
+                           borderwidth=1, borderpad=3)
+    fig.add_annotation(x=x2, y=stp, text=f"STP · ${stp:,.2f}", showarrow=False, xanchor="right", xshift=-4,
+                       yshift=-12 if long else 12, font=dict(size=11, color=RED), bgcolor="rgba(13,17,23,.9)",
+                       bordercolor=_rgba_hex(RED, .6), borderwidth=1, borderpad=3)
+    # etiquetas del eje derecho
+    tags = [(tp2, f"TP2 {tp2:,.2f}", GREEN), (tp1, f"TP1 {tp1:,.2f}", GREEN),
+            (ent, f"{'LMT' if limit else 'ENT'} {ent:,.2f}", ACCENT), (stp, f"STP {stp:,.2f}", RED)]
+    if limit:
+        tags.insert(2, (last, f"{last:,.2f}", "#C9D1D9"))
+    for y, txt, c in tags:
+        _tag(fig, y, txt, c, size=11)
+    # estado del plan (franja superior)
+    wait = plan.get("estado_tipo") == "esperar"
+    sc = AMBER if wait else GREEN
+    fig.add_annotation(xref="paper", yref="paper", x=0, y=1.0, xanchor="left", yanchor="bottom",
+                       text=f"<b>{plan.get('estado', '')}</b> · {plan.get('marco_corto', '')}", showarrow=False,
+                       font=dict(size=12, color=sc), bgcolor=_rgba_hex(sc, .10), bordercolor=_rgba_hex(sc, .45),
+                       borderwidth=1, borderpad=5)
+    fig.update_layout(template="plotly_dark", paper_bgcolor=BG, plot_bgcolor=BG, height=440 if mobile else 520,
+                      margin=dict(l=2, r=86 if mobile else 92, t=38, b=6 if mobile else 26), showlegend=False,
+                      hovermode="x unified", dragmode=False if mobile else "pan",
+                      font=dict(family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif", color=TXT, size=11))
+    fig.update_xaxes(gridcolor="#161B22", rangebreaks=rangebreaks(tf, crypto), range=[x[0], x_end], showspikes=True,
+                     spikecolor="#484F58", spikethickness=1)
+    fig.update_yaxes(gridcolor="#1C2128", side="right", range=[lo - pad, hi + pad], tickformat="$,.2f",
+                     tickfont=dict(size=11, family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"))
     return fig
 
 
