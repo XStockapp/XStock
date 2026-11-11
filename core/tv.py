@@ -26,7 +26,9 @@ def symbol(ticker: str) -> str:
 
 def html(ticker: str, tf: str, height: int = 640) -> str:
     cfg = {
-        "autosize": True,
+        "autosize": False,  # altura fija: con autosize el widget se comprimía en una franja dentro de Streamlit
+        "width": "100%",
+        "height": height - 28,
         "symbol": symbol(ticker),
         "interval": INTERVALOS.get(tf, "D"),
         "timezone": "America/New_York",
@@ -46,10 +48,10 @@ def html(ticker: str, tf: str, height: int = 640) -> str:
     return f"""<style>html,body{{margin:0;padding:0;background:#0D1117}}
 .tradingview-widget-copyright{{font:11px Inter,system-ui,sans-serif;color:#8B949E;padding:4px 2px}}
 .tradingview-widget-copyright a{{color:#8B949E;text-decoration:none}}</style>
-<div class="tradingview-widget-container" style="height:{height}px;width:100%">
-  <div class="tradingview-widget-container__widget" style="height:calc(100% - 24px);width:100%"></div>
-  <div class="tradingview-widget-copyright"><a href="https://es.tradingview.com/" rel="noopener nofollow"
-    target="_blank">Gráfico de TradingView</a></div>
+<div class="tradingview-widget-container" style="width:100%">
+  <div class="tradingview-widget-container__widget" style="height:{height - 28}px;width:100%"></div>
+  <div class="tradingview-widget-copyright"><a href="https://www.tradingview.com/" rel="noopener nofollow"
+    target="_blank"><span class="blue-text">Track all markets on TradingView</span></a></div>
   <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js"
     async>{json.dumps(cfg)}</script>
 </div>"""
