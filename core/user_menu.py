@@ -66,7 +66,7 @@ section[data-testid="stSidebar"][data-collapsed="false"] { width: 384px !importa
 .st-key-usr_hdr > div > details > [data-testid="stExpanderDetails"] { padding: 8px 6px; }
 [class*="st-key-usr_sec_"] > div > details > [data-testid="stExpanderDetails"],
 .st-key-usr_otros > div > details > [data-testid="stExpanderDetails"] { padding: 8px 4px; }
-[class*="st-key-usr_wl_"] button { justify-content: flex-start; }
+[class*="st-key-usr_wl_"] button, [class*="st-key-usr_pf_"] button { justify-content: flex-start; }
 [class*="st-key-indrow_"] [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: .35rem !important; align-items: flex-start; }
 [class*="st-key-indrow_"] [data-testid="stColumn"] { min-width: 0 !important; }
 [class*="st-key-indrow_"] [data-testid="stCheckbox"] { padding-top: 10px; }
@@ -585,8 +585,7 @@ def _menu(profile: dict, admin: bool, cfg: dict, onboarding: bool, extra_admin):
                 elif k == "wl":
                     _watchlist()
                 elif k == "pf":
-                    st.caption("Cartera simulada: registra operaciones y compara el pronóstico inicial con el actualizado. "
-                               "Disponible en la fase 5.")
+                    _portafolio()
                 elif k == "al":
                     st.caption("Alertas por correo electrónico (precio, señal, entrada, stop y objetivos) con vencimiento. "
                                "Disponible en la fase 6.")
@@ -619,6 +618,22 @@ def _watchlist():
             st.session_state.ticker = t
             st.switch_page("views/analisis.py")
     st.page_link("views/watchlist.py", label=f"Abrir watchlist completa ({len(wl)})", icon=":material/open_in_new:")
+
+
+def _portafolio():
+    from . import portfolio
+    ops = portfolio.ops()
+    abiertas = [o for o in ops if o.get("cierre") is None]
+    n = len(ops)
+    st.caption(f"{n} {'operación simulada' if n == 1 else 'operaciones simuladas'} · {len(abiertas)} sin cerrar."
+               if ops else "Registra operaciones de práctica desde el Plan de ejecución del análisis.")
+    for o in abiertas[-6:][::-1]:
+        lado = "▲" if o["largo"] else "▼"
+        if st.button(f"{lado} {o['ticker']} · ${o['entrada']:,.2f}", key=f"usr_pf_{o['id']}", type="tertiary",
+                     icon=":material/show_chart:"):
+            st.session_state.ticker = o["ticker"]
+            st.switch_page("views/analisis.py")
+    st.page_link("views/portafolio.py", label=f"Abrir portafolio ({len(ops)})", icon=":material/open_in_new:")
 
 
 def _configuracion(cfg: dict, admin: bool, extra_admin):

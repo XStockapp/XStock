@@ -36,6 +36,8 @@ BASE_SETTINGS = {
     "indicadores": {},
     # configuraciones de indicadores con nombre (máx. 5) y la activa; "default" = valores del perfil
     "ind_sets": {"activo": "default", "sets": {}},
+    # portafolio simulado (operaciones registradas desde el Plan de ejecución)
+    "portafolio": {"ops": []},
 }
 
 
@@ -134,7 +136,7 @@ def ma_color(settings: dict | None, slot: str) -> str:
 
 def engine_settings(settings: dict) -> dict:
     """Ajustes que usa el motor de cálculo (sin la vista del gráfico, que no cambia los indicadores)."""
-    return {k: v for k, v in settings.items() if k not in ("vista", "indicadores", "ind_sets")}
+    return {k: v for k, v in settings.items() if k not in ("vista", "indicadores", "ind_sets", "portafolio")}
 
 
 def save_user_view(tf: str | None = None, rango: str | None = None, settings: dict | None = None,

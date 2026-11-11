@@ -95,15 +95,80 @@ header[data-testid="stHeader"] {{ background: transparent; height: 2.6rem; }}
 /* Campos: sin el aviso "Press Enter to apply · n/m" de Streamlit, que se encima con el texto en campos angostos */
 [data-testid="InputInstructions"] {{ display: none !important; }}
 [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {{ font-size: max(11px, .8rem) !important; }}
-/* Navegación lateral: mismas cajas que el menú USER; los títulos de sección quedan sin recuadro */
-[data-testid="stSidebarNav"] li:has(a[href$="/watchlist"]) {{ display: none; }}
-[data-testid="stSidebarNavItems"] li {{ margin-bottom: 8px; }}
-[data-testid="stSidebarNavLink"] {{ border: 1px solid {BORDER}; border-radius: 6px; padding: 8px 12px; min-height: 40px;
+/* ---------- análisis estilo terminal ---------- */
+.num {{ font-family: 'JetBrains Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }}
+.x-chips {{ display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; padding-bottom: 2px; }}
+.x-chip {{ display: inline-flex; align-items: center; gap: 6px; border: 1px solid {BORDER}; background: {PANEL};
+  border-radius: 5px; padding: 3px 8px; font-size: 11px; font-weight: 600; letter-spacing: .04em; color: {TXT}; white-space: nowrap; }}
+.x-chip i {{ width: 7px; height: 7px; border-radius: 50%; display: inline-block; }}
+.x-delta {{ font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; font-size: 12.5px; font-weight: 600;
+  border: 1px solid; border-radius: 4px; padding: 1px 6px; }}
+.x-meta {{ font-size: 12px; }}
+.x-strip {{ display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; border: 1px solid {BORDER}; background: {PANEL};
+  border-radius: 6px; padding: 6px 10px; font-size: 12px; margin: 2px 0 8px; }}
+.x-strip b {{ font-weight: 600; }}
+.x-k {{ color: {MUTED}; text-transform: uppercase; letter-spacing: .06em; font-size: 11px; font-weight: 600; }}
+.x-g {{ display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; padding-right: 10px;
+  margin-right: 2px; border-right: 1px solid {BORDER}; }}
+.x-g:last-child {{ border-right: none; }}
+.x-tb {{ display: flex; align-items: center; gap: 8px; font-size: 13px; flex-wrap: wrap; }}
+.st-key-x_chartcard, .st-key-x_ai {{ background: {PANEL}; }}
+.x-plan {{ background: {PANEL}; border: 1px solid {BORDER}; border-radius: 8px; padding: 9px 11px 10px; margin-bottom: 8px; }}
+.x-ph {{ display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 11px;
+  white-space: nowrap;
+  font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: {TXT}; }}
+.x-badge {{ border: 1px solid; border-radius: 4px; padding: 2px 6px; font-size: 11px; letter-spacing: .04em; white-space: nowrap; }}
+.x-state {{ border: 1px solid; border-radius: 6px; padding: 6px 8px; margin-bottom: 9px; font-size: 13px; background: {BG}; }}
+.x-entry {{ display: grid; grid-template-columns: 1fr; gap: 6px; border: 1px solid {BORDER}; border-radius: 6px; padding: 8px;
+  background: {BG}; }}
+.x-big {{ font-size: 21px; font-weight: 700; color: {TXT}; line-height: 1.2; }}
+.x-lvls {{ display: grid; gap: 3px; border-top: 1px solid {BORDER}; padding-top: 6px; }}
+.x-lv {{ display: grid; grid-template-columns: 1fr auto; gap: 0 8px; font-size: 12px; align-items: baseline; }}
+.x-lv b {{ font-size: 13px; }}
+.x-lvs {{ grid-column: 1 / 3; color: {MUTED}; font-size: 11px; text-align: right; margin-top: -2px; }}
+.x-size {{ display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 12px; color: {MUTED};
+  margin-top: 8px; }}
+.x-size b {{ color: {TXT}; }}
+/* pestañas tipo carpeta (informe del analista) */
+.st-key-x_ai [role="tablist"] {{ gap: 3px; border-bottom: 1px solid {BORDER}; padding: 0 2px; }}
+.st-key-x_ai [data-testid="stTab"] {{ border: 1px solid {BORDER}; border-bottom: none; border-radius: 6px 6px 0 0;
+  padding: 6px 14px; background: {BG}; margin-bottom: -1px; color: {MUTED}; }}
+.st-key-x_ai [data-testid="stTab"][aria-selected="true"] {{ background: {PANEL}; color: {TXT};
+  box-shadow: inset 0 2px 0 {ACCENT}; border-bottom: 1px solid {PANEL}; }}
+.st-key-x_ai [data-testid="stTab"] p {{ font-size: 12.5px; font-weight: 600; }}
+.st-key-x_ai [data-testid="stTab"] > div[data-rac] {{ display: none; }}
+/* tarjetas didácticas */
+.dd-intro {{ color: {MUTED}; font-size: 12px; margin: 6px 0 8px; }}
+.dd-h {{ display: flex; align-items: center; gap: 6px; font-size: 12.5px; flex-wrap: wrap; }}
+.dd-p {{ border: 1px solid; border-radius: 4px; padding: 0 5px; font-size: 11px; font-weight: 600; white-space: nowrap; }}
+.dd-a {{ margin-left: auto; font-size: 12px; font-weight: 600; }}
+.dd-q {{ color: {MUTED}; font-size: 11px; line-height: 1.35; margin: 3px 0 0; }}
+.dd-l {{ font-size: 11.5px; line-height: 1.35; color: {TXT}; }}
+.dd-card {{ border: 1px solid {BORDER}; border-radius: 8px; padding: 8px 10px; background: {BG}; margin-bottom: 8px; }}
+.dd-bar {{ position: relative; height: 6px; border-radius: 3px; background: #21262D; margin: 6px 0 4px; }}
+.dd-mid {{ position: absolute; left: 50%; top: -2px; width: 1px; height: 10px; background: {MUTED}; }}
+.dd-fill {{ position: absolute; top: 0; height: 6px; border-radius: 3px; }}
+.dd-ms {{ margin-top: 6px; display: grid; gap: 6px; }}
+.dd-m {{ display: grid; grid-template-columns: 1fr auto; gap: 0 8px; font-size: 11.5px; }}
+.dd-m .dd-bar {{ grid-column: 1 / 3; margin: 2px 0 0; height: 4px; }}
+.dd-m .dd-fill {{ height: 4px; }}
+.dd-mn {{ font-weight: 600; }}
+.dd-ml {{ grid-column: 1 / 3; color: {MUTED}; font-size: 11px; line-height: 1.3; }}
+/* Navegación lateral (estilo terminal): elementos planos, el activo resaltado; títulos de sección en versalitas */
+[data-testid="stSidebarNav"] li:has(a[href$="/watchlist"]), [data-testid="stSidebarNav"] li:has(a[href$="/portafolio"]) {{ display: none; }}
+[data-testid="stSidebarNavItems"] li {{ margin-bottom: 2px; }}
+[data-testid="stSidebarNavLink"] {{ border: 1px solid transparent; border-radius: 6px; padding: 6px 10px; min-height: 34px;
   background: transparent; margin: 0; }}
 [data-testid="stSidebarNavLink"]:hover {{ background: {PANEL}; }}
-[data-testid="stSidebarNavLink"][aria-current="page"] {{ border-color: {ACCENT}; background: {PANEL}; }}
-[data-testid="stSidebarNavLink"] span {{ font-size: 13px !important; font-weight: 600; color: {TXT} !important; }}
-[data-testid="stNavSectionHeader"] {{ border: none; padding-left: 2px; font-size: 12px; color: {MUTED}; }}
+[data-testid="stSidebarNavLink"][aria-current="page"] {{ border-color: {BORDER}; background: {PANEL};
+  box-shadow: inset 2px 0 0 {ACCENT}; }}
+[data-testid="stSidebarNavLink"] span {{ font-size: 13px !important; font-weight: 500; color: {TXT} !important; }}
+[data-testid="stSidebarNavLink"][aria-current="page"] span {{ font-weight: 600; }}
+[data-testid="stNavSectionHeader"] {{ border: none; padding-left: 10px; font-size: 11px; color: {MUTED};
+  text-transform: uppercase; letter-spacing: .08em; font-weight: 600; margin-top: 6px; }}
+.x-status {{ display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; border-top: 1px solid {BORDER};
+  padding: 8px 2px 2px; margin-top: 10px; font-size: 11px; color: {MUTED}; font-family: 'JetBrains Mono', monospace; }}
+.x-status i {{ width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 4px; }}
 </style>
 """
 
