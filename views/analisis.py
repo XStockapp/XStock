@@ -4,7 +4,7 @@ import math
 import pandas as pd
 import streamlit as st
 
-from core import ai, db, store
+from core import ai, data, db, store
 from core.analysis import full_analysis
 from core.fundamental import BLOCK_W
 import json
@@ -76,6 +76,8 @@ def _mercado(crypto: bool) -> tuple[str, str]:
         return "MERCADO ABIERTO", GREEN
     if now.weekday() < 5 and 240 <= mins < 570:
         return "PREMERCADO", AMBER
+    if now.weekday() < 5 and 960 <= mins < 1200:
+        return "POSTMERCADO", AMBER
     return "MERCADO CERRADO", MUTED
 
 
@@ -128,6 +130,13 @@ if _prof and ticker not in _seen:
     db.log_event(_prof["email"], "analysis", ticker)
     _seen.add(ticker)
 last, prev = d.iloc[-1], d.iloc[-2]
+from core import patterns as PT  # noqa: E402
+ESTR = {"canal": A.get("canal"), "figuras": A.get("figuras") or []}
+LECT = PT.lectura_canal(ESTR["canal"], money)
+try:
+    EXT = data.extended_quote(ticker)
+except Exception:
+    EXT = None
 chg = last["Close"] / prev["Close"] - 1
 hi52, lo52 = float(d["High"].tail(252).max()), float(d["Low"].tail(252).min())
 
@@ -140,7 +149,11 @@ st.markdown(
     f"({'+' if chg >= 0 else '−'}${abs(last['Close'] - prev['Close']):,.2f})</span>"
     f"<span class='muted x-meta'>{E(m.get('Nombre', ''))} · rango 52s <span class='num'>{money(lo52)} – {money(hi52)}</span>"
     f" · perfil {E(PERF['nombre'])} ({E(TF)}){' · ' + E(A.get('fuente')) if A.get('fuente') else ''}"
-    f" · cierre {d.index[-1]:%d-%b %H:%M}</span></div>", unsafe_allow_html=True)
+    f" · cierre {d.index[-1]:%d-%b %H:%M}</span>"
+    + (f"<span class='x-chip' style='border-color:{AMBER}66;color:{AMBER}'>"
+       f"{'PREMERCADO' if EXT['sesion'] == 'pre' else 'POSTMERCADO'} <span class='num'>${EXT['precio']:,.2f} "
+       f"({EXT['var']:+.2f}%)</span> · {E(EXT['hora'])} NY</span>" if EXT else "")
+    + "</div>", unsafe_allow_html=True)
 _rec = A["plan"]["modo_recomendado"]
 _opts = {f"Auto · {MODOS[_rec].replace('Entrada ', '')}": "auto", "A mercado": "market", "Proyectada (Limit)": "limit"}
 m1, m2, m3 = st.columns([4.2, 1, 1.25], vertical_alignment="bottom")
@@ -213,6 +226,52 @@ bad = [i for i in items if i["score"] <= -35][::-1]
 neu = [i for i in items if -35 < i["score"] < 35]
 
 # ---------------------------------------------------------------- informe del analista (IA): pantalla propia
+def _diagnostico(M: dict, payload: dict):
+    """Formato estructurado: diagnóstico cuantitativo base + patrones de apoyo + confianza consolidada."""
+    if not M:
+        return
+    met = payload.get("metodologia_cuantitativa") or {}
+    cal, con, adx_ = met.get("calibracion") or {}, met.get("consolidado") or {}, met.get("adx") or {}
+    aps = {a["nombre"]: a for a in met.get("apoyos") or []}
+    dg, cg, nc = M.get("diagnostico_cuantitativo") or {}, M.get("confianza_global") or {}, M.get("niveles_criticos") or {}
+    esc = dg.get("escenario") or "—"
+    ec = {"Alcista": GREEN, "Bajista": RED}.get(esc, NEUTRAL)
+    pct = cg.get("porcentaje")
+    filas = "".join(
+        f"<tr><td>{E(x.get('nombre', ''))}</td><td>{E(x.get('categoria', ''))}</td><td>{E(x.get('estado', ''))}</td>"
+        f"<td>{'sí' if (aps.get(x.get('nombre')) or {}).get('volumen') else 'no'}</td>"
+        f"<td>{'sí' if (aps.get(x.get('nombre')) or {}).get('confluencia') else 'parcial' if (aps.get(x.get('nombre')) or {}).get('confluencia_parcial') else 'no'}</td></tr>"
+        for x in (M.get("patrones_apoyo") or []))
+    peso = cal.get("peso_patrones")
+    st.markdown(
+        "<div class='x-diag'><div class='x-ph'><span>Diagnóstico cuantitativo</span>"
+        f"<span class='x-badge' style='color:{ec};border-color:{ec}66;background:{ec}14'>{E(esc)}</span></div>"
+        f"<div class='x-dl'><b>Activo y temporalidad</b><span>{E(payload.get('ticker', ''))} · {E(str(payload.get('marco_temporal') or ''))}</span></div>"
+        f"<div class='x-dl'><b>Filtro ADX</b><span class='num'>{E(adx_.get('configuracion', ''))} · ADX {adx_.get('adx', '—')} · "
+        f"{E(adx_.get('regimen', ''))}</span></div>"
+        f"<div class='x-dl'><b>Escenario base</b><span>{E(dg.get('resumen', ''))}</span></div>"
+        + (f"<table class='x-tab'><tr><th>Patrón de apoyo</th><th>Categoría</th><th>Estado</th><th>Volumen</th>"
+           f"<th>Confluencia</th></tr>{filas}</table>" if filas else
+           "<div class='x-dl'><b>Patrones de apoyo</b><span>Ninguno relevante</span></div>")
+        + f"<div class='x-dl'><b>Aporte del patrón</b><span>{E(M.get('aporte_patron', ''))}</span></div>"
+        f"<div class='x-dl'><b>Confianza global</b><span><span class='num' style='color:{ec}'>"
+        f"{E(str(cg.get('nivel', '')))} · {pct if pct is not None else '—'}%</span>"
+        + (f" <span class='muted'>= {(1 - con.get('peso_patrones_aplicado', 0)) * 100:.0f}% cuantitativo "
+           f"({con.get('confianza_cuantitativa')}%) + {con.get('peso_patrones_aplicado', 0) * 100:.0f}% patrones "
+           f"({con.get('confianza_patrones')}%)</span>" if con else "") + "</span></div>"
+        + (f"<div class='x-dl'><b>Peso calibrado</b><span class='muted'>Acierto direccional a {cal.get('horizonte_velas')} velas en "
+           f"este activo: motor {cal.get('acierto_cuantitativo', 0) * 100:.0f}% ({cal.get('muestras_cuantitativo')} casos) · "
+           f"patrones {cal.get('acierto_patrones', 0) * 100:.0f}% ({cal.get('muestras_patrones')} casos) ⇒ patrones "
+           f"{peso * 100:.0f}% (rango 10–30%)</span></div>" if peso is not None else "")
+        + f"<div class='x-dl'><b>Zona de activación</b><span>{E(str(nc.get('activacion', '—')))}</span></div>"
+        f"<div class='x-dl'><b>Invalidación</b><span class='num'>{E(money(nc['invalidacion']) if ok(nc.get('invalidacion')) else str(nc.get('invalidacion', '—')))}</span></div>"
+        f"<div class='x-dl'><b>Proyección técnica</b><span class='num'>{E(str(nc.get('proyeccion', '—')))}</span></div>"
+        + ("<div class='x-dl'><b>Advertencias</b><ul class='x-rules'>" + "".join(f"<li>{E(a)}</li>" for a in M.get("advertencias") or [])
+           + "</ul></div>" if M.get("advertencias") else "")
+        + "<div class='muted small'>Análisis informativo y probabilístico; no es una recomendación de inversión.</div></div>",
+        unsafe_allow_html=True)
+
+
 def _informe():
     global V
     with st.container(border=True, key="x_ai"):
@@ -234,7 +293,13 @@ def _informe():
                                    A.get("finviz_items"), A.get("vprofile"), cfg["tp_atr"],
                                    {"max_52s": hi52, "min_52s": lo52,
                                     "ret_3m": float(last["Close"] / d["Close"].iloc[-64] - 1),
-                                    "ret_12m": float(last["Close"] / d["Close"].iloc[-253] - 1) if len(d) > 253 else None})
+                                    "ret_12m": float(last["Close"] / d["Close"].iloc[-253] - 1) if len(d) > 253 else None},
+                                   {"canal": {k_: v for k_, v in (ESTR["canal"] or {}).items() if k_ not in ("x0", "x1")},
+                                    "lectura": LECT,
+                                    "figuras": [{k_: v for k_, v in f.items() if k_ not in ("puntos", "lineas")}
+                                                for f in ESTR["figuras"]]},
+                                   {k_: ([{a: b for a, b in x.items() if a not in ("barra", "zona")} for x in v]
+                                         if k_ == "apoyos" else v) for k_, v in (A.get("metodo") or {}).items()})
         if go:
             try:
                 with st.spinner("Generando el informe del analista…"):
@@ -272,6 +337,7 @@ def _informe():
             if V:
                 st.markdown(f"<div class='rep-b'><b>Lectura del analista</b><br>{E(V.get('lectura_tecnica', ''))}</div>",
                             unsafe_allow_html=True)
+            _diagnostico(V if (V and V.get("diagnostico_cuantitativo")) else ai._metodo_rb(payload, plan), payload)
             sig = pd.DataFrame(tech["señales"])
             sig["Aporte"] = sig["Señal"] * sig["Peso"]
             sig = sig.reindex(sig["Aporte"].abs().sort_values(ascending=False).index)
@@ -440,7 +506,8 @@ with left:
                                            "tus indicadores, el plan y la proyección con los que se calcula el análisis.") \
             or "Proyección"
         if VISTAS[_vista] == "pj":
-            show_chart(projection_chart(d, plan, times, vpa, bars=bars, tf=TF, crypto=is_crypto(ticker), mobile=MOBILE),
+            show_chart(projection_chart(d, plan, times, vpa, bars=bars, tf=TF, crypto=is_crypto(ticker), mobile=MOBILE,
+                                        estructura=ESTR, ext=EXT),
                        f"pj|{ticker}|{TF}|{rng}", MOBILE)
         elif VISTAS[_vista] == "tv":
             tv.show(ticker, TF, height=680 if not MOBILE else 460)
@@ -458,7 +525,7 @@ with left:
             _vp = (volume_profile(d.tail(bars), bins=max(4, min(300, _rows)), value_area=IND._num(_pv.get("va"), 70) / 100)
                    if "vrvp" in _act else None)
             _fig = price_chart(d, plan, _vp, V, bars=bars, times=times, mobile=MOBILE, tf=TF, crypto=is_crypto(ticker),
-                               settings=SETTINGS, ind=IND_CFG)
+                               settings=SETTINGS, ind=IND_CFG, estructura=ESTR, ext=EXT)
             show_chart(_fig, f"{ticker}|{TF}|{rng}", MOBILE)
     if st.button("Informe del analista IA · desglose del pronóstico", icon=":material/left_panel_open:", width="stretch",
                  key="x_report_open", help="Abre una pantalla dedicada a los detalles del pronóstico: técnico, "
@@ -511,6 +578,30 @@ with right:
                                  "Objetivo 1": plan["objetivo_1"], "Objetivo 2": plan["objetivo_2"]}])
         st.toast(f"{ticker} agregado a la watchlist", icon="⭐")
 
+    _ch = ESTR["canal"] or {}
+    _MET = A.get("metodo") or {}
+    _ADX, _CON = _MET.get("adx") or {}, _MET.get("consolidado") or {}
+    _cc2 = {"alcista": GREEN, "bajista": RED, "lateral": NEUTRAL}.get(_ch.get("tipo"), MUTED)
+    st.markdown(
+        f"<div class='x-plan'><div class='x-ph'><span>Estructura del precio</span>"
+        f"<span class='x-badge' style='color:{_cc2};border-color:{_cc2}66;background:{_cc2}14'>{E(LECT['titulo'])}</span></div>"
+        f"<div class='mp-s' style='color:#E6EDF3'>{E(LECT['texto'])}</div>"
+        + ("<ul class='x-rules'>" + "".join(f"<li>{E(r_)}</li>" for r_ in LECT["reglas"]) + "</ul>" if LECT["reglas"] else "")
+        + "".join(
+            f"<div class='x-fig'><span class='x-dot' style='border-color:{({'alcista': GREEN, 'bajista': RED}).get(f_['sesgo'], AMBER)}'></span>"
+            f"<b>{E(f_['nombre'])}</b> · {E(f_['estado'])}"
+            + (f" · objetivo <span class='num'>{money(f_['objetivo'])}</span>" if f_.get("objetivo") else "")
+            + f"<div class='mp-s'>{E(f_['texto'])}</div></div>" for f_ in ESTR["figuras"])
+        + "".join(
+            f"<div class='x-fig'><span class='x-dot' style='border-color:{({'alcista': GREEN, 'bajista': RED}).get(a_['sesgo'], AMBER)}'></span>"
+            f"<b>{E(a_['nombre'])}</b> · {E(a_['estado'].lower())}<div class='mp-s'>{E(a_['texto'])}</div></div>"
+            for a_ in _MET.get("apoyos", []) if a_["categoria"] in ("Vela de confirmación", "Liquidez / estructura"))
+        + (f"<div class='x-dl2'><span>ADX {_ADX.get('adx')} · nivel {_ADX.get('nivel_clave', 23):g}</span>"
+           f"<b>{'Tendencia' if _ADX.get('regimen') == 'tendencia' else 'Rango'}</b></div>" if _ADX else "")
+        + (f"<div class='x-dl2'><span>Confianza global (cuant. {_CON['confianza_cuantitativa']:.0f}% "
+           f"{_CON['aporte_patrones']:+.1f} patrones)</span><b class='num'>{_CON['confianza_global']:.0f}% · {E(_CON['nivel'])}</b></div>"
+           if _CON else "")
+        + "</div>", unsafe_allow_html=True)
     with st.expander(f"Score multivariable · {comb:+.0f}", expanded=False):
         st.markdown(
             "<div class='mp' style='border:none;padding:0;background:transparent'>"

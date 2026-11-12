@@ -72,6 +72,19 @@ def full_analysis(ticker: str, tp=3.0, sl=1.5, horizon=None, account=10_000.0, r
     seen = {n["titulo"] for n in news}
     news += [n for n in fv["news"] if n["titulo"] not in seen][: max(0, 12 - len(news))]
     comb = 0.6 * cur + 0.4 * (fscore["score"] if fscore["score"] is not None else 0)
+    from . import patterns as PT
+    canal = PT.channel(d)
+    figuras = PT.patterns(d)
+    # capa de confirmación por patrones (secundaria): el motor cuantitativo sigue siendo la base
+    from . import confirmacion as CF
+    from .technical import adx_regimen
+    vpf = volume_profile(d.tail(180))
+    adx_r = adx_regimen(d)
+    aps = CF.apoyos(d, vpf, canal, figuras, adx_r["regimen"] == "tendencia")
+    cal = CF.calibrar(d, s, h=min(horizon, 20))
+    conf = CF.consolidar(p, 1 if direction == "long" else -1, aps, cal, float(cur), adx_r)
+    metodo = {"adx": adx_r, "apoyos": aps, "calibracion": cal, "consolidado": conf}
     return {"ticker": ticker, "tf": tf, "fuente": raw.attrs.get("fuente", ""), "df": d, "tech": tech, "prob": prob, "bt": bt, "metrics": metrics,
             "fscore": fscore, "piotroski": pio, "plan": plan, "planes": planes, "news": news, "combinado": comb,
-            "finviz": fv, "finviz_items": fv_items, "vprofile": volume_profile(d.tail(180))}
+            "finviz": fv, "finviz_items": fv_items, "vprofile": vpf,
+            "canal": canal, "figuras": figuras, "metodo": metodo}
