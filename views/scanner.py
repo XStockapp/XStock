@@ -306,14 +306,50 @@ _spark = [c for c in MK.columns if c.startswith("Últimos")]
 _perf, _met = FM["perf"], [c for c in MK.columns if c in FM["money"] + FM["ratio"] + ["Sector", "Ranking"]]
 _tec = [c for c in PREF["tecnicas"] if c in MK.columns]
 _ident = ["Moneda", "Ticker"] if IS_CR else ["Ticker"]
-vt = pd.concat([view[["#", "Ticker", "Señal", "Prob. ganancia", "Valor esperado (R)", "Entrada", "Stop", "Objetivo 1"]],
+# ---------------- premercado / postmercado y patrones vigentes ----------------
+_SES = data.session_ny()
+EXQ = {} if IS_CR else data.extended_quotes(tuple(view["Ticker"]))
+_ses_txt = {"pre": "PRE", "post": "AFTER"}
+
+
+def _ext_txt(t):
+    q = EXQ.get(t)
+    return f"${q['precio']:,.2f}  {q['var']:+.2f}%" if q else "—"
+
+
+def _rompe(r) -> bool:
+    """¿El precio extendido ya cruza el nivel de activación del patrón (confirmaría al abrir)?"""
+    q, act = EXQ.get(r["Ticker"]), r.get("Patrón activación")
+    if not q or act is None or pd.isna(act) or r.get("Patrón estado") == "CONFIRMED":
+        return False
+    return (q["precio"] > act) if r.get("Patrón sesgo") == "alcista" else (q["precio"] < act) if r.get("Patrón sesgo") == "bajista" else False
+
+
+_EST = {"FORMING": "en formación", "PENDING_BREAKOUT": "por confirmar", "CONFIRMED": "recién confirmado"}
+_HAS_PAT = "Patrón" in view.columns
+
+
+def _pat_txt(r):
+    if not _HAS_PAT or not isinstance(r.get("Patrón"), str):
+        return "—"
+    flecha = {"alcista": "▲", "bajista": "▼"}.get(r.get("Patrón sesgo"), "◆")
+    extra = f" · ⚡ {_ses_txt.get(EXQ[r['Ticker']]['sesion'], '')} rompe" if _rompe(r) else ""
+    return f"◉ {flecha} {r['Patrón']} · {_EST.get(r.get('Patrón estado'), '')}{extra}"
+
+
+view["Pre/After"] = [_ext_txt(t) for t in view["Ticker"]]
+view["Patrón vigente"] = [_pat_txt(r) for _, r in view.iterrows()]
+
+vt = pd.concat([view[["#", "Ticker", "Señal", "Prob. ganancia", "Valor esperado (R)", "Entrada", "Stop", "Objetivo 1",
+                      "Pre/After", "Patrón vigente"]],
                 MK.drop(columns=[c for c in ("Ticker",) if c in MK.columns])], axis=1)
 if MOBILE:  # tabla compacta en celular
-    order = ["#", "Logo", "Ticker", "Señal", "Prob. ganancia", "Precio"] + _perf[:1] + _spark
+    order = ["#", "Logo", "Ticker", "Señal", "Patrón vigente", "Prob. ganancia", "Precio", "Pre/After"] + _perf[:1] + _spark
 else:
-    order = (["#", "Logo"] + _ident + ["Precio"] + _perf + _spark + ["Señal", "Prob. ganancia", "Valor esperado (R)"]
+    order = (["#", "Logo"] + _ident + ["Precio", "Pre/After", "Patrón vigente"] + _perf + _spark
+             + ["Señal", "Prob. ganancia", "Valor esperado (R)"]
              + _met + ["Entrada", "Stop", "Objetivo 1"] + _tec)
-vt = vt[[c for c in order if c in vt.columns]]
+vt = vt[[c for c in order if c in vt.columns and not (IS_CR and c == "Pre/After")]]
 st.markdown(f"##### Ranking de {'compras' if is_long else 'ventas en corto'} · selecciona filas para enviarlas a tu watchlist o analizarlas")
 if "Spark" not in res.columns:
     st.caption("Vuelve a pulsar **Escanear mercado** para ver el rendimiento por periodo y los mini gráficos.")
@@ -337,10 +373,67 @@ if "Score técnico" in vt.columns:
     sty = sty.map(lambda v: signed_css(v, 15, -15), subset=["Score técnico"])
 if "Fuerza relativa" in vt.columns:
     sty = sty.map(rs_css, subset=["Fuerza relativa"])
+if "Pre/After" in vt.columns:
+    sty = sty.map(lambda v: f"color: {GREEN}" if "+" in str(v) else f"color: {RED}" if "-" in str(v).split("$")[-1] else f"color: {MUTED}",
+                  subset=["Pre/After"])
+if "Patrón vigente" in vt.columns:
+    sty = sty.map(lambda v: (f"color: {AMBER}; font-weight: 600" if "⚡" in str(v) else f"color: {GREEN}" if "▲" in str(v)
+                             else f"color: {RED}" if "▼" in str(v) else f"color: {AMBER}" if "◆" in str(v) else f"color: {MUTED}"),
+                  subset=["Patrón vigente"])
+
+# tira de alertas: un punto que destella por cada acción con patrón vigente (las tablas de Streamlit se dibujan en
+# un lienzo y no admiten animación, por eso el destello vive aquí, encima de la tabla)
+_alert = view[view["Patrón vigente"] != "—"] if "Patrón vigente" in view.columns else view.iloc[0:0]
+if len(_alert):
+    def _chip(r):
+        ses = r.get("Patrón sesgo")
+        col = GREEN if ses == "alcista" else RED if ses == "bajista" else AMBER
+        rompe = _rompe(r)
+        q = EXQ.get(r["Ticker"])
+        act = r.get("Patrón activación")
+        conf = r.get("Patrón estado") == "CONFIRMED"
+        det = ((f"rompió ${act:,.2f}" if conf else f"activa {'>' if ses == 'alcista' else '<' if ses == 'bajista' else '±'} ${act:,.2f}")
+               if act is not None and pd.notna(act) else "")
+        ext = (f"<span class='sc-ext'>{_ses_txt.get(q['sesion'], '')} ${q['precio']:,.2f}"
+               f"{' rompe' if rompe else ''}</span>" if q else "")
+        return (f"<span class='sc-chip{' sc-hot' if rompe else ''}' style='border-color:{col}55'>"
+                f"<span class='sc-dot' style='border-color:{col};box-shadow:0 0 0 0 {col}'></span>"
+                f"<b>{html.escape(r['Ticker'])}</b> {html.escape(r['Patrón'])} · {_EST.get(r.get('Patrón estado'), '')}"
+                f" <span class='sc-det'>{det}</span>{ext}</span>")
+    _n_hot = sum(_rompe(r) for _, r in _alert.iterrows())
+    st.markdown(
+        "<style>.sc-wrap{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px}"
+        ".sc-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid;border-radius:6px;padding:3px 8px;"
+        "font-size:12px;color:#E6EDF3;background:#161B22;line-height:1.4}"
+        ".sc-chip b{font-family:'JetBrains Mono',monospace}.sc-det,.sc-ext{color:#8B949E;font-family:'JetBrains Mono',"
+        "monospace;font-variant-numeric:tabular-nums;font-size:11px}.sc-hot .sc-ext{color:#F0B429;font-weight:600}"
+        ".sc-dot{width:9px;height:9px;border-radius:50%;border:2px solid;animation:scdot 1.6s ease-in-out infinite}"
+        ".sc-hot .sc-dot{animation-duration:.7s}"
+        "@keyframes scdot{0%,100%{opacity:.35;transform:scale(.85)}50%{opacity:1;transform:scale(1.15)}}</style>"
+        f"<div class='muted small'>Patrones vigentes en el movimiento actual (velas diarias) · {len(_alert)} acción(es)"
+        + (f" · <b style='color:#F0B429'>{_n_hot} con el {_ses_txt.get(_SES, 'precio extendido')} rompiendo el nivel de activación</b>"
+           if _n_hot else "") + "</div>"
+        "<div class='sc-wrap'>" + "".join(_chip(r) for _, r in _alert.iterrows()) + "</div>",
+        unsafe_allow_html=True)
+elif "Patrón" not in view.columns:
+    st.caption("Vuelve a pulsar **Escanear mercado** para detectar los patrones vigentes de cada acción.")
+if _SES in ("pre", "post") and not IS_CR and not EXQ:
+    st.caption("Sin cotizaciones de premercado/postmercado disponibles en este momento.")
+elif _SES not in ("pre", "post") and not IS_CR:
+    st.caption("Pre/After: se muestra en premercado (4:00–9:30) y postmercado (16:00–20:00) hora de Nueva York.")
+
 sel = st.dataframe(
     sty, hide_index=True, width="stretch", height=min(38 + 35 * max(len(vt), 1), 460 if MOBILE else 720),
     on_select="rerun", selection_mode="multi-row", key=f"scan_table_{is_long}",
-    column_config={"#": st.column_config.NumberColumn(width="small"), **MCFG},
+    column_config={"#": st.column_config.NumberColumn(width="small"), **MCFG,
+                   "Pre/After": st.column_config.TextColumn(
+                       "Pre/After", width="medium",
+                       help="Último precio de premercado (4:00–9:30) o postmercado (16:00–20:00) y su variación frente "
+                            "al último cierre regular"),
+                   "Patrón vigente": st.column_config.TextColumn(
+                       "Patrón vigente", width="large",
+                       help="Patrón chartista del movimiento actual (velas diarias). ⚡ = el precio de premercado o "
+                            "postmercado ya cruza el nivel de activación: se confirmaría con el cierre de la sesión")},
 )
 st.caption("Probabilidad: verde = ventaja de compra · rojo = ventaja de venta en corto · azul = indeciso (compra y venta "
            "difieren ≤ 5 puntos). Más intenso = mayor probabilidad.")
