@@ -74,14 +74,14 @@ def full_analysis(ticker: str, tp=3.0, sl=1.5, horizon=None, account=10_000.0, r
     comb = 0.6 * cur + 0.4 * (fscore["score"] if fscore["score"] is not None else 0)
     from . import patterns as PT
     canal = PT.channel(d)
-    figuras = PT.patterns(d)
+    figuras = PT.patterns(d, tf=tf)  # solo vigentes del movimiento actual y en temporalidades ≥ 1H
     # capa de confirmación por patrones (secundaria): el motor cuantitativo sigue siendo la base
     from . import confirmacion as CF
     from .technical import adx_regimen
     vpf = volume_profile(d.tail(180))
     adx_r = adx_regimen(d)
-    aps = CF.apoyos(d, vpf, canal, figuras, adx_r["regimen"] == "tendencia")
-    cal = CF.calibrar(d, s, h=min(horizon, 20))
+    aps = CF.apoyos(d, vpf, canal, figuras, adx_r["regimen"] == "tendencia", tf=tf)
+    cal = CF.calibrar(d, s, h=min(horizon, 20), tf=tf)
     conf = CF.consolidar(p, 1 if direction == "long" else -1, aps, cal, float(cur), adx_r)
     metodo = {"adx": adx_r, "apoyos": aps, "calibracion": cal, "consolidado": conf}
     return {"ticker": ticker, "tf": tf, "fuente": raw.attrs.get("fuente", ""), "df": d, "tech": tech, "prob": prob, "bt": bt, "metrics": metrics,

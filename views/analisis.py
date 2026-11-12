@@ -243,6 +243,7 @@ def _diagnostico(M: dict, payload: dict):
         f"<td>{'sí' if (aps.get(x.get('nombre')) or {}).get('confluencia') else 'parcial' if (aps.get(x.get('nombre')) or {}).get('confluencia_parcial') else 'no'}</td></tr>"
         for x in (M.get("patrones_apoyo") or []))
     peso = cal.get("peso_patrones")
+    ec_ = M.get("escenario_condicionado") or {}
     st.markdown(
         "<div class='x-diag'><div class='x-ph'><span>Diagnóstico cuantitativo</span>"
         f"<span class='x-badge' style='color:{ec};border-color:{ec}66;background:{ec}14'>{E(esc)}</span></div>"
@@ -250,19 +251,24 @@ def _diagnostico(M: dict, payload: dict):
         f"<div class='x-dl'><b>Filtro ADX</b><span class='num'>{E(adx_.get('configuracion', ''))} · ADX {adx_.get('adx', '—')} · "
         f"{E(adx_.get('regimen', ''))}</span></div>"
         f"<div class='x-dl'><b>Escenario base</b><span>{E(dg.get('resumen', ''))}</span></div>"
-        + (f"<table class='x-tab'><tr><th>Patrón de apoyo</th><th>Categoría</th><th>Estado</th><th>Volumen</th>"
+        + (f"<table class='x-tab'><tr><th>Patrón activo (último movimiento)</th><th>Categoría</th><th>Estado</th><th>Volumen</th>"
            f"<th>Confluencia</th></tr>{filas}</table>" if filas else
-           "<div class='x-dl'><b>Patrones de apoyo</b><span>Ninguno relevante</span></div>")
+           f"<div class='x-dl'><b>Patrón activo</b><span>{'No aplica por temporalidad baja (menor a 1H)' if not con.get('patrones_habilitados', True) else 'Ninguno activo en el movimiento actual'}</span></div>")
         + f"<div class='x-dl'><b>Aporte del patrón</b><span>{E(M.get('aporte_patron', ''))}</span></div>"
-        f"<div class='x-dl'><b>Confianza global</b><span><span class='num' style='color:{ec}'>"
+        + ((f"<div class='x-dl'><b>Escenario condicionado</b><span>{E(ec_.get('condicion_activacion', ''))}"
+            + (f"<br><span class='muted'>Aporte al confirmarse: {E(str(ec_.get('aporte_confianza')))}</span>" if ec_.get("aporte_confianza") else "")
+            + "</span></div>") if ec_.get("condicion_activacion") else "")
+        + f"<div class='x-dl'><b>Confianza global</b><span><span class='num' style='color:{ec}'>"
         f"{E(str(cg.get('nivel', '')))} · {pct if pct is not None else '—'}%</span>"
-        + (f" <span class='muted'>= {(1 - con.get('peso_patrones_aplicado', 0)) * 100:.0f}% cuantitativo "
+        + (" <span class='muted'>= 100% motor cuantitativo (ningún patrón recién confirmado suma todavía)</span>"
+           if con and not con.get("peso_patrones_aplicado") else
+           f" <span class='muted'>= {(1 - con.get('peso_patrones_aplicado', 0)) * 100:.0f}% cuantitativo "
            f"({con.get('confianza_cuantitativa')}%) + {con.get('peso_patrones_aplicado', 0) * 100:.0f}% patrones "
            f"({con.get('confianza_patrones')}%)</span>" if con else "") + "</span></div>"
         + (f"<div class='x-dl'><b>Peso calibrado</b><span class='muted'>Acierto direccional a {cal.get('horizonte_velas')} velas en "
            f"este activo: motor {cal.get('acierto_cuantitativo', 0) * 100:.0f}% ({cal.get('muestras_cuantitativo')} casos) · "
            f"patrones {cal.get('acierto_patrones', 0) * 100:.0f}% ({cal.get('muestras_patrones')} casos) ⇒ patrones "
-           f"{peso * 100:.0f}% (rango 10–30%)</span></div>" if peso is not None else "")
+           f"{peso * 100:.0f}% (rango 10–30%)</span></div>" if peso is not None and cal.get("habilitado", True) else "")
         + f"<div class='x-dl'><b>Zona de activación</b><span>{E(str(nc.get('activacion', '—')))}</span></div>"
         f"<div class='x-dl'><b>Invalidación</b><span class='num'>{E(money(nc['invalidacion']) if ok(nc.get('invalidacion')) else str(nc.get('invalidacion', '—')))}</span></div>"
         f"<div class='x-dl'><b>Proyección técnica</b><span class='num'>{E(str(nc.get('proyeccion', '—')))}</span></div>"
@@ -592,11 +598,13 @@ with right:
             f"<div class='x-fig'><span class='x-dot' style='border-color:{({'alcista': GREEN, 'bajista': RED}).get(f_['sesgo'], AMBER)}'></span>"
             f"<b>{E(f_['nombre'])}</b> · {E(f_['estado'])}"
             + (f" · objetivo <span class='num'>{money(f_['objetivo'])}</span>" if f_.get("objetivo") else "")
-            + f"<div class='mp-s'>{E(f_['texto'])}</div></div>" for f_ in ESTR["figuras"])
+            + f"<div class='mp-s'>{E(f_.get('condicion') or f_['texto'])}</div></div>" for f_ in ESTR["figuras"])
         + "".join(
             f"<div class='x-fig'><span class='x-dot' style='border-color:{({'alcista': GREEN, 'bajista': RED}).get(a_['sesgo'], AMBER)}'></span>"
-            f"<b>{E(a_['nombre'])}</b> · {E(a_['estado'].lower())}<div class='mp-s'>{E(a_['texto'])}</div></div>"
+            f"<b>{E(a_['nombre'])}</b> · {E(a_['estado'].lower())}<div class='mp-s'>{E(a_.get('condicion') or a_['texto'])}</div></div>"
             for a_ in _MET.get("apoyos", []) if a_["categoria"] in ("Vela de confirmación", "Liquidez / estructura"))
+        + (f"<div class='mp-s' style='margin-top:6px'>{'Patrones: no aplica por temporalidad baja (menor a 1H); el motor cuantitativo pesa 100%.' if not _CON.get('patrones_habilitados', True) else 'Sin patrones activos en el movimiento actual.'}</div>"
+           if _CON and not _MET.get("apoyos") else "")
         + (f"<div class='x-dl2'><span>ADX {_ADX.get('adx')} · nivel {_ADX.get('nivel_clave', 23):g}</span>"
            f"<b>{'Tendencia' if _ADX.get('regimen') == 'tendencia' else 'Rango'}</b></div>" if _ADX else "")
         + (f"<div class='x-dl2'><span>Confianza global (cuant. {_CON['confianza_cuantitativa']:.0f}% "
