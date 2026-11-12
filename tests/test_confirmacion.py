@@ -60,3 +60,11 @@ def test_envolvente_en_nivel():
     d.iloc[i, d.columns.get_loc("High")] = lo + 2.8
     v = CF._velas(d, [lo], 1.0)
     assert v and v[0]["nombre"] == "Envolvente alcista" and v[0]["estado"] == "Pendiente de confirmación"
+
+
+def test_veredictos_homologados():
+    from core import ai
+    assert ai.normalizar_veredicto("COMPRAR") == "COMPRA"
+    assert ai.normalizar_veredicto("ESPERAR", {"estado_tipo": "esperar"}) == "REBOTE"
+    assert ai.normalizar_veredicto("ESPERAR", {}) == "NEUTRAL"
+    assert ai.normalizar_veredicto("VENDER EN CORTO") == "EVITAR / VENTA"

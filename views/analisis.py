@@ -317,6 +317,7 @@ def _informe():
             st.session_state[akey] = V
             st.rerun()
         if V:
+            V["veredicto"] = ai.normalizar_veredicto(V.get("veredicto"), plan)
             col = SIGNAL_COLORS.get(V.get("veredicto"), NEUTRAL)
             pa = V.get("probabilidad_ajustada")
             st.markdown(

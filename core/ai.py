@@ -39,7 +39,7 @@ Reglas de análisis:
   Dilo explícitamente en el resumen ejecutivo y expresa los tiempos en esas unidades (velas/sesiones).
 - Validación de impulso: si "plan_propuesto.estado_tipo" es "esperar" (la señal de fondo es favorable pero el corto plazo
   corrige: MACD decreciente, pérdida de la EMA9, RSI agotado o precio extendido), NO recomiendes entrar a precio de mercado.
-  Usa veredicto "ESPERAR", indica textualmente el "plan_propuesto.estado" (p. ej. "Esperar Pullback a Soporte ($XX.XX)")
+  Usa veredicto "REBOTE", indica textualmente el "plan_propuesto.estado" (p. ej. "Esperar Pullback a Soporte ($XX.XX)")
   y pon como "entrada" la "entrada_proyectada" (orden límite en el soporte), no el precio actual.
 - Estructura del precio ("estructura_del_precio"): en canal alcista compra en retrocesos al soporte y apunta a la línea
   superior; en canal bajista vende rebotes a la resistencia y solo compra tras ruptura con cierre y volumen; en rango
@@ -55,11 +55,14 @@ Reglas de análisis:
   el escenario es una alerta, nunca la base. Indica el estado de cada patrón (En formación / Pendiente de
   confirmación / Confirmado — con cierre de vela) y si tiene volumen y confluencia con VRVP/ADX.
 - Tono objetivo y probabilístico: describe escenarios y niveles; evita lenguaje especulativo.
-- Si la evidencia es contradictoria o débil, recomienda ESPERAR. Relación riesgo/beneficio mínima aceptable 1.5.
+- Veredictos (los mismos del escáner): "COMPRA" = escenario y entrada válidos ahora; "REBOTE" = valor esperado
+  favorable pero la entrada espera el pullback/rebote al soporte (orden límite) o la señal va contra la tendencia;
+  "NEUTRAL" = evidencia débil o contradictoria, sin ventaja; "EVITAR / VENTA" = escenario desfavorable (o venta en corto).
+- Si la evidencia es contradictoria o débil, el veredicto es NEUTRAL. Relación riesgo/beneficio mínima aceptable 1.5.
 - Español claro y profesional, frases cortas.
 
 Responde SOLO con un JSON válido con esta estructura exacta:
-{"veredicto": "COMPRAR" | "ESPERAR" | "EVITAR" | "VENDER EN CORTO",
+{"veredicto": "COMPRA" | "REBOTE" | "NEUTRAL" | "EVITAR / VENTA",
  "confianza": 0-100,
  "probabilidad_ajustada": 0-1,
  "resumen_ejecutivo": "2-3 frases con la conclusión",
@@ -160,8 +163,28 @@ def analyze(payload: dict, api_key: str, model: str = "claude-sonnet-5-5") -> di
     if not m:
         raise ValueError("La IA no devolvió JSON: " + text[:300])
     out = json.loads(m.group(0))
+    out["veredicto"] = normalizar_veredicto(out.get("veredicto"), payload.get("plan_propuesto"))
     out["_modelo"] = model
     return out
+
+
+VEREDICTOS = ("COMPRA", "REBOTE", "NEUTRAL", "EVITAR / VENTA")
+
+
+def normalizar_veredicto(v: str | None, plan: dict | None = None) -> str:
+    """Lleva cualquier veredicto (incluidos los antiguos) a las 4 categorías del escáner."""
+    x = str(v or "").upper().strip()
+    if x in VEREDICTOS:
+        return x
+    if x.startswith("COMPRA"):
+        return "COMPRA"
+    if x.startswith("REBOTE"):
+        return "REBOTE"
+    if x == "ESPERAR":
+        return "REBOTE" if (plan or {}).get("estado_tipo") == "esperar" else "NEUTRAL"
+    if x.startswith(("EVITAR", "VEND", "VENTA")):
+        return "EVITAR / VENTA"
+    return "NEUTRAL"
 
 
 def _metodo_rb(payload: dict, plan: dict) -> dict:
@@ -216,10 +239,15 @@ def rule_based(payload: dict) -> dict:
     px, atr = plan["precio"], plan["atr"]
     sgn = 1 if plan["direccion"].startswith("COMPRA") else -1
     comb = 0.6 * t + 0.4 * (f if f is not None else 0)
-    v = "COMPRAR" if (ev > 0.2 and comb > 20) else ("EVITAR" if (comb < -30 and ev < 0) else "ESPERAR")
     wait = plan.get("estado_tipo") == "esperar"
-    if wait and v == "COMPRAR":
-        v = "ESPERAR"  # regla de impulso: no entrar a mercado durante la corrección de corto plazo
+    if ev > 0.2 and comb > 20:
+        v = "REBOTE" if wait else "COMPRA"  # regla de impulso: no entrar a mercado durante la corrección
+    elif ev >= 0.1 and (wait or t < 0):
+        v = "REBOTE"  # ventaja estadística, entrada en el rebote/pullback o contra la tendencia
+    elif comb < -30 and ev < 0:
+        v = "EVITAR / VENTA"
+    else:
+        v = "NEUTRAL"
     entrada_rec = plan.get("entrada_proyectada", plan["entrada"]) if wait else plan["entrada"]
     sig = payload["tecnico"]["señales"]
     favor = [s["Indicador"] + ": " + s["Lectura"] for s in sig if s["Señal"] * sgn > 0.3][:4]
@@ -327,6 +355,7 @@ def analyze_gemini(payload: dict, api_key: str, model: str | None = None) -> dic
         if not m:
             raise ValueError("Gemini no devolvió JSON: " + text[:300])
         out = json.loads(m.group(0))
+        out["veredicto"] = normalizar_veredicto(out.get("veredicto"), payload.get("plan_propuesto"))
         out["_modelo"] = mdl
         return out
     raise RuntimeError("Gemini no respondió con ningún modelo. Revisa que GEMINI_API_KEY en los Secrets sea correcta y esté activa en Google AI Studio. Detalle: " + str(last_err))

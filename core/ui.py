@@ -217,7 +217,7 @@ def pill(text: str, color: str) -> str:
 
 
 SIGNAL_COLORS = {"COMPRA FUERTE": GREEN, "COMPRA": "#4ade80", "REBOTE (contratendencia)": AMBER,
-                 "NEUTRAL": NEUTRAL, "EVITAR / VENTA": RED, "COMPRAR": GREEN, "ESPERAR": NEUTRAL,
+                 "NEUTRAL": NEUTRAL, "EVITAR / VENTA": RED, "REBOTE": AMBER, "COMPRAR": GREEN, "ESPERAR": NEUTRAL,
                  "VENTA FUERTE": RED, "VENTA": "#f87171",
                  "EVITAR": RED, "VENDER EN CORTO": RED}
 
