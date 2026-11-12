@@ -14,6 +14,21 @@ from . import probability as P
 from .market import rendimientos, spark
 from .levels import trade_plan
 from .technical import compute_all, score_series
+from . import patterns as PT
+
+
+def _patron(d: pd.DataFrame) -> dict:
+    """Patrón chartista vigente (movimiento actual, velas diarias) para la tabla del escáner."""
+    try:
+        f = PT.patterns(d, tf="1D")
+    except Exception:
+        f = []
+    if not f:
+        return {"Patrón": None, "Patrón sesgo": None, "Patrón estado": None, "Patrón activación": None,
+                "Patrón objetivo": None}
+    f = f[0]
+    return {"Patrón": f["nombre"], "Patrón sesgo": f["sesgo"], "Patrón estado": f["estado_meta"],
+            "Patrón activación": f.get("activacion"), "Patrón objetivo": f.get("objetivo")}
 
 
 def _label(score: float, p: float, ev: float) -> str:
@@ -147,6 +162,7 @@ def scan(prices: dict[str, pd.DataFrame], min_price=5.0, min_dollar_vol=20e6, tp
             "Nombre": mt.get("nombre"),
             **{f"Ret {k}": v for k, v in rendimientos(d, t).items()},
             "Spark": spark(d),
+            **_patron(d),
         })
     if progress:
         progress(1.0, "Escaneo completo")

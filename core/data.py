@@ -551,3 +551,47 @@ def extended_quote(ticker: str) -> dict | None:
     except Exception:
         pass
     return None
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def extended_quotes(tickers: tuple) -> dict:
+    """Premercado / postmercado para varias acciones a la vez (Alpaca, snapshots por lotes de 100).
+    {ticker: {sesion, precio, ref, var, hora}}; vacío en horario regular, con el mercado cerrado o sin Alpaca."""
+    from .timeframes import is_crypto
+    ses = session_ny()
+    if _demo() and os.environ.get("TRADING_DEMO_SESION") in ("pre", "post"):
+        ses = os.environ["TRADING_DEMO_SESION"]
+    tks = [t for t in tickers if not is_crypto(t)]
+    if ses not in ("pre", "post") or not tks:
+        return {}
+    if _demo():
+        out = {}
+        for t in tks:
+            h = history(t, "1y")
+            ref = float(h["Close"].iloc[-1])
+            v = ((sum(map(ord, t)) * 37) % 900 - 450) / 100  # variación determinista ±4.5 %
+            out[t] = {"sesion": ses, "precio": round(ref * (1 + v / 100), 2), "ref": ref, "var": v, "hora": "07:45"}
+        return out
+    from . import alpaca
+    out = {}
+    try:
+        if not alpaca.available():
+            return {}
+        sym = {alpaca.stock_symbol(t): t for t in tks}
+        keys = list(sym)
+        for i in range(0, len(keys), 100):
+            js = alpaca._get("/v2/stocks/snapshots", {"symbols": ",".join(keys[i:i + 100]), "feed": "iex"}) or {}
+            for k, sn in js.items():
+                sn = sn or {}
+                tr = sn.get("latestTrade") or {}
+                ref = (sn.get("dailyBar") or {}).get("c") if ses == "post" else (sn.get("prevDailyBar") or {}).get("c")
+                if not (tr.get("p") and ref and k in sym):
+                    continue
+                t = pd.Timestamp(tr["t"]).tz_convert("America/New_York")
+                if session_ny(t.to_pydatetime()) != ses:
+                    continue
+                out[sym[k]] = {"sesion": ses, "precio": float(tr["p"]), "ref": float(ref),
+                               "var": (float(tr["p"]) / float(ref) - 1) * 100, "hora": f"{t:%H:%M}"}
+    except Exception:
+        pass
+    return out
