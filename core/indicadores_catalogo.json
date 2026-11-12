@@ -583,7 +583,7 @@
      "k": "key",
      "l": "Nivel clave",
      "t": "num",
-     "d": 25,
+     "d": 23,
      "mn": 1,
      "mx": 60,
      "st": 1
@@ -621,7 +621,7 @@
     "ayuda": "Distinguir mercado en tendencia de mercado lateral.",
     "combina": "Medias, Supertrend o Parabolic SAR cuando hay tendencia; osciladores (RSI, estocástico) cuando no la hay.",
     "tf": "1h en adelante.",
-    "uso": "ADX sobre el nivel clave (25) = hay tendencia; por debajo = rango. +DI sobre −DI = dirección alcista.",
+    "uso": "ADX sobre el nivel clave (23) = hay tendencia; por debajo = rango. +DI sobre −DI = dirección alcista.",
     "esperar": "No da entradas por sí solo: es un filtro que mejora a los demás indicadores."
    }
   },

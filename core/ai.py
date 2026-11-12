@@ -39,13 +39,30 @@ Reglas de análisis:
   Dilo explícitamente en el resumen ejecutivo y expresa los tiempos en esas unidades (velas/sesiones).
 - Validación de impulso: si "plan_propuesto.estado_tipo" es "esperar" (la señal de fondo es favorable pero el corto plazo
   corrige: MACD decreciente, pérdida de la EMA9, RSI agotado o precio extendido), NO recomiendes entrar a precio de mercado.
-  Usa veredicto "ESPERAR", indica textualmente el "plan_propuesto.estado" (p. ej. "Esperar Pullback a Soporte ($XX.XX)")
+  Usa veredicto "REBOTE", indica textualmente el "plan_propuesto.estado" (p. ej. "Esperar Pullback a Soporte ($XX.XX)")
   y pon como "entrada" la "entrada_proyectada" (orden límite en el soporte), no el precio actual.
-- Si la evidencia es contradictoria o débil, recomienda ESPERAR. Relación riesgo/beneficio mínima aceptable 1.5.
+- Estructura del precio ("estructura_del_precio"): en canal alcista compra en retrocesos al soporte y apunta a la línea
+  superior; en canal bajista vende rebotes a la resistencia y solo compra tras ruptura con cierre y volumen; en rango
+  lateral opera reversión a la media (soporte/resistencia) y desconfía de señales de tendencia; una ruptura del canal
+  invalida la tesis previa. Menciona las figuras chartistas detectadas (confirmadas o en formación) y su objetivo.
+- Jerarquía ("metodologia_cuantitativa"): el motor cuantitativo (score técnico, probabilidad histórica, backtest, medias,
+  MACD/momentum, VRVP y fundamental) es la base y pesa al menos 70%; el ADX(14,14,23) es el filtro principal: sobre el
+  nivel clave valida las señales de tendencia, bajo él indica rango/consolidación y resta validez a medias y MACD.
+  Define primero el escenario base (Alcista/Bajista/Neutral) y SOLO después evalúa los patrones como apoyo
+  (continuación, reversión, liquidez BOS/CHoCH/FVG/Spring/Upthrust, velas sobre niveles clave). Su peso (10-30%) ya
+  viene calibrado en "calibracion.peso_patrones" según su acierto histórico en este activo; usa
+  "consolidado.confianza_global" como confianza (ajústala como máximo ±5 con justificación). Un patrón que contradice
+  el escenario es una alerta, nunca la base. Indica el estado de cada patrón (En formación / Pendiente de
+  confirmación / Confirmado — con cierre de vela) y si tiene volumen y confluencia con VRVP/ADX.
+- Tono objetivo y probabilístico: describe escenarios y niveles; evita lenguaje especulativo.
+- Veredictos (los mismos del escáner): "COMPRA" = escenario y entrada válidos ahora; "REBOTE" = valor esperado
+  favorable pero la entrada espera el pullback/rebote al soporte (orden límite) o la señal va contra la tendencia;
+  "NEUTRAL" = evidencia débil o contradictoria, sin ventaja; "EVITAR / VENTA" = escenario desfavorable (o venta en corto).
+- Si la evidencia es contradictoria o débil, el veredicto es NEUTRAL. Relación riesgo/beneficio mínima aceptable 1.5.
 - Español claro y profesional, frases cortas.
 
 Responde SOLO con un JSON válido con esta estructura exacta:
-{"veredicto": "COMPRAR" | "ESPERAR" | "EVITAR" | "VENDER EN CORTO",
+{"veredicto": "COMPRA" | "REBOTE" | "NEUTRAL" | "EVITAR / VENTA",
  "confianza": 0-100,
  "probabilidad_ajustada": 0-1,
  "resumen_ejecutivo": "2-3 frases con la conclusión",
@@ -62,7 +79,16 @@ Responde SOLO con un JSON válido con esta estructura exacta:
  "factores_a_favor": ["..."], "riesgos": ["..."],
  "invalidacion": "precio o evento que invalida la tesis",
  "catalizadores": ["..."],
- "contexto_general": "1-2 frases o vacío"}"""
+ "contexto_general": "1-2 frases o vacío",
+ "diagnostico_cuantitativo": {"escenario": "Alcista" | "Bajista" | "Neutral",
+   "resumen": "2-3 frases: ADX(14,14,23), momentum/MACD, medias móviles y VRVP"},
+ "patrones_apoyo": [{"nombre": "...", "categoria": "Continuación|Reversión|Liquidez / estructura|Vela de confirmación",
+   "estado": "En formación|Pendiente de confirmación|Confirmado"}],
+ "aporte_patron": "si respalda o contradice el escenario base y cuántos puntos de confianza aporta",
+ "confianza_global": {"nivel": "Baja" | "Media" | "Alta", "porcentaje": 0-100},
+ "niveles_criticos": {"activacion": "precio o condición técnica", "invalidacion": número,
+   "proyeccion": "objetivo por métricas, VRVP y/o proyección del patrón"},
+ "advertencias": ["divergencias ADX/momentum vs precio, bajo volumen en VRVP, riesgo de trampa de liquidez..."]}"""
 
 
 def _clean(o):
@@ -94,7 +120,7 @@ def time_estimates(plan: dict, prob: dict, tp_atr: float) -> dict:
 
 
 def build_payload(ticker, tech, fund_metrics, fund_score, pio, prob, bt, plan, news, finviz=None,
-                  finviz_items=None, vprofile=None, tp_atr=3.0, last=None) -> dict:
+                  finviz_items=None, vprofile=None, tp_atr=3.0, last=None, estructura=None, metodo=None) -> dict:
     finviz = finviz or {}
     vp = vprofile or {}
     return _clean({
@@ -116,6 +142,10 @@ def build_payload(ticker, tech, fund_metrics, fund_score, pio, prob, bt, plan, n
         "fibonacci": plan.get("fibonacci"),
         "estimaciones_de_tiempo": time_estimates(plan, prob, tp_atr),
         "noticias_recientes": [n["titulo"] for n in (news or [])],
+        # canal vigente (tipo, posición del precio, líneas) con sus reglas de operación y figuras chartistas
+        "estructura_del_precio": estructura,
+        # filtro ADX(14,14,23), patrones de apoyo con calidad y la ponderación calibrada en el historial del activo
+        "metodologia_cuantitativa": metodo,
     })
 
 
@@ -133,8 +163,66 @@ def analyze(payload: dict, api_key: str, model: str = "claude-sonnet-5-5") -> di
     if not m:
         raise ValueError("La IA no devolvió JSON: " + text[:300])
     out = json.loads(m.group(0))
+    out["veredicto"] = normalizar_veredicto(out.get("veredicto"), payload.get("plan_propuesto"))
     out["_modelo"] = model
     return out
+
+
+VEREDICTOS = ("COMPRA", "REBOTE", "NEUTRAL", "EVITAR / VENTA")
+
+
+def normalizar_veredicto(v: str | None, plan: dict | None = None) -> str:
+    """Lleva cualquier veredicto (incluidos los antiguos) a las 4 categorías del escáner."""
+    x = str(v or "").upper().strip()
+    if x in VEREDICTOS:
+        return x
+    if x.startswith("COMPRA"):
+        return "COMPRA"
+    if x.startswith("REBOTE"):
+        return "REBOTE"
+    if x == "ESPERAR":
+        return "REBOTE" if (plan or {}).get("estado_tipo") == "esperar" else "NEUTRAL"
+    if x.startswith(("EVITAR", "VEND", "VENTA")):
+        return "EVITAR / VENTA"
+    return "NEUTRAL"
+
+
+def _metodo_rb(payload: dict, plan: dict) -> dict:
+    """Bloque estructurado de la metodología (ADX + patrones de apoyo) para la síntesis sin IA."""
+    m = payload.get("metodologia_cuantitativa") or {}
+    adx, aps, cal, con = m.get("adx") or {}, m.get("apoyos") or [], m.get("calibracion") or {}, m.get("consolidado") or {}
+    if not con:
+        return {}
+    sig = {s["Indicador"]: s for s in payload["tecnico"]["señales"]}
+    mac = (sig.get("MACD (12,26,9)") or {}).get("Lectura", "")
+    ma = (sig.get("Tendencia SMA50/200") or {}).get("Lectura", "")
+    vp = payload.get("perfil_volumen_180d") or {}
+    poc = vp.get("POC")
+    ap = con.get("aporte_patrones", 0)
+    res = (f"{adx.get('lectura', '')} Momentum: {mac}. Medias: {ma}."
+           + (f" VRVP: POC {poc:.2f}, precio {'sobre' if plan['precio'] > poc else 'bajo'} el nodo de mayor volumen." if poc else ""))
+    adv = list(con.get("alertas") or [])
+    if adx.get("regimen") == "rango":
+        adv.append("ADX bajo el nivel clave: riesgo de señales falsas de tendencia y rupturas sin continuidad.")
+    if any(not a.get("volumen") for a in aps):
+        adv.append("Algún patrón carece de respaldo de volumen: menor fiabilidad.")
+    if any(a["nombre"].startswith(("Spring", "Upthrust")) for a in aps):
+        adv.append("Barrido de liquidez reciente: posible trampa si el precio no sostiene el cierre.")
+    tgt = next((a.get("objetivo") for a in aps if a.get("objetivo")), None)
+    return {
+        "diagnostico_cuantitativo": {"escenario": con.get("escenario_base"), "resumen": res},
+        "patrones_apoyo": [{"nombre": a["nombre"], "categoria": a["categoria"], "estado": a["estado"]} for a in aps],
+        "aporte_patron": ("Ninguno relevante: la confianza depende solo del motor cuantitativo." if not aps else
+                          f"{'Respaldan' if ap > 0 else 'Contradicen' if ap < 0 else 'Neutros respecto a'} el escenario "
+                          f"cuantitativo: {ap:+.1f} puntos (peso de patrones {cal.get('peso_patrones', 0) * 100:.0f}% "
+                          f"calibrado con su acierto histórico de {cal.get('acierto_patrones', 0) * 100:.0f}%)."),
+        "confianza_global": {"nivel": con.get("nivel"), "porcentaje": con.get("confianza_global")},
+        "niveles_criticos": {"activacion": (plan.get("estado") or f"Entrada {plan['entrada']:.2f}"),
+                             "invalidacion": plan["stop"],
+                             "proyeccion": f"{plan['objetivo_1']:.2f} / {plan['objetivo_2']:.2f}"
+                                           + (f" · patrón {tgt:.2f}" if tgt else "")},
+        "advertencias": adv,
+    }
 
 
 def rule_based(payload: dict) -> dict:
@@ -151,10 +239,15 @@ def rule_based(payload: dict) -> dict:
     px, atr = plan["precio"], plan["atr"]
     sgn = 1 if plan["direccion"].startswith("COMPRA") else -1
     comb = 0.6 * t + 0.4 * (f if f is not None else 0)
-    v = "COMPRAR" if (ev > 0.2 and comb > 20) else ("EVITAR" if (comb < -30 and ev < 0) else "ESPERAR")
     wait = plan.get("estado_tipo") == "esperar"
-    if wait and v == "COMPRAR":
-        v = "ESPERAR"  # regla de impulso: no entrar a mercado durante la corrección de corto plazo
+    if ev > 0.2 and comb > 20:
+        v = "REBOTE" if wait else "COMPRA"  # regla de impulso: no entrar a mercado durante la corrección
+    elif ev >= 0.1 and (wait or t < 0):
+        v = "REBOTE"  # ventaja estadística, entrada en el rebote/pullback o contra la tendencia
+    elif comb < -30 and ev < 0:
+        v = "EVITAR / VENTA"
+    else:
+        v = "NEUTRAL"
     entrada_rec = plan.get("entrada_proyectada", plan["entrada"]) if wait else plan["entrada"]
     sig = payload["tecnico"]["señales"]
     favor = [s["Indicador"] + ": " + s["Lectura"] for s in sig if s["Señal"] * sgn > 0.3][:4]
@@ -168,9 +261,10 @@ def rule_based(payload: dict) -> dict:
     dn_ = next((x for x in reversed(fib_vals) if x < px * 0.98), px - 6 * atr)
     mid_base, mid_adv = (up_, dn_) if sgn > 0 else (dn_, up_)
     word_low, word_ema = ("bajista", "bajo") if sgn > 0 else ("alcista", "sobre")
+    cg = ((payload.get("metodologia_cuantitativa") or {}).get("consolidado") or {}).get("confianza_global")
     return {
         "veredicto": v,
-        "confianza": int(min(90, abs(comb) * 0.6 + abs(ev) * 30)),
+        "confianza": int(round(cg)) if cg is not None else int(min(90, abs(comb) * 0.6 + abs(ev) * 30)),
         "probabilidad_ajustada": p,
         "resumen_ejecutivo": (f"{plan.get('estado')}: " if wait else "") +
                              f"{plan.get('marco_temporal', 'Velas 1D')}. " +
@@ -211,6 +305,7 @@ def rule_based(payload: dict) -> dict:
         "invalidacion": f"Cierre por debajo de {plan['stop']:.2f}" if sgn > 0 else f"Cierre por encima de {plan['stop']:.2f}",
         "catalizadores": [],
         "contexto_general": "",
+        **_metodo_rb(payload, plan),
         "_modelo": "reglas (sin IA)",
     }
 
@@ -260,6 +355,7 @@ def analyze_gemini(payload: dict, api_key: str, model: str | None = None) -> dic
         if not m:
             raise ValueError("Gemini no devolvió JSON: " + text[:300])
         out = json.loads(m.group(0))
+        out["veredicto"] = normalizar_veredicto(out.get("veredicto"), payload.get("plan_propuesto"))
         out["_modelo"] = mdl
         return out
     raise RuntimeError("Gemini no respondió con ningún modelo. Revisa que GEMINI_API_KEY en los Secrets sea correcta y esté activa en Google AI Studio. Detalle: " + str(last_err))

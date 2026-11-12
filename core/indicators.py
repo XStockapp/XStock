@@ -75,6 +75,10 @@ def merge_config(saved: dict | None, perfil: str | None = None, engine: dict | N
             if pk in base["st"] and isinstance(ps, dict):
                 base["st"][pk].update(ps)
         base["vis"].update({k: bool(v) for k, v in (it.get("vis") or {}).items() if k in base["vis"]})
+        if iid == "adx" and not it.get("k23") and _num(base["in"].get("key"), 23) == 25:
+            base["in"]["key"] = 23  # migración: el nivel clave por defecto pasó de 25 a 23
+    if "adx" in cfg:
+        cfg["adx"]["k23"] = True
     return cfg
 
 
@@ -111,7 +115,7 @@ def to_engine(cfg: dict, s: dict) -> dict:
     m = cfg["macd"]["in"]
     s["macd"] = {"rapida": int(_num(m["fast"], 12)), "lenta": int(_num(m["slow"], 26)), "senal": int(_num(m["sig"], 9))}
     a = cfg["adx"]["in"]
-    s["adx"] = {"periodo": int(_num(a["di"], 14)), "umbral": int(_num(a["key"], 25))}
+    s["adx"] = {"periodo": int(_num(a["di"], 14)), "umbral": int(_num(a["key"], 23)), "k23": True}
     b = cfg["bb"]["in"]
     s["bollinger"] = {"periodo": int(_num(b["len"], 20)), "desv": float(_num(b["mult"], 2))}
     s["fibonacci"] = {"velas": int(_num(cfg["fib"]["in"]["bars"], 126))}

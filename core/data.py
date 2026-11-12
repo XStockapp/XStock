@@ -16,6 +16,7 @@ from typing import Callable
 import numpy as np
 import pandas as pd
 import requests
+import streamlit as st
 
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36"}
 
@@ -489,3 +490,64 @@ def av_news(ticker: str, key: str, n: int = 8) -> list[dict]:
         out.append({"titulo": it.get("title"), "fuente": it.get("source"), "link": it.get("url"),
                     "sentimiento": sent.get("ticker_sentiment_label")})
     return out
+
+
+# --------------------------------------------------------------------------
+# Premercado y postmercado
+# --------------------------------------------------------------------------
+def session_ny(now=None) -> str:
+    """Sesión del mercado de EE. UU. por la hora de Nueva York: 'pre' (4:00–9:30), 'regular' (9:30–16:00),
+    'post' (16:00–20:00) o 'cerrado' (noches y fines de semana; no considera feriados)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    now = now or datetime.now(ZoneInfo("America/New_York"))
+    if now.weekday() >= 5:
+        return "cerrado"
+    m = now.hour * 60 + now.minute
+    return "pre" if 240 <= m < 570 else "regular" if m < 960 and m >= 570 else "post" if 960 <= m < 1200 else "cerrado"
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def extended_quote(ticker: str) -> dict | None:
+    """Último precio fuera del horario regular (premercado o postmercado) y su variación frente al último cierre
+    regular. None en horario regular, con el mercado cerrado, para cripto o si no hay datos."""
+    from .timeframes import is_crypto
+    ses = session_ny()
+    if _demo() and os.environ.get("TRADING_DEMO_SESION") in ("pre", "post"):  # solo para capturas en modo demo
+        ses = os.environ["TRADING_DEMO_SESION"]
+    if ses not in ("pre", "post") or is_crypto(ticker):
+        return None
+    if _demo():
+        h = history(ticker, "1y")
+        ref = float(h["Close"].iloc[-1])
+        return {"sesion": ses, "precio": round(ref * 1.0035, 2), "ref": ref, "var": 0.35, "hora": "07:45",
+                "fuente": "demo"}
+    from . import alpaca
+    try:
+        if alpaca.available():
+            sym = alpaca.stock_symbol(ticker)
+            sn = (alpaca._get("/v2/stocks/snapshots", {"symbols": sym, "feed": "iex"}) or {}).get(sym) or {}
+            tr = sn.get("latestTrade") or {}
+            ref = (sn.get("dailyBar") or {}).get("c") if ses == "post" else (sn.get("prevDailyBar") or {}).get("c")
+            if tr.get("p") and ref:
+                t = pd.Timestamp(tr["t"]).tz_convert("America/New_York")
+                if session_ny(t.to_pydatetime()) == ses:
+                    return {"sesion": ses, "precio": float(tr["p"]), "ref": float(ref),
+                            "var": (float(tr["p"]) / float(ref) - 1) * 100, "hora": f"{t:%H:%M}", "fuente": "Alpaca IEX"}
+    except Exception:
+        pass
+    try:
+        import yfinance as yf
+        h = yf.Ticker(ticker).history(period="2d", interval="5m", prepost=True)
+        if h is not None and len(h):
+            ix = h.index.tz_convert("America/New_York")
+            last_t = ix[-1]
+            reg = h[[(570 <= t.hour * 60 + t.minute < 960) for t in ix]]
+            if session_ny(last_t.to_pydatetime()) == ses and len(reg):
+                ref = float(reg["Close"].iloc[-1])
+                px = float(h["Close"].iloc[-1])
+                return {"sesion": ses, "precio": px, "ref": ref, "var": (px / ref - 1) * 100, "hora": f"{last_t:%H:%M}",
+                        "fuente": "Yahoo"}
+    except Exception:
+        pass
+    return None

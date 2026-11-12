@@ -30,6 +30,8 @@ QUE_MIRA = {
     "Money Flow Index": "RSI con volumen: sobre 80 sobrecompra, bajo 20 sobreventa.",
     "VWAP 20 días": "Precio sobre el VWAP = los compradores del periodo van ganando.",
     "Ichimoku": "Precio sobre la nube y Tenkan sobre Kijun = estructura alcista.",
+    "Canal / rango": "Canal alcista: comprar cerca del soporte; bajista: vender cerca de la resistencia; rango: "
+                     "comprar abajo y vender arriba. Romper el canal cambia la lectura.",
 }
 
 
@@ -98,6 +100,13 @@ def mini(d, name: str, n: int = 90) -> go.Figure | None:
             fig.update_yaxes(range=[0, 100], tickvals=[20, 50, 80])
         elif name == "VWAP 20 días":
             price(); _ln(fig, x, t["VWAP20"], C["VWAP"], "VWAP 20")
+        elif name == "Canal / rango":
+            from .technical import channel_frame
+            t = d.tail(max(n, 70)); x = t.index
+            ch = channel_frame(d).tail(len(t))
+            _ln(fig, x, ch["sup"], "#8B949E", "Resistencia", 1, dash="dot")
+            _ln(fig, x, ch["inf"], "#8B949E", "Soporte", 1, dash="dot", fill="tonexty", fillcolor="rgba(139,148,158,.06)")
+            price()
         elif name == "Ichimoku":
             _ln(fig, x, t["SPAN_A"], "rgba(38,166,154,.6)", "Span A", 1)
             _ln(fig, x, t["SPAN_B"], "rgba(239,83,80,.6)", "Span B", 1, fill="tonexty", fillcolor="rgba(139,148,158,.10)")

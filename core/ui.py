@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
@@ -140,6 +141,27 @@ header[data-testid="stHeader"] {{ background: transparent; height: 2.6rem; }}
 /* pantalla del informe: entra desde la derecha */
 .st-key-x_report_screen {{ animation: xslide .22s ease-out; border-left: 1px solid {BORDER}; padding-left: 12px; }}
 @keyframes xslide {{ from {{ transform: translateX(48px); opacity: 0; }} to {{ transform: none; opacity: 1; }} }}
+/* estructura del precio */
+.x-rules {{ margin: 6px 0 2px 16px; padding: 0; font-size: 12px; line-height: 1.4; }}
+.x-rules li {{ margin: 2px 0; }}
+.x-plan ul.x-rules li, .x-diag ul.x-rules li {{ font-size: 12px !important; line-height: 1.4 !important; }}
+.x-plan .x-ph {{ flex-wrap: wrap; }}
+.x-diag {{ background: #161B22; border: 1px solid #30363D; border-radius: 6px; padding: 10px 12px; margin: 8px 0 12px; }}
+.x-diag .x-dl {{ display: grid; grid-template-columns: 150px 1fr; gap: 10px; padding: 5px 0; border-top: 1px solid #21262D;
+  font-size: 12.5px; line-height: 1.45; color: #E6EDF3; }}
+.x-diag .x-dl b {{ color: #8B949E; font-weight: 600; font-size: 12px; }}
+.x-diag .x-dl .x-rules {{ margin: 0 0 0 16px; }}
+.x-dl2 {{ display: flex; justify-content: space-between; gap: 8px; border-top: 1px solid #21262D; padding: 6px 0 0;
+  margin-top: 6px; font-size: 12px; color: #8B949E; }}
+.x-dl2 b {{ color: #E6EDF3; font-weight: 600; white-space: nowrap; }}
+.x-tab {{ width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 12px; }}
+.x-tab th {{ text-align: left; color: #8B949E; font-weight: 600; border-bottom: 1px solid #30363D; padding: 4px 6px; }}
+.x-tab td {{ color: #E6EDF3; border-bottom: 1px solid #21262D; padding: 4px 6px; }}
+@media (max-width: 640px) {{ .x-diag .x-dl {{ grid-template-columns: 1fr; gap: 2px; }} }}
+.x-fig {{ border-top: 1px solid {BORDER}; margin-top: 7px; padding-top: 6px; font-size: 12.5px; }}
+.x-dot {{ display: inline-block; width: 9px; height: 9px; border-radius: 50%; border: 2px solid; margin-right: 6px;
+  vertical-align: -1px; animation: xdot 1.8s ease-in-out infinite; }}
+@keyframes xdot {{ 0%, 100% {{ opacity: .45; }} 50% {{ opacity: 1; }} }}
 /* tarjetas didácticas */
 .dd-intro {{ color: {MUTED}; font-size: 12px; margin: 6px 0 8px; }}
 .dd-h {{ display: flex; align-items: center; gap: 6px; font-size: 12.5px; flex-wrap: wrap; }}
@@ -195,7 +217,7 @@ def pill(text: str, color: str) -> str:
 
 
 SIGNAL_COLORS = {"COMPRA FUERTE": GREEN, "COMPRA": "#4ade80", "REBOTE (contratendencia)": AMBER,
-                 "NEUTRAL": NEUTRAL, "EVITAR / VENTA": RED, "COMPRAR": GREEN, "ESPERAR": NEUTRAL,
+                 "NEUTRAL": NEUTRAL, "EVITAR / VENTA": RED, "REBOTE": AMBER, "COMPRAR": GREEN, "ESPERAR": NEUTRAL,
                  "VENTA FUERTE": RED, "VENTA": "#f87171",
                  "EVITAR": RED, "VENDER EN CORTO": RED}
 
@@ -206,6 +228,84 @@ def _tag(fig, y, text, color, row=1, size=10.5):
                        text=f"<b>{text}</b>", showarrow=False, font=dict(color="#0D1117", size=size),
                        bgcolor=color, borderpad=2, opacity=0.95)
 
+
+
+# ---------------------------------------------------------------- estructura del precio (canal, figuras) y sesión extendida
+_PAT_COL = {"alcista": GREEN, "bajista": RED, "neutral": AMBER}
+
+
+def draw_structure(fig, x, fx, estructura: dict | None, row: int | None = None, y_snap=None,
+                   lo_vis: float | None = None) -> None:
+    """Canal vigente (líneas paralelas punteadas proyectadas unas velas al futuro) y figuras chartistas
+    (trazo sutil, línea clavicular y vértices con borde que destella; ver _CHART_JS)."""
+    if not estructura:
+        return
+    kw = {"row": row, "col": 1} if row else {}
+    ch = estructura.get("canal")
+    if ch and ch.get("tipo") in ("alcista", "bajista", "lateral"):
+        col = {"alcista": GREEN, "bajista": RED, "lateral": "#8B949E"}[ch["tipo"]]
+        k = max(3, int(ch["ventana"] * 0.15))
+        x1f = fx(k)
+        for off, op, w in ((ch["up_off"], .85, 1.2), (0.0, .35, 1.0), (-ch["lo_off"], .85, 1.2)):
+            y0 = ch["mid0"] + off
+            y1 = ch["mid1"] + ch["pendiente"] * k + off
+            fig.add_trace(go.Scatter(x=[ch["x0"], x1f], y=[y0, y1], mode="lines", showlegend=False, hoverinfo="skip",
+                                     line=dict(color=col, width=w, dash="dot"), opacity=op), **kw)
+        xa = max(ch["x0"], x[0])
+        n_before = 0
+        if ch["x0"] < x[0]:  # parte del canal queda fuera de la vista: etiqueta en el primer punto visible
+            n_before = max(0, ch["ventana"] - len(x))
+        # etiqueta bajo la línea inferior (la superior suele chocar con rechazos y figuras)
+        ya = ch["mid0"] - ch["lo_off"] + ch["pendiente"] * n_before
+        if lo_vis is not None and ya < lo_vis and ch["pendiente"] > 0:  # avanzar hasta que la línea entre en la vista
+            paso = int(np.ceil((lo_vis - ya) / ch["pendiente"]))
+            pos = min(len(x) - 1, list(x).index(xa) + paso) if xa in list(x) else len(x) - 1
+            xa, ya = x[pos], ya + ch["pendiente"] * paso
+        conf = "confirmado" if ch.get("confirmado") else "en formación"
+        nom = "Rango lateral" if ch["tipo"] == "lateral" else f"Canal {ch['tipo']}"
+        fig.add_annotation(x=xa, y=ya, text=f"{nom} · {conf}", showarrow=False, xanchor="left", yanchor="top",
+                           yshift=-3, font=dict(size=11, color=col), bgcolor="rgba(13,17,23,.75)", borderpad=2,
+                           **({"yref": "y" if row in (None, 1) else f"y{row}"}))
+    for j, f in enumerate(estructura.get("figuras") or []):
+        pts = f["puntos"]
+        if not pts or pts[0][0] < x[0]:
+            continue
+        col = _PAT_COL.get(f.get("sesgo"), AMBER)
+        px_, py_ = [p[0] for p in pts], [p[1] for p in pts]
+        if y_snap is not None:  # gráfico de línea: los vértices se apoyan sobre la curva dibujada
+            py_ = [float(y_snap.get(a, b)) for a, b in zip(px_, py_)]
+        fig.add_trace(go.Scatter(x=px_, y=py_, mode="lines", showlegend=False, hoverinfo="skip",
+                                 line=dict(color=col, width=1.1), opacity=.5), **kw)
+        for (a, b) in f.get("lineas") or []:
+            dy = (float(y_snap.get(a[0], a[1])) - a[1]) if y_snap is not None else 0.0
+            fig.add_trace(go.Scatter(x=[a[0], b[0]], y=[a[1] + dy, b[1] + dy], mode="lines", showlegend=False, hoverinfo="skip",
+                                     line=dict(color=col, width=1, dash="dash"), opacity=.75), **kw)
+        fig.add_trace(go.Scatter(x=px_, y=py_, mode="markers", name=f"xpat{j}", showlegend=False,
+                                 marker=dict(size=9, color=BG, line=dict(color=col, width=2)),
+                                 hovertemplate=f"{f['nombre']}<br>%{{y:$,.2f}}<extra></extra>"), **kw)
+        obj = f.get("objetivo")
+        txt = f"{f['nombre']} · {f['estado']}" + (f" · obj. ${obj:,.2f}" if obj else "")
+        top = max(py_) if f.get("sesgo") != "alcista" else min(py_)
+        fig.add_annotation(x=px_[len(px_) // 2], y=top, text=txt, showarrow=False, yshift=16 if f.get("sesgo") != "alcista" else -16,
+                           font=dict(size=11, color=col), bgcolor="rgba(13,17,23,.85)", bordercolor=_rgba_hex(col, .5),
+                           borderwidth=1, borderpad=3, **({"yref": "y" if row in (None, 1) else f"y{row}"}))
+
+
+def draw_extended(fig, x_last, fx, ext: dict | None, row: int | None = None, yshift: int = -2) -> None:
+    """Premercado / postmercado: franja tras la última vela regular, línea punteada y etiqueta del precio."""
+    if not ext:
+        return
+    pre = ext["sesion"] == "pre"
+    lbl = "PREMERCADO" if pre else "POSTMERCADO"
+    x1 = fx(4)
+    kw = {"row": row, "col": 1} if row else {}
+    fig.add_vrect(x0=x_last, x1=x1, fillcolor=_rgba_hex(AMBER, .08), line_width=0, layer="below",
+                  annotation_text=f"{lbl} · {ext.get('hora', '')} NY", annotation_position="top right",
+                  annotation_font=dict(size=11, color=AMBER), annotation_yshift=yshift, **kw)
+    fig.add_trace(go.Scatter(x=[x_last, x1], y=[ext["precio"], ext["precio"]], mode="lines", showlegend=False,
+                             line=dict(color=AMBER, width=1.2, dash="dot"),
+                             hovertemplate=f"{lbl.title()} %{{y:$,.2f}} ({ext['var']:+.2f}%)<extra></extra>"), **kw)
+    _tag(fig, ext["precio"], f"{'PRE' if pre else 'POST'} {ext['precio']:,.2f}", AMBER, row=row or 1, size=11)
 
 BY_DRAW: dict[str, str] = {}
 
@@ -227,7 +327,7 @@ def _ln(st_: dict, w_extra: float = 0) -> dict:
 def price_chart(d: pd.DataFrame, plan: dict | None = None, vp: dict | None = None, verdict: dict | None = None,
                 bars: int = 180, times: dict | None = None, show_bb: bool = False, show_vp: bool = True,
                 mobile: bool = False, tf: str = "1D", crypto: bool = False, settings: dict | None = None,
-                ind: dict | None = None) -> go.Figure:
+                ind: dict | None = None, estructura: dict | None = None, ext: dict | None = None) -> go.Figure:
     """Gráfico de precio con el plan de operación y los indicadores activos del panel del usuario
     (menú USER › Indicadores): cada uno con su color, opacidad, grosor y tipo de línea; un panel
     inferior por cada oscilador activo."""
@@ -526,11 +626,14 @@ def price_chart(d: pd.DataFrame, plan: dict | None = None, vp: dict | None = Non
     fig.update_yaxes(gridcolor="#1C2128", side="right", tickfont=dict(size=10, family="JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"))
     fig.update_yaxes(range=[lo - pad, hi + pad], row=1, col=1, secondary_y=False)
     fig.update_yaxes(range=[0, float(d["Volume"].max()) * 4], visible=False, fixedrange=True, row=1, col=1, secondary_y=True)
+    draw_structure(fig, x, fx, estructura, row=1, lo_vis=lo - pad * 0.5)
+    draw_extended(fig, x[-1], fx, ext, row=1, yshift=-30)
     return fig
 
 
 def projection_chart(d: pd.DataFrame, plan: dict, times: dict | None, vpa: dict | None, bars: int = 120,
-                     tf: str = "1D", crypto: bool = False, mobile: bool = False) -> go.Figure:
+                     tf: str = "1D", crypto: bool = False, mobile: bool = False, estructura: dict | None = None,
+                     ext: dict | None = None) -> go.Figure:
     """Gráfico simplificado de proyección: precio en línea, niveles clave y la trayectoria esperada
     (precio actual → entrada → TP1 → TP2) con las zonas de riesgo y beneficio."""
     from .timeframes import future_index, rangebreaks
@@ -615,6 +718,8 @@ def projection_chart(d: pd.DataFrame, plan: dict, times: dict | None, vpa: dict 
         tags.insert(2, (last, f"{last:,.2f}", "#C9D1D9"))
     for y, txt, c in tags:
         _tag(fig, y, txt, c, size=11)
+    draw_structure(fig, x, fx, estructura, y_snap=smooth, lo_vis=lo - pad * 0.5)
+    draw_extended(fig, x[-1], fx, ext)
     # estado del plan (franja superior)
     wait = plan.get("estado_tipo") == "esperar"
     sc = AMBER if wait else GREEN
@@ -806,7 +911,10 @@ def _ensure_plotlyjs() -> bool:
 
 
 _CHART_JS = r"""
-<style>html,body{margin:0;padding:0;background:transparent}</style>
+<style>html,body{margin:0;padding:0;background:transparent}
+/* vértices de figuras chartistas: borde que destella */
+.js-plotly-plot g.xpat path.point{animation:xpulse 1.8s ease-in-out infinite}
+@keyframes xpulse{0%,100%{stroke-opacity:.35;stroke-width:1.5px}50%{stroke-opacity:1;stroke-width:4.5px}}</style>
 <div id="c" style="width:100%;height:%%H%%px"></div>
 <script src="/app/static/plotly.min.js"></script>
 <script>
@@ -863,6 +971,16 @@ Plotly.newPlot(gd, fig.data, fig.layout, cfg).then(function(){
   }
   gd.on("plotly_relayout", function(){ requestAnimationFrame(declutter); });
   declutter();
+  // vértices de figuras chartistas: borde que destella (clase sobre la traza; Plotly reasigna los uid)
+  function marcarFiguras(){
+    (gd._fullData || []).forEach(function(t){
+      if (t.name && String(t.name).indexOf("xpat") === 0) {
+        var g = gd.querySelector("g.trace" + t.uid); if (g) g.classList.add("xpat");
+      }
+    });
+  }
+  marcarFiguras();
+  gd.on("plotly_afterplot", marcarFiguras);
   function zone(ev){
     const r = gd.getBoundingClientRect(), s = gd._fullLayout._size, ya = gd._fullLayout.yaxis;
     const px = ev.clientX - r.left, py = ev.clientY - r.top;

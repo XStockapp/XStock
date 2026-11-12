@@ -173,6 +173,7 @@ def compute_all(df: pd.DataFrame, settings: dict | None = None) -> pd.DataFrame:
                                                            int(st_["macd"]["senal"]))
     df["ATR"] = atr(df)
     df["ADX"], df["+DI"], df["-DI"] = adx(df, int(st_["adx"]["periodo"]))
+    df["ADX_KEY"] = float((st_.get("adx") or {}).get("umbral", ADX_KEY))
     df["BB_up"], df["BB_mid"], df["BB_low"] = bollinger(c, int(st_["bollinger"]["periodo"]), float(st_["bollinger"]["desv"]))
     df["STOCH_K"], df["STOCH_D"] = stochastic(df)
     df["OBV"] = obv(df)
@@ -201,7 +202,70 @@ WEIGHTS = {
     "Money Flow Index": 0.6,
     "VWAP 20 días": 0.6,
     "Ichimoku": 1.0,
+    "Canal / rango": 1.2,
 }
+
+CANAL_N = 60
+ADX_KEY = 23.0  # nivel clave por defecto del ADX (suavizado 14, DI 14, nivel 23)
+# Filtro de régimen del ADX: con ADX bajo el nivel clave (rango) las señales seguidoras de tendencia pierden
+# validez; con ADX sobre el nivel clave (tendencia) los osciladores de reversión pierden validez.
+_TENDENCIA = ("Tendencia SMA50/EMA21", "Cruce EMA9/EMA21", "MACD (12,26,9)", "Ichimoku")
+_OSCILADORES = ("RSI (14)", "Bollinger %B", "Estocástico (14,3,3)", "Money Flow Index")
+
+
+def adx_key(df: pd.DataFrame) -> float:
+    return float(df["ADX_KEY"].iloc[-1]) if "ADX_KEY" in df and pd.notna(df["ADX_KEY"].iloc[-1]) else ADX_KEY
+
+
+def adx_regimen(df: pd.DataFrame) -> dict:
+    """Estado del filtro principal: ADX(14,14,nivel clave) y dirección del DMI en la última vela."""
+    r = df.iloc[-1]
+    key = adx_key(df)
+    a, pdi, ndi = float(r["ADX"]), float(r["+DI"]), float(r["-DI"])
+    sube = bool(len(df) > 3 and a > float(df["ADX"].iloc[-4]))
+    reg = "tendencia" if a >= key else "rango"
+    return {"adx": round(a, 1), "+DI": round(pdi, 1), "-DI": round(ndi, 1), "nivel_clave": key,
+            "configuracion": f"ADX Smoothing 14 · DI Length 14 · Key Level {key:g}",
+            "regimen": reg, "adx_creciente": sube,
+            "direccion": "alcista" if pdi > ndi else "bajista",
+            "lectura": (f"ADX {a:.1f} sobre el nivel clave {key:g}: tendencia {'alcista' if pdi > ndi else 'bajista'} "
+                        f"con fuerza{' creciente' if sube else ''}; las señales de tendencia son válidas y los "
+                        f"osciladores en extremo pierden peso." if reg == "tendencia" else
+                        f"ADX {a:.1f} bajo el nivel clave {key:g}: mercado en rango o consolidación; las señales de "
+                        f"tendencia (medias, MACD) pierden validez y se prioriza operar entre soporte y resistencia.")}
+
+
+def channel_frame(df: pd.DataFrame, n: int = CANAL_N) -> pd.DataFrame:
+    """Canal de regresión móvil (vectorizado) para cada vela: tipo (1 alcista, −1 bajista, 0 lateral, NaN sin
+    canal claro) y posición del cierre dentro del canal (0 = soporte −2σ, 1 = resistencia +2σ)."""
+    c = df["Close"].astype(float)
+    i = pd.Series(np.arange(len(c), dtype=float), index=c.index)
+    my, mi = c.rolling(n).mean(), i.rolling(n).mean()
+    vt = (n * n - 1) / 12.0
+    b = ((c * i).rolling(n).mean() - mi * my) / vt
+    vy = c.rolling(n).var(ddof=0)
+    rv = (vy - b * b * vt).clip(lower=1e-12)
+    r2 = 1 - rv / vy.replace(0, np.nan)
+    sd = np.sqrt(rv)
+    yhat = my + b * (n - 1) / 2
+    lower, upper = yhat - 2 * sd, yhat + 2 * sd
+    pos = (c - lower) / (upper - lower).replace(0, np.nan)
+    a = df["ATR"] if "ATR" in df else atr(df)
+    move = b * n
+    tipo = pd.Series(np.select([(r2 >= 0.55) & (move >= 2 * a), (r2 >= 0.55) & (move <= -2 * a),
+                                (move.abs() < 1.5 * a) & ((upper - lower) <= 8 * a)], [1.0, -1.0, 0.0], np.nan),
+                     index=c.index).where(my.notna())
+    return pd.DataFrame({"tipo": tipo, "pos": pos, "sup": upper, "inf": lower})
+
+
+def channel_signal_series(ch: pd.DataFrame) -> pd.Series:
+    """Misma regla que patterns.channel_signal, vela a vela."""
+    t, p = ch["tipo"], ch["pos"]
+    up = np.where(p < -0.05, -0.6, np.clip(0.3 + (0.5 - p), -0.1, 0.8))
+    dn = np.where(p > 1.05, 0.6, np.clip(-0.3 - (p - 0.5), -0.8, 0.1))
+    lat = np.where(p > 1.05, 0.5, np.where(p < -0.05, -0.5, np.clip((0.5 - p) * 1.2, -0.6, 0.6)))
+    out = np.select([t == 1, t == -1, t == 0], [up, dn, lat], np.nan)
+    return pd.Series(out, index=ch.index).where(p.notna())
 
 
 def _pm(cond) -> pd.Series:
@@ -218,7 +282,8 @@ def signal_matrix(df: pd.DataFrame) -> pd.DataFrame:
                            + 0.2 * _pm(df["MACD_hist"] > df["MACD_hist"].shift())).where(df["MACD_signal"].notna())
     r = df["RSI"]
     S["RSI (14)"] = np.select([r >= 70, r <= 30], [-0.6, 0.6], ((r - 50) / 20).clip(-1, 1))
-    S["ADX/DMI (14)"] = (_pm(df["+DI"] > df["-DI"]) * ((df["ADX"] - 15) / 20).clip(0, 1)).where(df["ADX"].notna())
+    key = df["ADX_KEY"] if "ADX_KEY" in df else ADX_KEY
+    S["ADX/DMI (14)"] = (_pm(df["+DI"] > df["-DI"]) * ((df["ADX"] - (key - 8)) / 16).clip(0, 1)).where(df["ADX"].notna())
     pb = (c - df["BB_low"]) / (df["BB_up"] - df["BB_low"]).replace(0, np.nan)
     S["Bollinger %B"] = np.select([pb < 0.05, pb > 0.95], [0.5, -0.5], ((pb - 0.5) * 0.8).clip(-1, 1))
     k, d = df["STOCH_K"], df["STOCH_D"]
@@ -234,10 +299,17 @@ def signal_matrix(df: pd.DataFrame) -> pd.DataFrame:
     bot = df[["SPAN_A", "SPAN_B"]].min(axis=1)
     cloud = np.select([c > top, c < bot], [1.0, -1.0], 0.0)
     S["Ichimoku"] = (0.7 * cloud + 0.3 * _pm(df["TENKAN"] > df["KIJUN"])).where(df["SPAN_B"].notna())
+    S["Canal / rango"] = channel_signal_series(channel_frame(df))
     # NaN en indicadores ⇒ NaN en señal
     for col in ("RSI (14)", "Bollinger %B", "Estocástico (14,3,3)", "Money Flow Index"):
         base = {"RSI (14)": r, "Bollinger %B": pb, "Estocástico (14,3,3)": k, "Money Flow Index": m}[col]
         S[col] = S[col].where(base.notna())
+    # filtro de régimen del ADX (condiciona la validez del resto de métricas)
+    tend = (df["ADX"] >= key)
+    for col in _TENDENCIA:
+        S[col] = S[col] * np.where(tend, 1.0, 0.5)
+    for col in _OSCILADORES:
+        S[col] = S[col] * np.where(tend, 0.7, 1.0)
     return S
 
 
@@ -249,6 +321,17 @@ def score_series(df: pd.DataFrame) -> pd.Series:
     den = S.notna().mul(w).sum(axis=1)
     out = 100 * num / den.replace(0, np.nan)
     return out.where(S.notna().sum(axis=1) >= 10)
+
+
+def _txt_canal(df: pd.DataFrame) -> str:
+    ch = channel_frame(df).iloc[-1]
+    if pd.isna(ch["tipo"]):
+        return "Sin canal claro en las últimas 60 velas"
+    nom = {1.0: "Canal alcista", -1.0: "Canal bajista", 0.0: "Rango lateral"}[float(ch["tipo"])]
+    p = float(ch["pos"])
+    zona = ("ruptura por abajo" if p < -0.05 else "ruptura por arriba" if p > 1.05 else "cerca del soporte" if p < 0.25
+            else "cerca de la resistencia" if p > 0.75 else "zona media")
+    return f"{nom} · precio {zona} ({p * 100:.0f}% del ancho)"
 
 
 def explain_last(df: pd.DataFrame) -> dict:
@@ -264,7 +347,7 @@ def explain_last(df: pd.DataFrame) -> dict:
         "MACD (12,26,9)": f"MACD {'sobre' if r['MACD'] > r['MACD_signal'] else 'bajo'} la señal · histograma "
                           f"{'creciente' if r['MACD_hist'] > p['MACD_hist'] else 'decreciente'}",
         "RSI (14)": f"RSI {r['RSI']:.1f} · " + ("sobrecompra" if r["RSI"] >= 70 else "sobreventa" if r["RSI"] <= 30 else "zona neutral"),
-        "ADX/DMI (14)": f"ADX {r['ADX']:.1f} · {'tendencia fuerte' if r['ADX'] > 25 else 'tendencia débil / rango'} · "
+        "ADX/DMI (14)": f"ADX {r['ADX']:.1f} · {'tendencia (sobre nivel ' + format(adx_key(df), 'g') + ')' if r['ADX'] >= adx_key(df) else 'rango (bajo nivel ' + format(adx_key(df), 'g') + ')'} · "
                         f"{'+DI domina' if r['+DI'] > r['-DI'] else '-DI domina'}",
         "Bollinger %B": f"%B {((px - r['BB_low']) / (r['BB_up'] - r['BB_low'])):.2f}",
         "Estocástico (14,3,3)": f"%K {r['STOCH_K']:.1f} / %D {r['STOCH_D']:.1f}",
@@ -272,6 +355,7 @@ def explain_last(df: pd.DataFrame) -> dict:
                          f"{r['Volume'] / r['VOL_SMA20']:.1f}x promedio",
         "Money Flow Index": f"MFI {r['MFI']:.1f}",
         "VWAP 20 días": f"Precio {'sobre' if px > r['VWAP20'] else 'bajo'} el VWAP de 20 días",
+        "Canal / rango": _txt_canal(df),
         "Ichimoku": "Precio " + ("sobre" if px > max(r['SPAN_A'], r['SPAN_B']) else
                                  "bajo" if px < min(r['SPAN_A'], r['SPAN_B']) else "dentro de") + " la nube",
     }

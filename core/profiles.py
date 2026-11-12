@@ -26,7 +26,7 @@ BASE_SETTINGS = {
     ],
     "rsi": {"periodo": 14, "sobrecompra": 70, "sobreventa": 30},
     "macd": {"rapida": 12, "lenta": 26, "senal": 9},
-    "adx": {"periodo": 14, "umbral": 25},
+    "adx": {"periodo": 14, "umbral": 23},
     "bollinger": {"periodo": 20, "desv": 2.0},
     "fibonacci": {"velas": 126},
     # Vista del gráfico: temporalidad de velas y rango visible elegidos por el usuario (uno por temporalidad).
@@ -116,6 +116,10 @@ def merge_settings(saved) -> dict:
                 s["mas"] = [{**BASE_SETTINGS["mas"][i], **(v[i] or {})} for i in range(4)]
             elif k in s and isinstance(v, dict):
                 s[k].update(v)
+        a = saved.get("adx")
+        if isinstance(a, dict) and not a.get("k23") and int(a.get("umbral", 23)) == 25:
+            s["adx"]["umbral"] = 23  # migración: el nivel clave por defecto del ADX pasó de 25 a 23
+    s["adx"]["k23"] = True
     return s
 
 
