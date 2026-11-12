@@ -37,10 +37,31 @@ def test_senal_canal():
     assert PT.channel_signal(None) is None
 
 
-def test_hombro_cabeza_hombro():
-    path = [90] * 10 + _seg(90, 104, 96, 112, 96, 104, 88, 86)
-    f = PT.patterns(_df(path))
-    assert any(p["nombre"] == "Hombro-cabeza-hombro" and p["estado"] == "confirmada" for p in f), f
+def test_hombro_cabeza_hombro_vigencia():
+    base = [90] * 10 + _seg(90, 104, 96, 112, 96, 104)
+    # pendiente de ruptura: el precio baja desde el hombro derecho pero sigue sobre la clavicular (96)
+    f = PT.patterns(_df(base + list(np.linspace(104, 98.5, 8))))
+    h = [p for p in f if p["nombre"] == "Hombro-cabeza-hombro"]
+    assert h and h[0]["estado_meta"] == "PENDING_BREAKOUT" and abs(h[0]["activacion"] - 96) < 1.5, f
+    assert "Si el precio pierde" in h[0]["condicion"]
+    # recién confirmada: cierre bajo la clavicular en las últimas velas
+    f = PT.patterns(_df(base + list(np.linspace(104, 94.5, 10))))
+    assert any(p["nombre"] == "Hombro-cabeza-hombro" and p["estado_meta"] == "CONFIRMED" for p in f), f
+    # ruptura antigua (movimiento ya en curso): se descarta
+    f = PT.patterns(_df(base + _seg(104, 88, 86)))
+    assert not any(p["nombre"] == "Hombro-cabeza-hombro" for p in f), f
+
+
+def test_patron_pasado_se_descarta():
+    # HCH completo hace mucho y luego 60 velas de tendencia: nada vigente del HCH
+    path = [90] * 10 + _seg(90, 104, 96, 112, 96, 104, 88) + list(np.linspace(88, 120, 60))
+    assert not any(p["nombre"].startswith("Hombro") for p in PT.patterns(_df(path)))
+
+
+def test_temporalidad_baja_sin_patrones():
+    base = [90] * 10 + _seg(90, 104, 96, 112, 96, 104) + list(np.linspace(104, 98.5, 8))
+    assert PT.patterns(_df(base), tf="10m") == [] and PT.patterns(_df(base), tf="30m") == []
+    assert PT.patterns(_df(base), tf="1h")
 
 
 def test_doble_suelo():

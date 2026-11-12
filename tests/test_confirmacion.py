@@ -25,7 +25,7 @@ def test_peso_acotado_y_cuantitativo_domina():
 def test_mezcla_lineal():
     cal = {"peso_patrones": 0.3}
     adx = {"regimen": "tendencia"}
-    a = [{"nombre": "Doble suelo", "categoria": "Reversión", "sesgo": "alcista", "estado": "Confirmado",
+    a = [{"nombre": "Doble suelo", "categoria": "Reversión", "sesgo": "alcista", "estado": "Recién confirmado",
           "volumen": True, "confluencia": True}]
     r = CF.consolidar(0.55, 1, a, cal, 40, adx)
     assert abs(r["confianza_global"] - (0.7 * 55 + 0.3 * 100)) < 0.06
@@ -34,9 +34,16 @@ def test_mezcla_lineal():
     r2 = CF.consolidar(0.55, -1, a, cal, -40, adx)
     assert abs(r2["confianza_global"] - (0.85 * 55 + 0.15 * 0)) < 0.06
     assert r2["alertas"]
-    # sin patrones: la confianza es la cuantitativa salvo el peso hacia 50
+    # sin patrones: 100% cuantitativo
     r3 = CF.consolidar(0.55, 1, [], cal, 40, adx)
-    assert abs(r3["confianza_global"] - (0.7 * 55 + 0.3 * 50)) < 0.06
+    assert abs(r3["confianza_global"] - 55) < 0.06
+    # pendiente de ruptura: no suma todavía, solo como escenario condicionado
+    pend = [{**a[0], "estado": "Pendiente de confirmación"}]
+    r4 = CF.consolidar(0.55, 1, pend, cal, 40, adx)
+    assert abs(r4["confianza_global"] - 55) < 0.06 and r4["aporte_si_confirma"] > 0
+    # temporalidad baja: patrones inhabilitados
+    r5 = CF.consolidar(0.55, 1, a, {"peso_patrones": 0.0, "habilitado": False}, 40, adx)
+    assert abs(r5["confianza_global"] - 55) < 0.06 and not r5["patrones_habilitados"]
 
 
 def test_adx_nivel_clave_23():
@@ -59,6 +66,7 @@ def test_envolvente_en_nivel():
     d.iloc[i, d.columns.get_loc("Low")] = lo + 0.2
     d.iloc[i, d.columns.get_loc("High")] = lo + 2.8
     v = CF._velas(d, [lo], 1.0)
+    assert v and v[0]["condicion"].startswith("Si la siguiente vela cierra")
     assert v and v[0]["nombre"] == "Envolvente alcista" and v[0]["estado"] == "Pendiente de confirmación"
 
 

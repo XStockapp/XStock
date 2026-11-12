@@ -268,8 +268,8 @@ def draw_structure(fig, x, fx, estructura: dict | None, row: int | None = None, 
                            **({"yref": "y" if row in (None, 1) else f"y{row}"}))
     for j, f in enumerate(estructura.get("figuras") or []):
         pts = f["puntos"]
-        if not pts or pts[0][0] < x[0]:
-            continue
+        if not pts or pts[0][0] < x[0] or f.get("estado_meta") not in ("FORMING", "PENDING_BREAKOUT"):
+            continue  # en el gráfico solo figuras en formación o pendientes de ruptura
         col = _PAT_COL.get(f.get("sesgo"), AMBER)
         px_, py_ = [p[0] for p in pts], [p[1] for p in pts]
         if y_snap is not None:  # gráfico de línea: los vértices se apoyan sobre la curva dibujada
@@ -284,7 +284,10 @@ def draw_structure(fig, x, fx, estructura: dict | None, row: int | None = None, 
                                  marker=dict(size=9, color=BG, line=dict(color=col, width=2)),
                                  hovertemplate=f"{f['nombre']}<br>%{{y:$,.2f}}<extra></extra>"), **kw)
         obj = f.get("objetivo")
-        txt = f"{f['nombre']} · {f['estado']}" + (f" · obj. ${obj:,.2f}" if obj else "")
+        act = f.get("activacion")
+        txt = (f"{f['nombre']} · {f['estado']}"
+               + (f" · activa {'<' if f.get('sesgo') == 'bajista' else '>'} ${act:,.2f}" if act and f.get("sesgo") != "neutral" else "")
+               + (f" · obj. ${obj:,.2f}" if obj else ""))
         top = max(py_) if f.get("sesgo") != "alcista" else min(py_)
         fig.add_annotation(x=px_[len(px_) // 2], y=top, text=txt, showarrow=False, yshift=16 if f.get("sesgo") != "alcista" else -16,
                            font=dict(size=11, color=col), bgcolor="rgba(13,17,23,.85)", bordercolor=_rgba_hex(col, .5),

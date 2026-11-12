@@ -170,9 +170,57 @@ def _line_at(i0, v0, i1, v1, i):
     return v0 + (v1 - v0) * (i - i0) / ((i1 - i0) or 1)
 
 
-def patterns(d: pd.DataFrame, lookback: int = 160) -> list[dict]:
-    """Figuras recientes en la ventana: lista de dicts con nombre, sesgo, estado, puntos [(fecha, precio)],
-    líneas [((fecha, precio), (fecha, precio))], objetivo y texto."""
+# Vigencia: solo patrones del movimiento en curso
+VENTANA_ACTIVA = 20      # el patrón debe terminar dentro de las últimas N velas
+RECIEN = 3               # una ruptura con ≤ N velas de antigüedad es «recién confirmada»
+TF_MIN_PATRONES = ("1h", "4h", "1D", "1W", "1M")  # en 10m / 30m no se buscan patrones (ruido)
+
+ESTADOS = {"FORMING": "en formación", "PENDING_BREAKOUT": "pendiente de ruptura", "CONFIRMED": "recién confirmada"}
+
+
+def patrones_habilitados(tf: str | None) -> bool:
+    return tf is None or tf in TF_MIN_PATRONES
+
+
+def _ruptura(close: np.ndarray, desde: int, nivel, abajo: bool) -> int | None:
+    """Primera vela (cierre) que rompe el nivel (función del índice) después de `desde`."""
+    for i in range(desde + 1, len(close)):
+        if (close[i] < nivel(i)) if abajo else (close[i] > nivel(i)):
+            return i
+    return None
+
+
+def _vigencia(close, last_i, brk, objetivo, invalida, abajo: bool, completo: bool = True) -> str | None:
+    """FORMING / PENDING_BREAKOUT / CONFIRMED, o None si caducó (objetivo alcanzado, invalidado o ruptura vieja)."""
+    if brk is None:
+        if invalida is not None and ((close[-1] > invalida) if abajo else (close[-1] < invalida)):
+            return None  # el precio anuló la estructura
+        return "PENDING_BREAKOUT" if completo else "FORMING"
+    if last_i - brk > RECIEN:
+        return None  # ruptura antigua: el movimiento ya está en curso
+    tramo = close[brk:]
+    if objetivo is not None and ((tramo.min() <= objetivo) if abajo else (tramo.max() >= objetivo)):
+        return None  # objetivo alcanzado
+    return "CONFIRMED"
+
+
+def _condicion(nombre, sesgo, act, obj, inv, money=lambda v: f"${v:,.2f}") -> str:
+    rompe = "pierde" if sesgo == "bajista" else "supera"
+    t = (f"Si el precio {rompe} {money(act)} con cierre de vela y expansión de volumen/ADX, se confirma "
+         f"{nombre.lower()}")
+    t += f" y se proyecta {money(obj)}." if obj is not None else "."
+    if inv is not None:
+        t += f" Se invalida con cierre {'sobre' if sesgo == 'bajista' else 'bajo'} {money(inv)}."
+    return t
+
+
+def patterns(d: pd.DataFrame, lookback: int = 160, tf: str | None = None) -> list[dict]:
+    """Patrones VIGENTES del movimiento en curso (terminan en las últimas VENTANA_ACTIVA velas): dicts con nombre,
+    sesgo, estado_meta (FORMING / PENDING_BREAKOUT / CONFIRMED), estado, puntos, lineas, activacion, invalidacion,
+    objetivo, condicion y texto. Los patrones caducados u objetivo alcanzado se descartan. En temporalidades
+    menores a 1H no se buscan patrones."""
+    if not patrones_habilitados(tf):
+        return []
     w = d.tail(lookback)
     if len(w) < 40:
         return []
@@ -184,101 +232,91 @@ def patterns(d: pd.DataFrame, lookback: int = 160) -> list[dict]:
     out = []
     P = lambda p: (idx[p[0]], float(p[1]))
 
-    def reciente(i_last):
-        return i_last >= len(w) * 0.55
+    def vigente(i_fin):
+        return i_fin >= last_i - VENTANA_ACTIVA
 
-    # hombro-cabeza-hombro (5 pivotes) y su inverso
-    for j in range(len(pv) - 5, -1, -1):
-        a, b, c, e, f = pv[j:j + 5]
-        if not reciente(f[0]):
-            break
-        if [p[2] for p in (a, b, c, e, f)] == ["H", "L", "H", "L", "H"]:
-            hs, hd = a[1], f[1]
-            if f[0] - a[0] >= 20 and c[1] - max(b[1], e[1]) >= 1.5 * atr \
-                    and abs(e[1] - b[1]) <= 0.5 * (c[1] - max(b[1], e[1])) and abs(hs - hd) <= 1.5 * atr and c[1] > max(hs, hd) + 0.3 * atr and abs(hs - hd) <= max(1.0 * atr, 0.25 * (c[1] - min(b[1], e[1]))):
-                neck = lambda i: _line_at(b[0], b[1], e[0], e[1], i)
-                brk = next((i for i in range(f[0] + 1, last_i + 1) if close[i] < neck(i)), None)
-                end = brk if brk is not None else min(last_i, f[0] + (f[0] - a[0]) // 2)
-                tgt = neck(end) - (c[1] - neck(c[0]))
-                conf = brk is not None
-                hecho = conf and close[brk:].min() <= tgt
-                out.append({"nombre": "Hombro-cabeza-hombro", "sesgo": "bajista",
-                            "estado": "objetivo alcanzado" if hecho else "confirmada" if conf else "en formación",
-                            "puntos": [P(a), P(b), P(c), P(e), P(f)],
-                            "lineas": [(P(b), (idx[end], neck(end)))], "objetivo": float(tgt),
-                            "texto": "Techo de tendencia: la ruptura de la línea clavicular confirma la figura y "
-                                     "proyecta una caída igual a la altura de la cabeza."})
-                break
-        if [p[2] for p in (a, b, c, e, f)] == ["L", "H", "L", "H", "L"]:
-            hs, hd = a[1], f[1]
-            if f[0] - a[0] >= 20 and min(b[1], e[1]) - c[1] >= 1.5 * atr \
-                    and abs(e[1] - b[1]) <= 0.5 * (min(b[1], e[1]) - c[1]) and abs(hs - hd) <= 1.5 * atr and c[1] < min(hs, hd) - 0.3 * atr and abs(hs - hd) <= max(1.0 * atr, 0.25 * (max(b[1], e[1]) - c[1])):
-                neck = lambda i: _line_at(b[0], b[1], e[0], e[1], i)
-                brk = next((i for i in range(f[0] + 1, last_i + 1) if close[i] > neck(i)), None)
-                end = brk if brk is not None else min(last_i, f[0] + (f[0] - a[0]) // 2)
-                tgt = neck(end) + (neck(c[0]) - c[1])
-                conf = brk is not None
-                hecho = conf and close[brk:].max() >= tgt
-                out.append({"nombre": "Hombro-cabeza-hombro invertido", "sesgo": "alcista",
-                            "estado": "objetivo alcanzado" if hecho else "confirmada" if conf else "en formación",
-                            "puntos": [P(a), P(b), P(c), P(e), P(f)],
-                            "lineas": [(P(b), (idx[end], neck(end)))], "objetivo": float(tgt),
-                            "texto": "Suelo de tendencia: la ruptura al alza de la línea clavicular confirma la "
-                                     "figura y proyecta una subida igual a la profundidad de la cabeza."})
-                break
+    def add(nombre, sesgo, meta, puntos, lineas, act, inv, obj, texto):
+        out.append({"nombre": nombre, "sesgo": sesgo, "estado_meta": meta, "estado": ESTADOS[meta],
+                    "puntos": puntos, "lineas": lineas, "activacion": float(act),
+                    "invalidacion": None if inv is None else float(inv),
+                    "objetivo": None if obj is None else float(obj),
+                    "condicion": _condicion(nombre, sesgo, act, obj, inv), "texto": texto})
 
-    # doble techo / doble suelo (3 pivotes)
-    if len(pv) >= 3:
-        a, b, c = pv[-3:]
-        if reciente(c[0]) and c[0] - a[0] >= 10:
-            if [p[2] for p in (a, b, c)] == ["H", "L", "H"] and abs(a[1] - c[1]) <= 0.6 * atr \
-                    and min(a[1], c[1]) - b[1] >= 2 * atr:
-                conf = close[-1] < b[1]
-                out.append({"nombre": "Doble techo", "sesgo": "bajista", "estado": "confirmada" if conf else "en formación",
-                            "puntos": [P(a), P(b), P(c)],
-                            "lineas": [((idx[b[0]], b[1]), (idx[last_i], b[1]))],
-                            "objetivo": float(b[1] - (max(a[1], c[1]) - b[1])),
-                            "texto": "Dos máximos similares: la pérdida del mínimo intermedio confirma el techo."})
-            if [p[2] for p in (a, b, c)] == ["L", "H", "L"] and abs(a[1] - c[1]) <= 0.6 * atr \
-                    and b[1] - max(a[1], c[1]) >= 2 * atr:
-                conf = close[-1] > b[1]
-                out.append({"nombre": "Doble suelo", "sesgo": "alcista", "estado": "confirmada" if conf else "en formación",
-                            "puntos": [P(a), P(b), P(c)],
-                            "lineas": [((idx[b[0]], b[1]), (idx[last_i], b[1]))],
-                            "objetivo": float(b[1] + (b[1] - min(a[1], c[1]))),
-                            "texto": "Dos mínimos similares: la superación del máximo intermedio confirma el suelo."})
-
-    # triple techo / triple suelo (5 pivotes, tres extremos similares)
-    if len(pv) >= 5 and not out:
+    # hombro-cabeza-hombro (5 pivotes) y su inverso: el hombro derecho debe estar en el tramo actual
+    if len(pv) >= 5 and vigente(pv[-1][0]):
         a, b, c, e, f = pv[-5:]
         tipos = [p[2] for p in (a, b, c, e, f)]
-        if reciente(f[0]) and f[0] - a[0] >= 20:
-            ext3 = [a[1], c[1], f[1]]
-            if tipos == ["H", "L", "H", "L", "H"] and max(ext3) - min(ext3) <= 0.8 * atr \
-                    and min(ext3) - max(b[1], e[1]) >= 1.5 * atr:
-                sop = min(b[1], e[1])
-                conf = close[-1] < sop
-                out.append({"nombre": "Triple techo", "sesgo": "bajista", "estado": "confirmada" if conf else "en formación",
-                            "puntos": [P(a), P(b), P(c), P(e), P(f)],
-                            "lineas": [((idx[b[0]], sop), (idx[last_i], sop))],
-                            "objetivo": float(sop - (max(ext3) - sop)),
-                            "texto": "Tres máximos similares: la resistencia rechaza el precio tres veces; perder el "
-                                     "soporte intermedio confirma la reversión."})
-            if tipos == ["L", "H", "L", "H", "L"] and max(ext3) - min(ext3) <= 0.8 * atr \
-                    and min(b[1], e[1]) - max(ext3) >= 1.5 * atr:
-                res = max(b[1], e[1])
-                conf = close[-1] > res
-                out.append({"nombre": "Triple suelo", "sesgo": "alcista", "estado": "confirmada" if conf else "en formación",
-                            "puntos": [P(a), P(b), P(c), P(e), P(f)],
-                            "lineas": [((idx[b[0]], res), (idx[last_i], res))],
-                            "objetivo": float(res + (res - min(ext3))),
-                            "texto": "Tres mínimos similares: el soporte resiste tres veces; superar la resistencia "
-                                     "intermedia confirma la reversión."})
+        for bajista in (True, False):
+            if tipos != (["H", "L", "H", "L", "H"] if bajista else ["L", "H", "L", "H", "L"]):
+                continue
+            sg = 1 if bajista else -1
+            alto = sg * (c[1] - (max(b[1], e[1]) if bajista else min(b[1], e[1])))
+            if not (f[0] - a[0] >= 20 and alto >= 1.5 * atr and abs(e[1] - b[1]) <= 0.5 * alto
+                    and abs(a[1] - f[1]) <= 1.5 * atr and sg * (c[1] - (max(a[1], f[1]) if bajista else min(a[1], f[1]))) > 0.3 * atr):
+                continue
+            neck = lambda i, b=b, e=e: _line_at(b[0], b[1], e[0], e[1], i)
+            brk = _ruptura(close, f[0], neck, abajo=bajista)
+            tgt = neck(brk if brk is not None else last_i) - sg * alto
+            meta = _vigencia(close, last_i, brk, tgt, f[1], abajo=bajista)
+            if meta:
+                add("Hombro-cabeza-hombro" if bajista else "Hombro-cabeza-hombro invertido",
+                    "bajista" if bajista else "alcista", meta, [P(a), P(b), P(c), P(e), P(f)],
+                    [(P(b), (idx[last_i], neck(last_i)))], neck(last_i), f[1], tgt,
+                    "Techo de tendencia: la ruptura de la línea clavicular confirma la figura y proyecta una caída "
+                    "igual a la altura de la cabeza." if bajista else
+                    "Suelo de tendencia: la ruptura al alza de la línea clavicular confirma la figura y proyecta una "
+                    "subida igual a la profundidad de la cabeza.")
 
-    # triángulos (últimos 2 máximos y 2 mínimos)
+    # triple techo / triple suelo
+    if not out and len(pv) >= 5 and vigente(pv[-1][0]):
+        a, b, c, e, f = pv[-5:]
+        tipos = [p[2] for p in (a, b, c, e, f)]
+        ext3 = [a[1], c[1], f[1]]
+        for bajista in (True, False):
+            if tipos != (["H", "L", "H", "L", "H"] if bajista else ["L", "H", "L", "H", "L"]) or f[0] - a[0] < 20:
+                continue
+            if max(ext3) - min(ext3) > 0.8 * atr:
+                continue
+            lvl = min(b[1], e[1]) if bajista else max(b[1], e[1])
+            alt = (min(ext3) - lvl) if bajista else (lvl - max(ext3))
+            if alt < 1.5 * atr:
+                continue
+            brk = _ruptura(close, f[0], lambda i: lvl, abajo=bajista)
+            tgt = lvl - alt if bajista else lvl + alt
+            inv = max(ext3) if bajista else min(ext3)
+            meta = _vigencia(close, last_i, brk, tgt, inv, abajo=bajista)
+            if meta:
+                add("Triple techo" if bajista else "Triple suelo", "bajista" if bajista else "alcista", meta,
+                    [P(a), P(b), P(c), P(e), P(f)], [((idx[b[0]], lvl), (idx[last_i], lvl))], lvl, inv, tgt,
+                    "Tres extremos similares: el nivel rechaza el precio tres veces; la ruptura del nivel intermedio "
+                    "confirma la reversión.")
+
+    # doble techo / doble suelo
+    if not out and len(pv) >= 3 and vigente(pv[-1][0]):
+        a, b, c = pv[-3:]
+        tipos = [p[2] for p in (a, b, c)]
+        if c[0] - a[0] >= 10 and abs(a[1] - c[1]) <= 0.6 * atr:
+            for bajista in (True, False):
+                if tipos != (["H", "L", "H"] if bajista else ["L", "H", "L"]):
+                    continue
+                alt = (min(a[1], c[1]) - b[1]) if bajista else (b[1] - max(a[1], c[1]))
+                if alt < 2 * atr:
+                    continue
+                lvl = b[1]
+                brk = _ruptura(close, c[0], lambda i: lvl, abajo=bajista)
+                tgt = lvl - alt if bajista else lvl + alt
+                inv = max(a[1], c[1]) if bajista else min(a[1], c[1])
+                meta = _vigencia(close, last_i, brk, tgt, inv, abajo=bajista)
+                if meta:
+                    add("Doble techo" if bajista else "Doble suelo", "bajista" if bajista else "alcista", meta,
+                        [P(a), P(b), P(c)], [((idx[b[0]], lvl), (idx[last_i], lvl))], lvl, inv, tgt,
+                        "Dos máximos similares: la pérdida del mínimo intermedio confirma el techo." if bajista else
+                        "Dos mínimos similares: la superación del máximo intermedio confirma el suelo.")
+
+    # triángulos y cuñas (últimos 2 máximos y 2 mínimos; el último pivote en el tramo actual)
     hs_ = [p for p in pv if p[2] == "H"][-2:]
     ls_ = [p for p in pv if p[2] == "L"][-2:]
-    if len(hs_) == 2 and len(ls_) == 2 and reciente(max(hs_[-1][0], ls_[-1][0])) and not out:
+    if not out and len(hs_) == 2 and len(ls_) == 2 and vigente(max(hs_[-1][0], ls_[-1][0])):
         dh, dl = hs_[1][1] - hs_[0][1], ls_[1][1] - ls_[0][1]
         flat = 0.5 * atr
         nombre = None
@@ -288,50 +326,74 @@ def patterns(d: pd.DataFrame, lookback: int = 160) -> list[dict]:
             nombre, sesgo = "Triángulo ascendente", "alcista"
         elif dh < -flat and abs(dl) <= flat:
             nombre, sesgo = "Triángulo descendente", "bajista"
-        elif dh > flat and dl > flat and dl > dh * 1.15:  # ambas suben y convergen
+        elif dh > flat and dl > flat and dl > dh * 1.15:
             nombre, sesgo = "Cuña ascendente", "bajista"
-        elif dh < -flat and dl < -flat and dh < dl * 1.15:  # ambas bajan y convergen
+        elif dh < -flat and dl < -flat and dh < dl * 1.15:
             nombre, sesgo = "Cuña descendente", "alcista"
         if nombre:
             up = lambda i: _line_at(hs_[0][0], hs_[0][1], hs_[1][0], hs_[1][1], i)
             dn = lambda i: _line_at(ls_[0][0], ls_[0][1], ls_[1][0], ls_[1][1], i)
-            est = ("ruptura alcista" if close[-1] > up(last_i) else "ruptura bajista" if close[-1] < dn(last_i)
-                   else "en formación")
+            ini = max(hs_[1][0], ls_[1][0])
             alt = hs_[0][1] - ls_[0][1]
-            tgt = (up(last_i) + alt) if est == "ruptura alcista" else (dn(last_i) - alt) if est == "ruptura bajista" else None
-            pts = sorted(hs_ + ls_, key=lambda p: p[0])
-            cuna = nombre.startswith("Cuña")
-            out.append({"nombre": nombre, "sesgo": sesgo, "estado": est, "puntos": [P(p) for p in pts],
-                        "lineas": [(P(hs_[0]), (idx[last_i], up(last_i))), (P(ls_[0]), (idx[last_i], dn(last_i)))],
-                        "objetivo": None if tgt is None else float(tgt),
-                        "texto": ("Dos líneas que se inclinan en el mismo sentido y convergen: el impulso se agota; "
-                                  "suele romper en contra de la inclinación." if cuna else
-                                  "Compresión del precio entre dos líneas convergentes: la ruptura con volumen marca la "
-                                  "dirección; el objetivo es la altura inicial del triángulo.")})
+            b_up = _ruptura(close, ini, up, abajo=False)
+            b_dn = _ruptura(close, ini, dn, abajo=True)
+            if sesgo == "neutral":  # la dirección la decide la primera ruptura
+                if b_up is not None and (b_dn is None or b_up < b_dn):
+                    sesgo = "alcista"
+                elif b_dn is not None:
+                    sesgo = "bajista"
+            bajista = sesgo == "bajista"
+            brk = (b_dn if bajista else b_up) if sesgo != "neutral" else None
+            contra = b_up if bajista else b_dn
+            if sesgo != "neutral" and contra is not None and (brk is None or contra < brk):
+                nombre = None  # rompió en contra: la figura queda anulada
+            if nombre:
+                act = (dn(last_i) if bajista else up(last_i)) if sesgo != "neutral" else up(last_i)
+                inv = (up(last_i) if bajista else dn(last_i)) if sesgo != "neutral" else dn(last_i)
+                tgt = None if sesgo == "neutral" else (act - alt if bajista else act + alt)
+                meta = _vigencia(close, last_i, brk, tgt, None, abajo=bajista, completo=False)
+                if meta:
+                    cuna = nombre.startswith("Cuña")
+                    add(nombre, sesgo, meta, [P(p) for p in sorted(hs_ + ls_, key=lambda p: p[0])],
+                        [(P(hs_[0]), (idx[last_i], up(last_i))), (P(ls_[0]), (idx[last_i], dn(last_i)))],
+                        act, inv, tgt,
+                        "Dos líneas que se inclinan en el mismo sentido y convergen: el impulso se agota; suele romper "
+                        "en contra de la inclinación." if cuna else
+                        "Compresión del precio entre dos líneas convergentes: la ruptura con volumen marca la "
+                        "dirección; el objetivo es la altura inicial del triángulo.")
+                    if sesgo == "neutral":
+                        out[-1]["condicion"] = (f"Si el precio supera ${up(last_i):,.2f} o pierde ${dn(last_i):,.2f} "
+                                                f"con cierre de vela y expansión de volumen/ADX, la ruptura define la "
+                                                f"dirección y proyecta ${alt:,.2f} desde el punto de ruptura.")
 
-    # bandera / banderín: impulso fuerte (≥ 4 ATR en ≤ 12 velas) y consolidación corta y estrecha en contra
+    # bandera: impulso fuerte (≥ 4 ATR en ≤ 12 velas) y consolidación corta y estrecha que llega al precio actual
     if not out and len(w) >= 30:
         for L in range(5, 16):
-            j = last_i - L  # fin del impulso
+            j = last_i - L
             k0 = max(0, j - 12)
             seg = close[k0:j + 1]
             imp = close[j] - seg.min() if close[j] - seg.min() >= seg.max() - close[j] else close[j] - seg.max()
             if abs(imp) < 4 * atr:
                 continue
-            cons = w.iloc[j + 1:]
+            cons = w.iloc[j + 1:last_i]  # la vela actual decide la ruptura
+            if len(cons) < 3:
+                continue
             rng = float(cons["High"].max() - cons["Low"].min())
             pend = float(np.polyfit(np.arange(len(cons)), cons["Close"].to_numpy(float), 1)[0]) * len(cons)
             if rng <= 0.5 * abs(imp) and pend * np.sign(imp) <= 0.15 * abs(imp):
                 alc = imp > 0
                 hi_c, lo_c = float(cons["High"].max()), float(cons["Low"].min())
-                brk = close[-1] > hi_c if alc else close[-1] < lo_c
-                i0 = int(np.argmin(seg) if alc else np.argmax(seg)) + k0
-                out.append({"nombre": "Bandera alcista" if alc else "Bandera bajista", "sesgo": "alcista" if alc else "bajista",
-                            "estado": "confirmada" if brk else "en formación",
-                            "puntos": [P((i0, close[i0])), P((j, close[j])), P((last_i, close[last_i]))],
-                            "lineas": [((idx[j + 1], hi_c), (idx[last_i], hi_c)), ((idx[j + 1], lo_c), (idx[last_i], lo_c))],
-                            "objetivo": float((hi_c if alc else lo_c) + imp),
-                            "texto": "Pausa estrecha tras un impulso fuerte: la ruptura en el sentido del impulso "
-                                     "proyecta un recorrido similar al mástil."})
+                act, inv = (hi_c, lo_c) if alc else (lo_c, hi_c)
+                brk = _ruptura(close, j + len(cons), lambda i: act, abajo=not alc)
+                tgt = act + imp
+                meta = _vigencia(close, last_i, brk, tgt, inv, abajo=not alc, completo=False)
+                if meta:
+                    i0 = int(np.argmin(seg) if alc else np.argmax(seg)) + k0
+                    add("Bandera alcista" if alc else "Bandera bajista", "alcista" if alc else "bajista", meta,
+                        [P((i0, close[i0])), P((j, close[j])), P((last_i, close[last_i]))],
+                        [((idx[j + 1], hi_c), (idx[last_i], hi_c)), ((idx[j + 1], lo_c), (idx[last_i], lo_c))],
+                        act, inv, tgt,
+                        "Pausa estrecha tras un impulso fuerte: la ruptura en el sentido del impulso proyecta un "
+                        "recorrido similar al mástil.")
                 break
     return out[:2]

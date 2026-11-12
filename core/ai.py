@@ -53,7 +53,15 @@ Reglas de análisis:
   viene calibrado en "calibracion.peso_patrones" según su acierto histórico en este activo; usa
   "consolidado.confianza_global" como confianza (ajústala como máximo ±5 con justificación). Un patrón que contradice
   el escenario es una alerta, nunca la base. Indica el estado de cada patrón (En formación / Pendiente de
-  confirmación / Confirmado — con cierre de vela) y si tiene volumen y confluencia con VRVP/ADX.
+  confirmación / Recién confirmado) y si tiene volumen y confluencia con VRVP/ADX.
+- Vigencia de patrones: solo existen los de "metodologia_cuantitativa.apoyos" (ya filtrados: del movimiento en curso,
+  últimas 20 velas, sin caducados ni objetivos alcanzados). NO menciones figuras de impulsos anteriores aunque las
+  veas en los datos. En temporalidades menores a 1H ("consolidado.patrones_habilitados" = false) escribe
+  "No aplica por temporalidad baja" y da 100% del peso al motor cuantitativo; si la lista está vacía, "Ninguno activo".
+- Un patrón en formación o pendiente NUNCA es operable por su geometría: formúlalo siempre como escenario
+  condicionado («Si el precio rompe [X] con cierre de vela y expansión de volumen/ADX, se confirma y proyecta [Y]»)
+  usando su "condicion", "activacion", "invalidacion" y "objetivo", y usa "consolidado.aporte_si_confirma" como el
+  aporte de confianza que tendría al confirmarse. Solo los recién confirmados suman a la confianza actual.
 - Tono objetivo y probabilístico: describe escenarios y niveles; evita lenguaje especulativo.
 - Veredictos (los mismos del escáner): "COMPRA" = escenario y entrada válidos ahora; "REBOTE" = valor esperado
   favorable pero la entrada espera el pullback/rebote al soporte (orden límite) o la señal va contra la tendencia;
@@ -84,7 +92,9 @@ Responde SOLO con un JSON válido con esta estructura exacta:
    "resumen": "2-3 frases: ADX(14,14,23), momentum/MACD, medias móviles y VRVP"},
  "patrones_apoyo": [{"nombre": "...", "categoria": "Continuación|Reversión|Liquidez / estructura|Vela de confirmación",
    "estado": "En formación|Pendiente de confirmación|Confirmado"}],
- "aporte_patron": "si respalda o contradice el escenario base y cuántos puntos de confianza aporta",
+ "aporte_patron": "si respalda o contradice el escenario base y cuántos puntos de confianza aporta hoy",
+ "escenario_condicionado": {"condicion_activacion": "nivel exacto a romper con cierre de vela y volumen, o vacío",
+   "aporte_confianza": "puntos adicionales de confianza una vez cumplida la condición, o vacío"},
  "confianza_global": {"nivel": "Baja" | "Media" | "Alta", "porcentaje": 0-100},
  "niveles_criticos": {"activacion": "precio o condición técnica", "invalidacion": número,
    "proyeccion": "objetivo por métricas, VRVP y/o proyección del patrón"},
@@ -204,20 +214,36 @@ def _metodo_rb(payload: dict, plan: dict) -> dict:
     adv = list(con.get("alertas") or [])
     if adx.get("regimen") == "rango":
         adv.append("ADX bajo el nivel clave: riesgo de señales falsas de tendencia y rupturas sin continuidad.")
+    if not con.get("patrones_habilitados", True):
+        adv.append("Temporalidad menor a 1H: no apta para chartismo (ruido de alta frecuencia).")
+    if any(a["estado"] != "Recién confirmado" for a in aps):
+        adv.append("Patrón sin ruptura confirmada: riesgo de falsa ruptura; esperar cierre de vela con volumen.")
     if any(not a.get("volumen") for a in aps):
         adv.append("Algún patrón carece de respaldo de volumen: menor fiabilidad.")
     if any(a["nombre"].startswith(("Spring", "Upthrust")) for a in aps):
         adv.append("Barrido de liquidez reciente: posible trampa si el precio no sostiene el cierre.")
     tgt = next((a.get("objetivo") for a in aps if a.get("objetivo")), None)
+    act = next((a.get("activacion") for a in aps if a.get("activacion") and a["estado"] != "Recién confirmado"), None)
     return {
         "diagnostico_cuantitativo": {"escenario": con.get("escenario_base"), "resumen": res},
         "patrones_apoyo": [{"nombre": a["nombre"], "categoria": a["categoria"], "estado": a["estado"]} for a in aps],
-        "aporte_patron": ("Ninguno relevante: la confianza depende solo del motor cuantitativo." if not aps else
+        "aporte_patron": ("No aplica por temporalidad baja (menor a 1H): el motor cuantitativo pesa 100%."
+                          if not con.get("patrones_habilitados", True) else
+                          "Ninguno activo en el movimiento actual: la confianza depende solo del motor cuantitativo."
+                          if not aps else
+                          "Patrones aún sin confirmar: no suman confianza hasta su ruptura (ver escenario condicionado)."
+                          if not any(a["estado"] == "Recién confirmado" for a in aps) else
                           f"{'Respaldan' if ap > 0 else 'Contradicen' if ap < 0 else 'Neutros respecto a'} el escenario "
                           f"cuantitativo: {ap:+.1f} puntos (peso de patrones {cal.get('peso_patrones', 0) * 100:.0f}% "
                           f"calibrado con su acierto histórico de {cal.get('acierto_patrones', 0) * 100:.0f}%)."),
+        "escenario_condicionado": {
+            "condicion_activacion": " ".join(a["condicion"] for a in aps if a.get("condicion")
+                                             and a["estado"] != "Recién confirmado")[:600],
+            "aporte_confianza": ("" if con.get("aporte_si_confirma") is None else
+                                 f"{con['aporte_si_confirma']:+.1f} puntos de confianza si se cumple la condición")},
         "confianza_global": {"nivel": con.get("nivel"), "porcentaje": con.get("confianza_global")},
-        "niveles_criticos": {"activacion": (plan.get("estado") or f"Entrada {plan['entrada']:.2f}"),
+        "niveles_criticos": {"activacion": (plan.get("estado") or f"Entrada {plan['entrada']:.2f}")
+                                           + (f" · confirmación del patrón en {act:.2f}" if act else ""),
                              "invalidacion": plan["stop"],
                              "proyeccion": f"{plan['objetivo_1']:.2f} / {plan['objetivo_2']:.2f}"
                                            + (f" · patrón {tgt:.2f}" if tgt else "")},
