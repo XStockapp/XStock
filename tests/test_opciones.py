@@ -77,3 +77,15 @@ def test_simulador_escenarios():
     e = OP.evaluar(OP.contrato(df, exps[2], a["strike"], "CALL"), spot, df, w, gx)
     assert abs(e["breakeven"] - (a["strike"] + e["prima"])) < 1e-9 and 0 <= e["p_toque"] <= 100
     assert isinstance(OP.riesgos(e, "Bajista", {"regimen": "rango"}, -1, None, spot), list)
+
+
+def test_pnl_trayectoria():
+    # llegar antes al objetivo deja más valor temporal: utilidad decreciente con los días
+    r1 = OP.pnl_trayectoria(270, "CALL", 0.3, 6.0, 30, 265, 280, 2)
+    r2 = OP.pnl_trayectoria(270, "CALL", 0.3, 6.0, 30, 265, 280, 25)
+    assert r1["utilidad_usd"] > r2["utilidad_usd"] and r2["quema_theta_usd"] > r1["quema_theta_usd"] > 0
+    # al vencimiento: valor intrínseco
+    r3 = OP.pnl_trayectoria(270, "CALL", 0.3, 6.0, 30, 265, 280, 30)
+    assert abs(r3["valor_objetivo"] - 10) < 1e-9 and abs(r3["utilidad_usd"] - 400) < 1e-6
+    p = OP.pnl_trayectoria(260, "PUT", 0.3, 5.0, 20, 265, 250, 30)  # días > DTE se acota
+    assert abs(p["valor_objetivo"] - 10) < 1e-9

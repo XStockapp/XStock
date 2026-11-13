@@ -388,7 +388,30 @@ with st.expander("Simulador de decisión · Auto / Manual", expanded=True, icon=
                         "P(toca objetivo) × rentabilidad en el objetivo + (1 − P) × resultado sin movimiento − medio spread, "
                         "con Black-Scholes a la IV actual en un horizonte de min(días/2, 10).</div></div>",
                         unsafe_allow_html=True)
-    else:
+    # ---- gráfico P&L dinámico (time-to-target): opción del simulador vs óptima del motor
+    _u = (SIMR or {}).get("res")
+    _cs = []
+    if _u:
+        _cs.append(("Tu selección · " + _u["contrato"] + " · " + _u["vencimiento"], _u, "#F0B429"))
+    if opt_same and not (_u and _u["contrato"] == opt_same["contrato"] and _u["exp"] == opt_same["exp"]):
+        _cs.append(("Óptima del motor · " + opt_same["contrato"] + " · " + opt_same["vencimiento"], opt_same, "#7C9CFF"))
+    if _cs:
+        from core import pnl_widget as PW
+        _obj = (_u or opt_same)["objetivo"]
+        _ks = [c[1]["strike"] for c in _cs] + [_obj, spot]
+        _lo, _hi = min(min(_ks), spot * 0.9), max(max(_ks), spot * 1.1)
+        _pad = (_hi - _lo) * 0.08
+        _niv = ([{"v": w["strike"], "t": "C-wall", "c": RED} for w in WALLS["call_walls"]]
+                + [{"v": w["strike"], "t": "P-wall", "c": GREEN} for w in WALLS["put_walls"]])
+        st.markdown("<div class='muted small' style='margin:6px 0 2px'><b>P&amp;L dinámico por trayectoria</b> · "
+                    "elige en cuántos días llega el precio al objetivo (deslizador, botones o arrastrando el punto)</div>",
+                    unsafe_allow_html=True)
+        components.html(PW.html(spot, _obj,
+                                [{"nombre": n, "tipo": c["tipo"], "strike": c["strike"], "iv": c["iv"] / 100,
+                                  "prima": c["prima"], "dte": c["dte"], "color": colr_} for n, c, colr_ in _cs],
+                                int(round((_u or opt_same)["horizonte_dias"])), (_lo - _pad, _hi + _pad), _niv),
+                        height=640, scrolling=False)
+    if not SIMR:
         st.markdown("<div class='muted small'>Ambos campos en <b>Auto</b> muestran la combinación óptima del motor. Pasa la "
                     "fecha o el strike a <b>Manual</b> y pulsa <b>Analizar Opción</b>: con la fecha manual XStock busca el "
                     "mejor strike; con el strike manual, el mejor vencimiento.</div>", unsafe_allow_html=True)

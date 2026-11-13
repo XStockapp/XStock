@@ -530,3 +530,22 @@ def riesgos(e: dict, sesgo: str, adx: dict, gex_total: float, flip: float | None
         out.append(f"Si el precio no se mueve en {e['horizonte_dias']:.0f} días, la prima perdería "
                    f"≈ {abs(e['roi_sin_movimiento']):.0f} %.")
     return out
+
+
+# ------------------------------------------------------------------ P&L por trayectoria (time-to-target)
+def pnl_trayectoria(strike: float, tipo: str, iv: float, prima: float, dte: int, spot: float, t_px: float,
+                    dias: float) -> dict:
+    """P&L de 1 contrato si el subyacente llega a `t_px` en `dias` (revaluación Black-Scholes con la IV actual).
+    Descompone el resultado en efecto precio (≈ Δ × ΔS) y quema de theta (≈ Θ × días)."""
+    call = tipo.upper() == "CALL"
+    dias = max(0.0, min(float(dias), float(dte)))
+    resto = max(dte - dias, 0.0) / 365
+    v_obj = bs_price(t_px, strike, resto, iv, call)
+    v_spot_hoy = bs_price(spot, strike, dte / 365, iv, call)
+    v_spot_t = bs_price(spot, strike, resto, iv, call)
+    g = bs_greeks(spot, strike, dte / 365, iv, call)
+    return {"valor_objetivo": v_obj, "utilidad_usd": (v_obj - prima) * MULT,
+            "retorno_pct": (v_obj / prima - 1) * 100 if prima > 0 else None,
+            "quema_theta_usd": (v_spot_hoy - v_spot_t) * MULT,
+            "aprox_delta_usd": g["delta"] * (t_px - spot) * MULT,
+            "aprox_theta_usd": g["theta"] * dias * MULT}
