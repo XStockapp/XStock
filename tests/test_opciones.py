@@ -60,3 +60,20 @@ def test_destacado_y_validacion():
                                "strike": h["strike"], "rationale": "x"}, todos)
     assert ok and ok["strike"] == h["strike"]
     assert ai.validar_destacado({"target_expiration_tab": "ENE 1 '30", "option_type": "CALL", "strike": 1}, todos) is None
+
+
+def test_simulador_escenarios():
+    df, spot = _cadena(), 267.73
+    w, gx = OP.muros(df), OP.gex_por_strike(df, spot)
+    exps = sorted(df["exp"].unique())
+    a = OP.mejor_strike(df, spot, exps[2], "CALL", w, gx)
+    assert a and a["exp"] == exps[2] and a["tipo"] == "CALL"
+    # el elegido tiene el mayor valor esperado de su vencimiento
+    d = df[(df.exp == exps[2]) & (df.type == "call")]
+    otros = [OP.evaluar(r, spot, df, w, gx) for _, r in d.iterrows()]
+    assert all(a["ve"] >= o["ve"] - 1e-9 for o in otros if o and o["delta"] and 0.15 <= abs(o["delta"]) <= 0.75)
+    b = OP.mejor_vencimiento(df, spot, a["strike"], "CALL", w, gx)
+    assert b and b["strike"] == a["strike"]
+    e = OP.evaluar(OP.contrato(df, exps[2], a["strike"], "CALL"), spot, df, w, gx)
+    assert abs(e["breakeven"] - (a["strike"] + e["prima"])) < 1e-9 and 0 <= e["p_toque"] <= 100
+    assert isinstance(OP.riesgos(e, "Bajista", {"regimen": "rango"}, -1, None, spot), list)

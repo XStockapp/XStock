@@ -348,8 +348,10 @@ def resumen(df: pd.DataFrame, spot: float) -> dict:
     }
 
 
-def candidatos(df: pd.DataFrame, spot: float, sesgo: str, n: int = 4) -> list[dict]:
-    """Contratos líquidos para el sesgo dado: delta 0.30–0.60, 14–45 días (o el mayor disponible), spread ≤ 15 %."""
+def candidatos(df: pd.DataFrame, spot: float, sesgo: str, n: int = 4, walls: dict | None = None,
+               gex: pd.Series | None = None) -> list[dict]:
+    """Contratos líquidos para el sesgo: delta 0.30–0.60, 14–45 días (o el mayor disponible), spread ≤ 15 %,
+    ordenados por valor esperado (ver `evaluar`) o, sin muros, por cercanía a delta 0.45 y liquidez."""
     tp = "call" if sesgo == "alcista" else "put"
     d = df[(df["type"] == tp) & (df["bid"] > 0) & (df["ask"] > 0)].copy()
     if d.empty:
@@ -362,12 +364,17 @@ def candidatos(df: pd.DataFrame, spot: float, sesgo: str, n: int = 4) -> list[di
         return []
     liq = np.log1p(d["oi"].fillna(0) + d["volume"])
     d["score"] = -abs(d["ad"] - 0.45) * 4 + liq / max(liq.max(), 1) - d["spread"] * 2 - abs(d["dte"] - 30) / 60
-    d = d.sort_values("score", ascending=False).head(n)
+    if walls is not None:
+        d["ve"] = [(evaluar(r, spot, df, walls, gex) or {}).get("ve", -1e9) for _, r in d.iterrows()]
+        d = d.sort_values("ve", ascending=False).head(n)
+    else:
+        d = d.sort_values("score", ascending=False).head(n)
     return [{"target_expiration_tab": etiqueta_venc(r["exp"]), "exp": r["exp"].isoformat(), "dte": int(r["dte"]),
              "option_type": tp.upper(), "strike": float(r["strike"]), "bid": float(r["bid"]), "ask": float(r["ask"]),
              "delta": round(float(r["delta"]), 3), "iv": round(float(r["iv"]) * 100, 1) if pd.notna(r["iv"]) else None,
              "open_interest": None if pd.isna(r["oi"]) else int(r["oi"]), "volume": int(r["volume"]),
-             "spread_pct": round(float(r["spread"]) * 100, 1)} for _, r in d.iterrows()]
+             "spread_pct": round(float(r["spread"]) * 100, 1),
+             **({"valor_esperado_pct": round(float(r["ve"]), 1)} if "ve" in d else {})} for _, r in d.iterrows()]
 
 
 def confluencias(walls: dict, vp: dict | None, spot: float, tol: float = 0.01) -> list[dict]:
@@ -403,3 +410,123 @@ def destacar(cands: dict, escenario: str, adx: dict, walls: dict, conf: list, sp
         partes.append("confluencia " + ", ".join(f"{x['tipo'].lower()} {x['strike']:g} = {x['nodo_vrvp']}" for x in conf[:2]))
     c.update({"action_trigger": "pulse_glow_animation", "rationale": "; ".join(partes) + "."})
     return c
+
+
+# ------------------------------------------------------------------ simulador de decisión
+def _p_toque(s, t_price, iv, dias):
+    """Probabilidad aproximada de que el precio toque `t_price` en `dias` (principio de reflexión, sin deriva)."""
+    if dias <= 0 or iv <= 0 or s <= 0:
+        return 0.0
+    z = abs(math.log(t_price / s)) / (iv * math.sqrt(dias / 365))
+    return float(min(1.0, 2 * (1 - _ncdf(z))))
+
+
+def objetivo(spot, tipo: str, em: float | None, walls: dict) -> float:
+    """Precio objetivo del escenario: el primer muro a favor que esté al menos a medio movimiento esperado
+    (un muro pegado al precio no es un objetivo útil), acotado por el movimiento esperado del vencimiento."""
+    em = em or spot * 0.03
+    if tipo == "CALL":
+        ws = sorted(w["strike"] for w in walls.get("call_walls", []) if w["strike"] >= spot + 0.5 * em)
+        return min(ws[0], spot + em) if ws else spot + em
+    ws = sorted((w["strike"] for w in walls.get("put_walls", []) if w["strike"] <= spot - 0.5 * em), reverse=True)
+    return max(ws[0], spot - em) if ws else spot - em
+
+
+def evaluar(r: pd.Series, spot: float, df: pd.DataFrame, walls: dict, gex: pd.Series | None = None) -> dict | None:
+    """Métricas de rentabilidad y riesgo de un contrato.
+    Horizonte h = min(DTE/2, 10) días. Objetivo T = muro a favor acotado por el movimiento esperado del vencimiento.
+    ROI_T = valor BS en T tras h días / prima − 1 · ROI_0 = valor si el precio no se mueve (coste de theta).
+    VE (valor esperado) = P(toca T) · ROI_T + (1 − P) · ROI_0 − spread/2."""
+    call = r["type"] == "call"
+    tipo = "CALL" if call else "PUT"
+    prima = r["mid"]
+    iv = r["iv"]
+    if not (pd.notna(prima) and prima > 0 and pd.notna(iv) and iv > 0):
+        return None
+    dte = max(int(r["dte"]), 1)
+    h = max(1.0, min(dte / 2, 10))
+    resto = max(dte - h, 0.25) / 365
+    em = expected_move(df[df["exp"] == r["exp"]], spot)
+    t_px = objetivo(spot, tipo, em, walls)
+    v_t = bs_price(t_px, r["strike"], resto, iv, call)
+    v_0 = bs_price(spot, r["strike"], resto, iv, call)
+    roi_t, roi_0 = v_t / prima - 1, v_0 / prima - 1
+    p = _p_toque(spot, t_px, iv, h)
+    spread = (r["ask"] - r["bid"]) / prima if pd.notna(r["bid"]) and pd.notna(r["ask"]) and r["bid"] > 0 else 0.25
+    ve = p * roi_t + (1 - p) * roi_0 - spread / 2
+    be = r["strike"] + prima if call else r["strike"] - prima
+    cw = sorted(w["strike"] for w in walls.get("call_walls", []))
+    pw = sorted(w["strike"] for w in walls.get("put_walls", []))
+    return {"contrato": f"{tipo} {r['strike']:g}", "tipo": tipo, "strike": float(r["strike"]), "exp": r["exp"],
+            "vencimiento": etiqueta_venc(r["exp"]), "dte": dte, "prima": float(prima),
+            "bid": None if pd.isna(r["bid"]) else float(r["bid"]), "ask": None if pd.isna(r["ask"]) else float(r["ask"]),
+            "breakeven": float(be), "dist_breakeven_pct": float((be / spot - 1) * 100),
+            "mov_esperado": em, "dentro_mov_esperado": None if not em else abs(be - spot) <= em,
+            "delta": None if pd.isna(r["delta"]) else float(r["delta"]), "iv": float(iv) * 100,
+            "theta_dia_pct": None if pd.isna(r["theta"]) else float(abs(r["theta"]) / prima * 100),
+            "objetivo": float(t_px), "horizonte_dias": h, "roi_objetivo": float(roi_t * 100),
+            "roi_sin_movimiento": float(roi_0 * 100), "p_toque": float(p * 100), "ve": float(ve * 100),
+            "spread_pct": float(spread * 100), "oi": None if pd.isna(r["oi"]) else int(r["oi"]),
+            "volumen": int(r["volume"] or 0),
+            "gex_strike": None if gex is None or r["strike"] not in gex.index else float(gex.loc[r["strike"]]),
+            "sobre_muro_calls": bool(call and cw and r["strike"] > max(cw)),
+            "bajo_muro_puts": bool((not call) and pw and r["strike"] < min(pw))}
+
+
+def _liquido(d: pd.DataFrame) -> pd.DataFrame:
+    return d[(d["bid"] > 0) & (d["ask"] > 0) & ((d["oi"].fillna(0) > 0) | (d["volume"] > 0))]
+
+
+def mejor_strike(df, spot, exp, tipo: str, walls, gex=None) -> dict | None:
+    """Escenario A (fecha manual, strike auto): el strike de mayor valor esperado en ese vencimiento."""
+    d = _liquido(df[(df["exp"] == exp) & (df["type"] == tipo.lower())])
+    evs = [e for _, r in d.iterrows() if (e := evaluar(r, spot, df, walls, gex)) and e["delta"] is not None
+           and 0.15 <= abs(e["delta"]) <= 0.75]
+    return max(evs, key=lambda e: e["ve"]) if evs else None
+
+
+def mejor_vencimiento(df, spot, strike, tipo: str, walls, gex=None) -> dict | None:
+    """Escenario B (strike manual, fecha auto): el vencimiento de mayor valor esperado para ese strike
+    (equilibrio entre el desgaste por theta, la IV y el movimiento esperado de cada fecha)."""
+    d = _liquido(df[(df["strike"] == strike) & (df["type"] == tipo.lower()) & (df["dte"] >= 2)])
+    evs = [e for _, r in d.iterrows() if (e := evaluar(r, spot, df, walls, gex))]
+    return max(evs, key=lambda e: e["ve"]) if evs else None
+
+
+def contrato(df, exp, strike, tipo: str) -> pd.Series | None:
+    d = df[(df["exp"] == exp) & (df["strike"] == strike) & (df["type"] == tipo.lower())]
+    return None if d.empty else d.iloc[0]
+
+
+def riesgos(e: dict, sesgo: str, adx: dict, gex_total: float, flip: float | None, spot: float) -> list[str]:
+    """Cuidados a tener en cuenta para un contrato evaluado."""
+    out = []
+    if (e["tipo"] == "CALL" and sesgo == "Bajista") or (e["tipo"] == "PUT" and sesgo == "Alcista"):
+        out.append(f"Va en contra del escenario cuantitativo ({sesgo.lower()}): el motor principal (70 %) no lo respalda.")
+    if sesgo == "Neutral":
+        out.append("Escenario cuantitativo neutral: una opción direccional depende de una ruptura aún no confirmada.")
+    if e["dentro_mov_esperado"] is False:
+        out.append(f"El breakeven ({e['breakeven']:,.2f}) está fuera del movimiento esperado del vencimiento: "
+                   "el mercado no descuenta un recorrido suficiente.")
+    if e["theta_dia_pct"] and e["theta_dia_pct"] >= 3:
+        out.append(f"Desgaste temporal alto: la prima pierde ≈ {e['theta_dia_pct']:.1f} % por día (theta).")
+    if e["spread_pct"] >= 10:
+        out.append(f"Spread amplio ({e['spread_pct']:.0f} % de la prima): usa órdenes límite; entrar y salir cuesta caro.")
+    if (e["oi"] or 0) < 100:
+        out.append("Interés abierto bajo: poca liquidez para cerrar la posición.")
+    if e["sobre_muro_calls"]:
+        out.append("El strike está por encima del muro de calls: el precio debe romper una resistencia institucional.")
+    if e["bajo_muro_puts"]:
+        out.append("El strike está por debajo del muro de puts: el precio debe romper un soporte institucional.")
+    if gex_total < 0:
+        out.append("GEX negativo: movimientos amplificados en ambos sentidos; el riesgo de la prima es mayor.")
+    elif flip and ((e["tipo"] == "CALL" and spot < flip) or (e["tipo"] == "PUT" and spot > flip)):
+        out.append(f"El precio está del lado opuesto del gamma flip ({flip:,.2f}) para esta dirección.")
+    if adx.get("regimen") == "rango":
+        out.append("ADX bajo 23 (rango): sin tendencia, el tiempo juega en contra del comprador de opciones.")
+    if e["iv"] >= 60:
+        out.append(f"IV elevada ({e['iv']:.0f} %): primas caras; una caída de volatilidad resta valor aunque acierte la dirección.")
+    if e["roi_sin_movimiento"] < -15:
+        out.append(f"Si el precio no se mueve en {e['horizonte_dias']:.0f} días, la prima perdería "
+                   f"≈ {abs(e['roi_sin_movimiento']):.0f} %.")
+    return out
