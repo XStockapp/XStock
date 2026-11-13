@@ -47,6 +47,7 @@ with st.sidebar:
 _main = [
     st.Page("views/scanner.py", title="Escáner de mercado", icon=":material/radar:", default=True),
     st.Page("views/analisis.py", title="Análisis de acción", icon=":material/candlestick_chart:"),
+    st.Page("views/opciones.py", title="Opciones", icon=":material/stacked_line_chart:"),
     st.Page("views/watchlist.py", title="Watchlist", icon=":material/visibility:"),
     st.Page("views/portafolio.py", title="Portafolio", icon=":material/account_balance_wallet:"),
 ]
