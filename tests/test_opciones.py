@@ -1,0 +1,62 @@
+import math
+from datetime import date
+
+import pandas as pd
+
+from core import ai, options as OP
+
+
+def test_bs_y_iv_inversa():
+    p = OP.bs_price(100, 105, 30 / 365, 0.3, True)
+    assert abs(OP.implied_vol(p, 100, 105, 30 / 365, True) - 0.3) < 1e-3
+    g = OP.bs_greeks(100, 100, 30 / 365, 0.3, True)
+    assert 0.5 < g["delta"] < 0.56 and g["gamma"] > 0 and g["theta"] < 0
+
+
+def test_occ():
+    assert OP.parse_occ("AAPL261120C00270000") == ("AAPL", date(2026, 11, 20), "call", 270.0)
+
+
+def _cadena():
+    return OP._demo_chain("AMZN", 267.73, date(2026, 11, 13)).assign(
+        dte=lambda x: [(e - date(2026, 11, 13)).days for e in x["exp"]],
+        mid=lambda x: (x["bid"] + x["ask"]) / 2)
+
+
+def test_metricas():
+    df, spot = _cadena(), 267.73
+    sm = OP.resumen(df, spot)
+    assert sm["pcr_volumen"] > 0 and sm["pcr_open_interest"] > 0
+    near = df[df["dte"] == sm["dte"]]
+    atm = near["strike"].iloc[(near["strike"] - spot).abs().argmin()]
+    c = near[(near.strike == atm) & (near.type == "call")]["mid"].iloc[0]
+    p = near[(near.strike == atm) & (near.type == "put")]["mid"].iloc[0]
+    assert abs(sm["expected_move_usd"] - round((c + p) * 0.85, 2)) < 0.011
+    w = OP.muros(df)
+    assert len(w["call_walls"]) == 2 and w["call_walls"][0]["strike"] > spot  # muro sintético de calls sobre el spot
+    assert w["put_walls"][0]["strike"] < spot
+    gx = OP.gex_por_strike(df, spot)
+    k = gx.index[0]
+    sub = df[(df.strike == k)]
+    esp = sum((1 if r.type == "call" else -1) * r.gamma * r.oi * 100 * spot ** 2 * 0.01 for r in sub.itertuples())
+    assert math.isclose(gx.iloc[0], esp, rel_tol=1e-9)
+
+
+def test_max_pain_simple():
+    df = pd.DataFrame({"strike": [90, 100, 110, 90, 100, 110], "type": ["call"] * 3 + ["put"] * 3,
+                       "oi": [10, 100, 10, 10, 100, 10]})
+    assert OP.max_pain(df) == 100
+
+
+def test_destacado_y_validacion():
+    df, spot = _cadena(), 267.73
+    cands = {s: OP.candidatos(df, spot, s) for s in ("alcista", "bajista")}
+    assert cands["alcista"] and all(c["option_type"] == "CALL" for c in cands["alcista"])
+    h = OP.destacar(cands, "Alcista", {"adx": 29, "regimen": "tendencia"}, OP.muros(df), [], spot)
+    assert h["action_trigger"] == "pulse_glow_animation" and h["option_type"] == "CALL"
+    assert OP.destacar(cands, "Neutral", {}, {}, [], spot) is None
+    todos = cands["alcista"] + cands["bajista"]
+    ok = ai.validar_destacado({"target_expiration_tab": h["target_expiration_tab"], "option_type": "CALL",
+                               "strike": h["strike"], "rationale": "x"}, todos)
+    assert ok and ok["strike"] == h["strike"]
+    assert ai.validar_destacado({"target_expiration_tab": "ENE 1 '30", "option_type": "CALL", "strike": 1}, todos) is None

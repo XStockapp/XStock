@@ -159,21 +159,22 @@ def build_payload(ticker, tech, fund_metrics, fund_score, pio, prob, bt, plan, n
     })
 
 
-def analyze(payload: dict, api_key: str, model: str = "claude-sonnet-5-5") -> dict:
+def analyze(payload: dict, api_key: str, model: str = "claude-sonnet-5-5", system: str | None = None) -> dict:
     import anthropic
     client = anthropic.Anthropic(api_key=api_key)
     msg = client.messages.create(
         model=model,
         max_tokens=4000,
-        system=SYSTEM,
-        messages=[{"role": "user", "content": "Evidencia (JSON):\n" + json.dumps(payload, ensure_ascii=False)}],
+        system=system or SYSTEM,
+        messages=[{"role": "user", "content": "Evidencia (JSON):\n" + json.dumps(payload, ensure_ascii=False, default=str)}],
     )
     text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
     m = re.search(r"\{.*\}", text, re.S)
     if not m:
         raise ValueError("La IA no devolvió JSON: " + text[:300])
     out = json.loads(m.group(0))
-    out["veredicto"] = normalizar_veredicto(out.get("veredicto"), payload.get("plan_propuesto"))
+    if system is None:
+        out["veredicto"] = normalizar_veredicto(out.get("veredicto"), payload.get("plan_propuesto"))
     out["_modelo"] = model
     return out
 
@@ -345,14 +346,14 @@ GEMINI_FALLBACK = ["gemini-flash-latest", "gemini-3-flash-preview", "gemini-2.5-
                    "gemini-flash-lite-latest", "gemini-2.5-flash-lite"]
 
 
-def analyze_gemini(payload: dict, api_key: str, model: str | None = None) -> dict:
+def analyze_gemini(payload: dict, api_key: str, model: str | None = None, system: str | None = None) -> dict:
     """Mismo informe que Claude, generado con Gemini Flash (REST, sin dependencias extra)."""
     import requests
     api_key = (api_key or "").strip()
     models = ([model] if model else []) + [m for m in GEMINI_FALLBACK if m != model]
     body = {
-        "system_instruction": {"parts": [{"text": SYSTEM}]},
-        "contents": [{"role": "user", "parts": [{"text": "Evidencia (JSON):\n" + json.dumps(payload, ensure_ascii=False)}]}],
+        "system_instruction": {"parts": [{"text": system or SYSTEM}]},
+        "contents": [{"role": "user", "parts": [{"text": "Evidencia (JSON):\n" + json.dumps(payload, ensure_ascii=False, default=str)}]}],
         "generationConfig": {"temperature": 0.3, "maxOutputTokens": 16384, "responseMimeType": "application/json"},
     }
     headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
@@ -381,7 +382,99 @@ def analyze_gemini(payload: dict, api_key: str, model: str | None = None) -> dic
         if not m:
             raise ValueError("Gemini no devolvió JSON: " + text[:300])
         out = json.loads(m.group(0))
-        out["veredicto"] = normalizar_veredicto(out.get("veredicto"), payload.get("plan_propuesto"))
+        if system is None:
+            out["veredicto"] = normalizar_veredicto(out.get("veredicto"), payload.get("plan_propuesto"))
         out["_modelo"] = mdl
         return out
     raise RuntimeError("Gemini no respondió con ningún modelo. Revisa que GEMINI_API_KEY en los Secrets sea correcta y esté activa en Google AI Studio. Detalle: " + str(last_err))
+
+
+# ------------------------------------------------------------------ opciones
+SYSTEM_OPCIONES = """Eres un especialista cuantitativo en derivados (opciones sobre acciones de EE. UU.) dentro de XStock.
+Recibes un JSON con el contexto técnico del subyacente y las métricas de su cadena de opciones (≤ 45 días, ±15 % del spot).
+
+Reglas:
+- Jerarquía: el motor cuantitativo ("technical_context": escenario, ADX 14/14/23, MACD, medias, VRVP) dicta el 70 % del
+  pronóstico; el flujo de opciones (PCR, GEX, muros, max pain, movimiento esperado) es validación o alerta de riesgo (30 %).
+- Régimen GEX: positivo = los creadores de mercado amortiguan los movimientos (rango, reversión a la media, el precio
+  tiende a los muros/max pain); negativo = amplifican (rupturas y tendencias más violentas). El gamma flip separa ambos.
+- Cruza los muros de calls (resistencias) y puts (soportes) con los nodos del VRVP (POC/VAH/VAL): una coincidencia
+  (±1 %) es un nivel institucional de freno; su ruptura con volumen es aceleración.
+- PCR > 1 = cobertura/pesimismo (contrario en extremos > 1.3); < 0.7 = optimismo/euforia.
+- "highlighted_option": elige COMO MÁXIMO un contrato y SOLO de "candidatos" (copia exactamente
+  target_expiration_tab, option_type y strike). Debe ir en la dirección del escenario cuantitativo. Si el escenario es
+  Neutral, el régimen y los datos se contradicen o no hay candidatos razonables, devuelve null.
+- Tono objetivo y probabilístico; informativo, no es una recomendación de inversión. Escribe en español. Usa SOLO
+  los datos del JSON.
+
+Devuelve SOLO este JSON:
+{"regimen_gex": "Positivo|Negativo", "lectura_regimen": "1-2 frases",
+ "diagnostico": "3-4 frases que integren escenario técnico (70 %) y flujo de opciones (30 %)",
+ "niveles_institucionales": [{"nivel": número, "tipo": "Muro de calls|Muro de puts|Gamma flip|Max pain|POC|VAH|VAL",
+   "confluencia": "texto breve", "efecto": "freno|aceleración|imán"}],
+ "sesgo_flujo": "Alcista|Bajista|Neutral", "valida_escenario": true | false,
+ "confianza": 0-100,
+ "highlighted_option": {"target_expiration_tab": "...", "option_type": "CALL|PUT", "strike": número,
+   "action_trigger": "pulse_glow_animation", "rationale": "1-2 frases"} | null,
+ "advertencias": ["..."]}"""
+
+
+def options_rule_based(p: dict) -> dict:
+    """Síntesis por reglas del módulo de opciones (sin IA)."""
+    tc, sm, w = p["technical_context"], p["options_summary"], p["key_liquidity_walls"]
+    pos = (sm.get("gex_total") or 0) >= 0
+    flip = sm.get("gamma_flip_level")
+    pcr = sm.get("pcr_open_interest") or sm.get("pcr_volumen")
+    sesgo = "Neutral" if pcr is None else "Alcista" if pcr < 0.7 else "Bajista" if pcr > 1.1 else "Neutral"
+    esc = tc.get("escenario")
+    valida = esc == "Neutral" or sesgo in ("Neutral", esc)
+    niv = []
+    for x in w.get("call_walls", []):
+        niv.append({"nivel": x["strike"], "tipo": "Muro de calls", "confluencia": "", "efecto": "freno"})
+    for x in w.get("put_walls", []):
+        niv.append({"nivel": x["strike"], "tipo": "Muro de puts", "confluencia": "", "efecto": "freno"})
+    for c in p.get("confluencias_vrvp") or []:
+        for n in niv:
+            if n["nivel"] == c["strike"]:
+                n["confluencia"] = f"coincide con {c['nodo_vrvp']} del VRVP ({c['nivel_vrvp']:.2f})"
+    if flip:
+        niv.append({"nivel": flip, "tipo": "Gamma flip", "confluencia": "", "efecto": "aceleración"})
+    if sm.get("max_pain"):
+        niv.append({"nivel": sm["max_pain"], "tipo": "Max pain", "confluencia": "", "efecto": "imán"})
+    adv = []
+    if not pos:
+        adv.append("GEX negativo: los movimientos pueden amplificarse; stops más amplios o menor tamaño.")
+    if p.get("info", {}).get("feed") == "indicative":
+        adv.append("Feed indicativo de Alpaca: cotizaciones aproximadas y trades con retraso.")
+    if not p.get("info", {}).get("oi_disponible", True):
+        adv.append("Interés abierto no disponible: muros calculados por volumen.")
+    if tc.get("regimen_adx") == "rango":
+        adv.append("ADX bajo 23: sin tendencia; las opciones direccionales pierden valor temporal (theta) en rango.")
+    if not valida:
+        adv.append(f"El flujo de opciones ({sesgo.lower()}) contradice el escenario cuantitativo ({esc.lower()}).")
+    em = sm.get("expected_move_usd")
+    diag = (f"Escenario cuantitativo {esc.lower()} (ADX {tc.get('adx_14_14_23')}, {tc.get('trend_status')}). "
+            f"Régimen de gamma {'positivo' if pos else 'negativo'}: "
+            + ("el precio tiende a moverse entre muros y hacia el max pain." if pos else
+               "los creadores de mercado amplifican el movimiento.")
+            + (f" Movimiento esperado al {sm['nearest_expiration']}: ±${em:.2f}." if em else "")
+            + (f" PCR (OI) {pcr:.2f}: flujo {sesgo.lower()}." if pcr is not None else ""))
+    return {"regimen_gex": "Positivo" if pos else "Negativo",
+            "lectura_regimen": ("Gamma positiva: volatilidad amortiguada, reversión a la media."
+                                if pos else "Gamma negativa: volatilidad amplificada, rupturas más probables.")
+            + (f" Gamma flip en {flip:.2f}." if flip else ""),
+            "diagnostico": diag, "niveles_institucionales": niv, "sesgo_flujo": sesgo, "valida_escenario": valida,
+            "confianza": int(max(5, min(95, (tc.get("confianza_global") or 50) + (5 if valida else -10)))),
+            "highlighted_option": p.get("highlighted_option") if valida else None,
+            "advertencias": adv, "_modelo": "reglas (sin IA)"}
+
+
+def validar_destacado(h: dict | None, candidatos: list[dict]) -> dict | None:
+    """Acepta el contrato de la IA solo si coincide con un candidato real de la cadena."""
+    if not isinstance(h, dict):
+        return None
+    for c in candidatos:
+        if (str(h.get("option_type", "")).upper() == c["option_type"] and abs(float(h.get("strike") or -1) - c["strike"]) < 1e-6
+                and str(h.get("target_expiration_tab", "")).upper() == c["target_expiration_tab"].upper()):
+            return {**c, "action_trigger": "pulse_glow_animation", "rationale": h.get("rationale", "")}
+    return None
