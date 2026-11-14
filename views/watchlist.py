@@ -1,5 +1,6 @@
 import time
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -161,18 +162,86 @@ def _tabla(sub: pd.DataFrame, kind: str):
 
 
 es_cr = df["Ticker"].str.endswith(("-USD", "-USDT", "-EUR"))
-if (~es_cr).any():
-    _tabla(df[~es_cr], "acciones")
-if es_cr.any():
-    _tabla(df[es_cr], "cripto")
 
-c2, c3, _ = st.columns([1, 1.2, 3], vertical_alignment="bottom")
-if c2.button("📊 Analizar", disabled=len(picked) != 1, width="stretch", help="Selecciona una sola fila"):
-    st.session_state.ticker = picked[0]
-    st.switch_page("views/analisis.py")
-if c3.button(f"🗑️ Quitar ({len(picked)})", disabled=not picked, width="stretch"):
-    store.remove_from_watchlist(picked)
-    st.rerun()
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _ranking_opciones(items: tuple) -> pd.DataFrame:
+    """Atractivo para operar opciones: mejor contrato OPT1 (OTM, ≤ 1 mes) en la dirección del puntaje técnico."""
+    from core import options as OP
+    filas = []
+    for t, spot, score in items:
+        try:
+            ch, _ = OP.chain(t, round(spot, 1), 31)
+        except Exception:
+            continue
+        if ch.empty:
+            continue
+        walls, gex = OP.muros(ch), OP.gex_por_strike(ch, spot)
+        lado = "CALL" if score >= 0 else "PUT"
+        niv = OP.niveles(OP.evaluar_todos(ch, spot, lado, walls, gex), spot, "OTM", 31)
+        o = niv.get(1) or niv.get(2)
+        if not o:
+            continue
+        sm = OP.resumen(ch, spot)
+        oi = float(ch["oi"].fillna(0).sum())
+        # atractivo: valor esperado del mejor contrato, ponderado por la fuerza técnica y la liquidez de la cadena
+        atr = o["ve"] * (0.5 + min(abs(score), 100) / 100) + 0.15 * o["pop"] + min(np.log10(oi + 1), 6)
+        filas.append({"Ticker": t, "Sesgo": "▲ CALL" if lado == "CALL" else "▼ PUT", "Atractivo": atr,
+                      "Contrato OPT1": f"{o['contrato']} · {o['vencimiento']}", "DTE": o["dte"], "Prima": o["prima"],
+                      "Valor esperado %": o["ve"], "Prob. éxito %": o["pop"], "IV ATM %": sm["iv_rank_or_avg_iv"],
+                      "PCR (OI)": sm["pcr_open_interest"], "GEX": sm["net_gamma_exposure_gex"], "Score técnico": score,
+                      "Int. abierto total": oi})
+    out = pd.DataFrame(filas)
+    return out.sort_values("Atractivo", ascending=False).reset_index(drop=True) if not out.empty else out
+
+
+tab_m, tab_o = st.tabs(["Mercado", "Opciones"])
+with tab_m:
+    if (~es_cr).any():
+        _tabla(df[~es_cr], "acciones")
+    if es_cr.any():
+        _tabla(df[es_cr], "cripto")
+
+    c2, c4, c3, _ = st.columns([1, 1.2, 1.2, 2.4], vertical_alignment="bottom")
+    if c2.button("📊 Analizar", disabled=len(picked) != 1, width="stretch", help="Selecciona una sola fila"):
+        st.session_state.ticker = picked[0]
+        st.switch_page("views/analisis.py")
+    if c4.button("🔗 Option chain", disabled=len(picked) != 1 or bool(picked and picked[0].endswith(("-USD", "-USDT", "-EUR"))),
+                 width="stretch", help="Abre el análisis de opciones de la fila seleccionada"):
+        st.session_state.ticker = picked[0]
+        st.session_state.opt_ticker = picked[0]
+        st.switch_page("views/opciones.py")
+    if c3.button(f"🗑️ Quitar ({len(picked)})", disabled=not picked, width="stretch"):
+        store.remove_from_watchlist(picked)
+        st.rerun()
+
+with tab_o:
+    acc = df[~es_cr & df["Precio"].notna()].head(25)
+    if acc.empty:
+        st.info("Agrega acciones o ETF de EE. UU. a tu watchlist para ver su atractivo en opciones.")
+    else:
+        with st.spinner("Evaluando las cadenas de opciones…"):
+            R = _ranking_opciones(tuple((r["Ticker"], float(r["Precio"]), float(r["Score técnico"]) if pd.notna(r["Score técnico"]) else 0.0)
+                                        for _, r in acc.iterrows()))
+        if R.empty:
+            st.info("Ninguna acción de tu watchlist tiene opciones líquidas en Alpaca en este momento.")
+        else:
+            st.markdown("<div class='muted small'>Ordenadas por atractivo para opciones: valor esperado del mejor "
+                        "contrato (OTM, vencimiento ≤ 1 mes) en la dirección del puntaje técnico, probabilidad de éxito y "
+                        "liquidez de la cadena. <b>Haz clic en una fila</b> para abrir su análisis de opciones.</div>",
+                        unsafe_allow_html=True)
+            sty = (R.drop(columns=["Atractivo", "Int. abierto total"]).style
+                   .format({"Prima": "${:,.2f}", "Valor esperado %": "{:+.1f}%", "Prob. éxito %": "{:.0f}%",
+                            "IV ATM %": "{:.1f}%", "PCR (OI)": "{:.2f}", "Score técnico": "{:+.0f}"}, na_rep="—")
+                   .map(lambda v: f"color: {GREEN}" if "CALL" in str(v) else f"color: {RED}", subset=["Sesgo"])
+                   .map(lambda v: signed_css(v, 0.0, 0.0), subset=["Valor esperado %", "Score técnico"]))
+            ev_o = st.dataframe(sty, hide_index=True, width="stretch", on_select="rerun", selection_mode="single-row",
+                                key="wl_opc", height=min(38 + 35 * len(R), 640))
+            if ev_o and ev_o.selection and ev_o.selection.rows:
+                t_ = R.iloc[ev_o.selection.rows[0]]["Ticker"]
+                st.session_state.ticker = t_
+                st.session_state.opt_ticker = t_
+                st.switch_page("views/opciones.py")
 
 with st.expander("📝 Notas"):
     ed = st.data_editor(df[["Ticker", "Notas"]], hide_index=True, width="stretch", key="wl_notas",
