@@ -89,3 +89,21 @@ def test_pnl_trayectoria():
     assert abs(r3["valor_objetivo"] - 10) < 1e-9 and abs(r3["utilidad_usd"] - 400) < 1e-6
     p = OP.pnl_trayectoria(260, "PUT", 0.3, 5.0, 20, 265, 250, 30)  # días > DTE se acota
     assert abs(p["valor_objetivo"] - 10) < 1e-9
+
+
+def test_niveles_opt123_y_presupuesto():
+    df, spot = _cadena(), 267.73
+    w, gx = OP.muros(df), OP.gex_por_strike(df, spot)
+    evs = OP.evaluar_todos(df, spot, "CALL", w, gx)
+    niv = OP.niveles(evs, spot, "OTM", 31, presupuesto=50.0)
+    assert niv[1] and niv[1]["dte"] >= 11 and niv[1]["strike"] > spot
+    if niv[2]:
+        assert 4 <= niv[2]["dte"] <= 10
+    if niv[3]:
+        assert niv[3]["dte"] <= 3
+    aj = niv[1].get("ajuste")
+    assert niv[1]["contratos"] == 0 and aj and aj["capital_optimo"] >= niv[1]["costo"]
+    rico = OP.niveles(evs, spot, "OTM", 31, presupuesto=1e6)
+    assert rico[1]["contratos"] > 0 and "ajuste" not in rico[1]
+    itm = OP.niveles(evs, spot, "ITM", 31)
+    assert itm[1] is None or itm[1]["strike"] < spot

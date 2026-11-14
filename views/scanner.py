@@ -439,7 +439,7 @@ st.caption("Probabilidad: verde = ventaja de compra · rojo = ventaja de venta e
            "difieren ≤ 5 puntos). Más intenso = mayor probabilidad.")
 picked = view.iloc[sel.selection.rows] if sel and sel.selection.rows else view.iloc[0:0]
 
-b1, b2, b3 = st.columns([1.3, 1.3, 3], vertical_alignment="bottom")
+b1, b2, b4, b3 = st.columns([1.3, 1.3, 1.2, 2.4], vertical_alignment="bottom")
 if b1.button(f"⭐ Agregar a watchlist ({len(picked)})", disabled=picked.empty, type="primary", width="stretch"):
     n = store.add_to_watchlist(picked.to_dict("records"))
     st.toast(f"{n} acción(es) agregadas a tu watchlist", icon="⭐")
@@ -447,6 +447,11 @@ if b2.button("📊 Analizar selección", disabled=len(picked) != 1, width="stret
              help="Selecciona una sola fila"):
     st.session_state.ticker = picked.iloc[0]["Ticker"]
     st.switch_page("views/analisis.py")
+if b4.button("🔗 Option chain", disabled=len(picked) != 1 or IS_CR, width="stretch",
+             help="Abre el análisis de opciones de la fila seleccionada"):
+    st.session_state.ticker = picked.iloc[0]["Ticker"]
+    st.session_state.opt_ticker = picked.iloc[0]["Ticker"]
+    st.switch_page("views/opciones.py")
 _csv = vt.drop(columns=[c for c in vt.columns if c == "Logo" or c.startswith("Últimos")])
 b3.download_button("⬇️ Exportar ranking (CSV)", _csv.to_csv(index=False).encode("utf-8"),
                    "ranking_xstock.csv", "text/csv")

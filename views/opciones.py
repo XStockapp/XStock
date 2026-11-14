@@ -1,4 +1,10 @@
-"""Módulo de Opciones: cadena Put/Call lado a lado (estilo institucional), métricas de flujo y lectura con IA."""
+"""Terminal de Opciones (maqueta PowerPoint + estilo Stitch).
+
+Distribución:
+  [símbolo y precio] [MARKET % · datos técnicos y fundamentales] [OPTIONS % · mejor strike OPT1/OPT2/OPT3]
+  [entradas: contexto, rango, balance, inversión, money · análisis manual] [pestañas CALL/PUT con explicación y gráficos]
+  [option chain] [mapa GEX]
+"""
 import html
 import json
 
@@ -8,15 +14,17 @@ import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
 
-from core import ai, db, options as OP, profiles, store
+from core import ai, data, db, options as OP, pnl_widget as PW, profiles, store
 from core.analysis import full_analysis
 from core.timeframes import is_crypto
-from core.ui import AMBER, DISCLAIMER, GREEN, MUTED, NEUTRAL, RED, pill
+from core.ui import AMBER, DISCLAIMER, GREEN, MUTED, RED
 
 cfg = st.session_state.cfg
+ss = st.session_state
 E = html.escape
 ACC = "#2962FF"
 BG, PANEL, BORDER, TXT = "#0D1117", "#161B22", "#30363D", "#E6EDF3"
+MONO = "'JetBrains Mono','Fira Code',monospace"
 
 
 @st.cache_data(ttl=900, show_spinner=False)
@@ -24,422 +32,508 @@ def _run(ticker, tp, sl, acct, risk, av, prov, tf, settings_json):
     return full_analysis(ticker, tp, sl, None, acct, risk, av or None, prov, tf, json.loads(settings_json))
 
 
-st.markdown("""<style>
-.op-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:6px 0 10px}
-.op-k{background:#161B22;border:1px solid #30363D;border-radius:6px;padding:8px 10px}
-.op-k .l{font-size:11px;color:#8B949E;text-transform:uppercase;letter-spacing:.04em}
-.op-k .v{font-family:'JetBrains Mono','Fira Code',monospace;font-variant-numeric:tabular-nums;font-size:16px;color:#E6EDF3;margin-top:2px}
-.op-k .s{font-size:11px;color:#8B949E;margin-top:1px;font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums}
-.op-box{background:#161B22;border:1px solid #30363D;border-radius:6px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;color:#E6EDF3;line-height:1.5}
-.op-box h4{font-size:12px;color:#8B949E;text-transform:uppercase;letter-spacing:.04em;margin:0 0 6px;font-weight:600}
-.op-box table{width:100%;border-collapse:collapse;font-size:12px}
-.op-box td,.op-box th{padding:4px 6px;border-bottom:1px solid #21262D;text-align:left}
-.op-box th{color:#8B949E;font-weight:600}
-.op-box .num{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums}
-.op-hl{border-left:3px solid #2962FF}
-.op-hdr{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#161B22;border:1px solid #30363D;border-radius:6px;
-  padding:7px 10px;margin:2px 0 8px}
-.op-hdr .tk{font-family:'JetBrains Mono',monospace;font-size:17px;font-weight:700;color:#E6EDF3}
-.op-hdr .px{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:16px;color:#E6EDF3}
-.op-sum{display:inline-flex;gap:12px;flex-wrap:wrap;border:1px solid #30363D;border-radius:999px;padding:2px 10px;font-size:12px;color:#8B949E}
-.op-sum b,.op-rec b{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;color:#E6EDF3;font-weight:600}
-.op-rec{font-size:12px;color:#8B949E;border:1px solid #2962FF;border-radius:999px;padding:2px 10px}
-.op-cmp{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:4px}
-.op-cmp th{text-align:left;color:#8B949E;font-weight:600;border-bottom:1px solid #30363D;padding:5px 8px;font-size:12px}
-.op-cmp td{padding:5px 8px;border-bottom:1px solid #21262D;color:#E6EDF3}
-.op-cmp td.n{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;text-align:right}
-.op-cmp tr td:first-child{color:#8B949E}
-.op-cmp .best{color:#26A69A;font-weight:600}
-@media (max-width:900px){.op-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@st.cache_data(ttl=600, show_spinner=False)
+def _diario(ticker):
+    h = data.history_tf(ticker, "1D")
+    return float(h["Close"].iloc[-1]), float(h["Close"].iloc[-2])
+
+
+def _m(v, pre="$", dec=2):
+    return "—" if v is None or (isinstance(v, float) and np.isnan(v)) else f"{pre}{v:,.{dec}f}"
+
+
+st.markdown(f"""<style>
+.ox-h{{font-family:{MONO};font-size:34px;font-weight:700;line-height:1;color:{TXT};letter-spacing:.02em}}
+.ox-name{{color:#8B949E;font-size:12px;margin:4px 0 8px}}
+.ox-q{{display:grid;grid-template-columns:auto auto;gap:2px 14px;font-size:12px;width:max-content}}
+.ox-q span{{color:#8B949E}} .ox-q b{{font-family:{MONO};font-variant-numeric:tabular-nums;font-size:14px;color:{TXT};text-align:right}}
+.ox-bar{{display:flex;align-items:center;gap:10px;margin-bottom:8px}}
+.ox-bar .t{{font-size:13px;font-weight:700;letter-spacing:.06em;color:{TXT};min-width:66px}}
+.ox-bar .tr{{flex:1;height:10px;background:#21262D;border-radius:5px;overflow:hidden}}
+.ox-bar .fl{{height:100%;border-radius:5px;animation:oxg 1.2s ease-out}}
+@keyframes oxg{{from{{width:0}}}}
+.ox-bar .p{{font-family:{MONO};font-size:12px;color:{TXT};min-width:38px;text-align:right}}
+.ox-bar .b{{font-size:11px;font-weight:700;padding:4px 10px;border-radius:4px;letter-spacing:.04em}}
+.ox-box{{background:{PANEL};border:1px solid {BORDER};border-radius:8px;padding:10px 12px;margin-bottom:8px}}
+.ox-box h4{{margin:0 0 6px;font-size:11px;color:#8B949E;text-transform:uppercase;letter-spacing:.05em;font-weight:600}}
+.ox-dt{{display:grid;grid-template-columns:1fr;gap:0}}
+.ox-dt div{{display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #21262D;padding:3px 0;font-size:12px}}
+.ox-dt span{{color:#8B949E;white-space:nowrap}} .ox-dt b{{font-family:{MONO};font-variant-numeric:tabular-nums;font-weight:600;color:{TXT};text-align:right;white-space:nowrap}}
+.ox-st{{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}}
+.ox-st .k{{font-family:{MONO};font-size:24px;font-weight:700}}
+.ox-st .v{{font-size:11px;padding:2px 8px;border-radius:4px;background:#21262D;color:{TXT};font-family:{MONO}}}
+.ox-g3{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:8px 0}}
+.ox-g3 div span{{display:block;color:#8B949E;font-size:11px}}
+.ox-g3 div b{{font-family:{MONO};font-variant-numeric:tabular-nums;font-size:13px;color:{TXT};white-space:nowrap}}
+.ox-just{{font-size:12px;color:{TXT};line-height:1.5;border-top:1px solid #21262D;padding-top:6px}}
+.ox-alert{{border:1px solid {AMBER};background:rgba(210,153,34,.08);border-radius:6px;padding:8px 10px;font-size:12px;
+  line-height:1.5;margin:6px 0}}
+.ox-red{{color:{RED};font-size:12px;line-height:1.45}}
+.ox-exp{{font-size:12.5px;line-height:1.6;color:{TXT}}}
+.ox-exp b{{font-family:{MONO};font-variant-numeric:tabular-nums}}
+.ox-lbl{{font-size:11px;color:#8B949E;text-transform:uppercase;letter-spacing:.05em;margin:2px 0 4px}}
+.ox-mbar{{height:6px;background:#21262D;border-radius:3px;overflow:hidden;margin:2px 0 6px}}
+.ox-mbar div{{height:100%;background:{GREEN};border-radius:3px}}
+.ox-cmp{{width:100%;border-collapse:collapse;font-size:12px}}
+.ox-cmp th{{text-align:right;color:#8B949E;font-weight:600;border-bottom:1px solid {BORDER};padding:4px 6px}}
+.ox-cmp th:first-child,.ox-cmp td:first-child{{text-align:left;color:#8B949E}}
+.ox-cmp td{{text-align:right;padding:4px 6px;border-bottom:1px solid #21262D;font-family:{MONO};font-variant-numeric:tabular-nums}}
+@media (max-width:900px){{.ox-g3{{grid-template-columns:repeat(2,minmax(0,1fr))}}.ox-dt{{grid-template-columns:1fr}}}}
 </style>""", unsafe_allow_html=True)
 
-# ---------------------------------------------------------------- entrada
-c1, c2, c3 = st.columns([1.4, 1.6, 4], vertical_alignment="bottom")
-ticker = c1.text_input("Símbolo", st.session_state.get("ticker", "AAPL"), key="opt_ticker").strip().upper()
-TF = c2.segmented_control("Contexto técnico", ["1h", "4h", "1D"], default="1h", key="opt_tf") or "1h"
-c3.markdown("<div class='muted small'>Cadena de Alpaca · vencimientos ≤ 45 días · strikes ±15 % del spot · "
-            "caché de 3 minutos</div>", unsafe_allow_html=True)
-if not ticker:
-    st.stop()
-st.session_state.ticker = ticker
+# ================================================================== entradas (columna izquierda)
+ss.setdefault("opt_tf", "1h")
+ss.setdefault("opt_rng", "1M")
+ss.setdefault("opt_money", "OTM")
+BAL = float(cfg.get("capital") or 0)
+ss.setdefault("opt_inv", float(round(max(BAL * 0.3, 100) / 5) * 5) if BAL else 200.0)
+if ss.get("opt_inv_set") is not None:  # «Ajustar a $XX» desde la alerta de capital
+    ss["opt_inv"] = float(ss.pop("opt_inv_set"))
+
+top_a, top_b, top_c = st.columns([1.05, 1.6, 1.6], gap="small")
+left, right = st.columns([1.05, 3.2], gap="small")
+
+with left:
+    with st.container(border=True, key="ox_cfg"):
+        ss.setdefault("opt_ticker", ss.get("ticker") or "SPY")
+        tk_in = st.text_input("Símbolo", key="opt_ticker").strip().upper()
+        st.segmented_control("Contexto técnico", ["1h", "4h", "1D"], key="opt_tf")
+        st.segmented_control("Rango visible (vencimientos)", list(OP.RANGOS), key="opt_rng",
+                             help="Hasta qué fecha de vencimiento se buscan las opciones: 2 semanas, 1, 3 o 6 meses")
+        inv_ph = st.empty()  # balance + inversión (se rellena tras el análisis para poder destellar)
+        st.segmented_control("Money", ["ITM", "OTM", "ATM"], key="opt_money",
+                             help="ITM = dentro del dinero (más caro, más probable) · OTM = fuera del dinero (barato, "
+                                  "apalancado) · ATM = en el dinero")
+        st.button("Analizar Opción", type="primary", icon=":material/bolt:", width="stretch", key="ox_go")
+
+ticker = tk_in or "SPY"
+ss.ticker = ticker
+TF, RNG, MONEY = ss.get("opt_tf") or "1h", ss.get("opt_rng") or "1M", ss.get("opt_money") or "OTM"
 if is_crypto(ticker):
     st.info("Las opciones solo están disponibles para acciones y ETF de EE. UU.")
     st.stop()
 
-SETTINGS = st.session_state.get("technical_settings") or profiles.BASE_SETTINGS
+SETTINGS = ss.get("technical_settings") or profiles.BASE_SETTINGS
 try:
     with st.spinner(f"Analizando {ticker}…"):
         A = _run(ticker, cfg["tp_atr"], cfg["sl_atr"], cfg["capital"], cfg["riesgo_pct"], cfg["alphavantage_key"],
                  "alphavantage" if cfg.get("proveedor", "").startswith("Alpha Vantage") else "yahoo",
                  TF, json.dumps(profiles.engine_settings(SETTINGS), sort_keys=True))
+        CH, INFO = OP.chain(ticker, round(float(A["df"]["Close"].iloc[-1]), 1), OP.RANGOS[RNG])
 except Exception as e:
     st.error(f"No se pudo analizar {ticker}: {e}")
+    st.stop()
+if CH.empty:
+    st.warning(f"{ticker} no tiene opciones listadas en Alpaca dentro del rango elegido.")
     st.stop()
 
 d = A["df"]
 spot = float(d["Close"].iloc[-1])
+r_ = d.iloc[-1]
 MET = A.get("metodo") or {}
 ADX, CON = MET.get("adx") or {}, MET.get("consolidado") or {}
 VP = A.get("vprofile") or {}
+MX = A.get("metrics") or {}
+PLAN = A.get("plan") or {}
+ESC = CON.get("escenario_base") or "Neutral"
+COMB = float(A.get("combinado") or 0)
 try:
-    with st.spinner("Descargando la cadena de opciones…"):
-        CH, INFO = OP.chain(ticker, round(spot, 1))
-except Exception as e:
-    st.error(f"{e}")
-    st.stop()
-if CH.empty:
-    st.warning(f"{ticker} no tiene opciones listadas en Alpaca para los próximos {OP.DIAS_MAX} días.")
-    st.stop()
-
+    if data._demo():  # en demo las series 1D y 1h son sintéticas e independientes
+        raise ValueError
+    ult, prev = _diario(ticker)
+except Exception:
+    ult, prev = spot, float(d["Close"].iloc[-8] if len(d) > 8 else d["Close"].iloc[0])
 SM = OP.resumen(CH, spot)
 WALLS = OP.muros(CH)
-CONF = OP.confluencias(WALLS, VP, spot)
 GEXS = OP.gex_por_strike(CH, spot)
-CANDS = {s: OP.candidatos(CH, spot, s, walls=WALLS, gex=GEXS) for s in ("alcista", "bajista")}
-ESC = CON.get("escenario_base") or "Neutral"
-HL_RULE = OP.destacar(CANDS, ESC, ADX, WALLS, CONF, spot)
+CONF = OP.confluencias(WALLS, VP, spot)
+VENT = OP.RANGOS[RNG]
+INV = float(ss.get("opt_inv") or 0)
+rsi = float(r_["RSI"])
 
+# lado principal: el del escenario cuantitativo (neutral → el del puntaje combinado, como escenario condicionado)
+LADO = "CALL" if (ESC == "Alcista" or (ESC == "Neutral" and COMB >= 0)) else "PUT"
+OPUESTO = "PUT" if LADO == "CALL" else "CALL"
+EVS = OP.evaluar_todos(CH, spot, LADO, WALLS, GEXS)
+EVS_OP = OP.evaluar_todos(CH, spot, OPUESTO, WALLS, GEXS)
+NIV = OP.niveles(EVS, spot, MONEY, VENT, INV)
+ss.setdefault("opt_sel", 1)
+if not NIV.get(ss["opt_sel"]):
+    ss["opt_sel"] = next((t for t in (1, 2, 3) if NIV.get(t)), 1)
+SEL = NIV.get(ss["opt_sel"])
+AJ = (SEL or {}).get("ajuste")
+
+# balance e inversión (con destello si el presupuesto limita el pronóstico)
+with inv_ph.container():
+    pct_inv = INV / BAL * 100 if BAL else 0
+    st.markdown(f"<div class='ox-lbl'>Balance</div><div class='ox-mbar'><div style='width:100%'></div></div>"
+                f"<div style='font-family:{MONO};font-size:14px;margin:-2px 0 6px'>{_m(BAL)}</div>", unsafe_allow_html=True)
+    if AJ:
+        st.markdown("<style>.st-key-opt_inv input{animation:oxinv 1s ease-in-out infinite}"
+                    f"@keyframes oxinv{{0%,100%{{box-shadow:inset 0 0 0 1px {AMBER}55}}50%{{box-shadow:inset 0 0 0 2px {AMBER};"
+                    "background:rgba(210,153,34,.15)}}</style>", unsafe_allow_html=True)
+    st.number_input("Inversión (USD)", 0.0, max(BAL, 1e7), step=5.0, format="%.2f", key="opt_inv")
+    st.markdown(f"<div class='ox-mbar'><div style='width:{min(pct_inv, 100):.0f}%;background:{ACC}'></div></div>"
+                f"<div class='muted small' style='margin-top:-4px'>{pct_inv:.0f}% del balance</div>", unsafe_allow_html=True)
+
+# ================================================================== cabecera (fila superior)
+chg = ult - prev
+chg_pct = chg / prev * 100 if prev else 0
+cc = GREEN if chg >= 0 else RED
+with top_a:
+    st.markdown(f"<div class='ox-h'>{E(ticker)}</div><div class='ox-name'>{E(str(MX.get('Nombre') or ''))}</div>"
+                f"<div class='ox-q'><span>ÚLTIMA</span><b>{ult:,.2f}</b>"
+                f"<span>CBO</span><b style='color:{cc}'>{chg:+,.2f} {'▲' if chg >= 0 else '▼'}</b>"
+                f"<span>CAMBIO</span><b style='color:{cc}'>{chg_pct:+.2f}% {'▲' if chg >= 0 else '▼'}</b></div>",
+                unsafe_allow_html=True)
+
+MK = float(np.clip((COMB + 100) / 2, 0, 100))
+mk_lbl, mk_col = (("STRONG BUY", GREEN) if MK >= 70 else ("BUY", GREEN) if MK >= 57 else ("NEUTRAL", MUTED)
+                  if MK > 43 else ("SELL", RED) if MK > 30 else ("STRONG SELL", RED))
+PC = OP.porcentaje_calls(CH)
+op_lbl = SEL["tipo"] if SEL else "ESPERAR"
+op_col = GREEN if op_lbl == "CALL" else RED if op_lbl == "PUT" else MUTED
+
+
+def _bar(t, pct, lbl, col):
+    return (f"<div class='ox-bar'><span class='t'>{t}</span><div class='tr'><div class='fl' style='width:{pct:.0f}%;"
+            f"background:{col}'></div></div><span class='p'>{pct:.0f}%</span>"
+            f"<span class='b' style='background:{col}22;color:{col};border:1px solid {col}88'>{lbl}</span></div>")
+
+
+FLUJO = OP.flujo_neto(CH)
+with top_b:
+    ema_x = "EMA9 > EMA21" if r_["EMA9"] > r_["EMA21"] else "EMA9 < EMA21"
+    filas = [
+        ("Precio vs VWAP 20", f"{(spot / r_['VWAP20'] - 1) * 100:+.2f}%"),
+        ("Cruce de medias", ema_x),
+        ("SMA50 / SMA200", f"{r_['SMA50']:,.2f} / {r_['SMA200']:,.2f}" if pd.notna(r_["SMA200"]) else f"{r_['SMA50']:,.2f} / —"),
+        (f"RSI 14 ({TF})", f"{rsi:.1f}"),
+        ("MACD hist.", f"{r_['MACD_hist']:+.3f}"),
+        ("ADX 14/14/23", f"{ADX.get('adx', '—')} · {ADX.get('regimen', '')}"),
+        ("POC VRVP", _m(VP.get("poc"))),
+        ("VAH / VAL", f"{_m(VP.get('vah'), '')} / {_m(VP.get('val'), '')}"),
+        ("Flujo neto opciones", f"{OP._fmt_m(FLUJO)} {'calls' if FLUJO >= 0 else 'puts'}"),
+        ("PCR vol. / OI", f"{SM['pcr_volumen'] or '—'} / {SM['pcr_open_interest'] or '—'}"),
+        ("IV ATM", "—" if SM["iv_rank_or_avg_iv"] is None else f"{SM['iv_rank_or_avg_iv']:.1f}%"),
+        ("GEX / gamma flip", f"{SM['net_gamma_exposure_gex'].split(' ')[0]} / {_m(SM.get('gamma_flip_level'), '')}"),
+        ("Max pain", _m(SM.get("max_pain"))),
+        ("P/E forward", "—" if not MX.get("P/E forward") else f"{MX['P/E forward']:.1f}"),
+    ]
+    st.markdown(_bar("MARKET", MK, mk_lbl, mk_col)
+                + "<div class='ox-box'><h4>Datos técnicos y fundamentales</h4><div class='ox-dt'>"
+                + "".join(f"<div><span>{E(a)}</span><b>{E(str(b))}</b></div>" for a, b in filas) + "</div></div>",
+                unsafe_allow_html=True)
+
+with top_c:
+    st.markdown(_bar("OPTIONS", PC or 0, op_lbl, op_col), unsafe_allow_html=True)
+    with st.container(border=True, key="ox_best"):
+        st.markdown("<div class='ox-lbl'>Mejor strike disponible</div>", unsafe_allow_html=True)
+        _vis_opts = [f"OPT{t}" for t in (1, 2, 3)]
+        ss.setdefault("ox_view", f"OPT{ss['opt_sel']}")
+        vis = st.segmented_control("Nivel", _vis_opts, key="ox_view", label_visibility="collapsed") or f"OPT{ss['opt_sel']}"
+        tv = int(vis[-1])
+        O = NIV.get(tv)
+        nom, dsc, _ = OP.TIERS[tv]
+        if not O:
+            st.markdown(f"<div class='muted small'>{nom}: sin contratos líquidos con {dsc} y money {MONEY}.</div>",
+                        unsafe_allow_html=True)
+        else:
+            colr = GREEN if O["tipo"] == "CALL" else RED
+            cont = (f"{O['contratos']} contrato(s) · ${O['contratos'] * O['costo']:,.0f}" if O.get("contratos")
+                    else "fuera de presupuesto" if INV else "")
+            st.markdown(
+                f"<div class='ox-st'><span class='k' style='color:{colr}'>${O['strike']:g} {O['tipo'][0]}</span>"
+                f"<span class='v'>{E(O['vencimiento'])} · {O['dte']} DTE</span>"
+                f"<span class='muted small'>{nom} · {dsc}</span></div>"
+                f"<div class='ox-g3'><div><span>Prima</span><b>${O['prima']:,.2f}</b></div>"
+                f"<div><span>Costo total</span><b>${O['costo']:,.0f}</b></div>"
+                f"<div><span>R/R</span><b>1:{O['rr']:.1f}</b></div><div><span>Breakeven</span><b>${O['breakeven']:,.2f}</b></div>"
+                f"<div><span>Delta</span><b>{O['delta']:+.2f}</b></div><div><span>Theta</span><b>{O['theta'] or 0:+.2f}</b></div>"
+                f"<div><span>Prob. éxito</span><b style='color:{colr}'>{O['pop']:.0f}%</b></div>"
+                f"<div><span>Valor esperado</span><b>{O['ve']:+.1f}%</b></div></div>"
+                f"<div class='ox-just'><b>Justificación:</b> objetivo ${O['objetivo']:,.2f} (muro / movimiento esperado) en "
+                f"≤ {O['horizonte_dias']:.0f} días; si lo alcanza {O['roi_objetivo']:+.0f}%, si el precio no se mueve "
+                f"{O['roi_sin_movimiento']:+.0f}%." + (f" <span class='muted'>{cont}</span>" if cont else "") + "</div>",
+                unsafe_allow_html=True)
+            if st.button(f"Seleccionar strike (OPT{tv})", key="ox_pick", width="stretch",
+                         type="primary" if tv != ss["opt_sel"] else "secondary", disabled=tv == ss["opt_sel"]):
+                ss["opt_sel"] = tv
+                st.rerun()
+
+# ================================================================== análisis manual (columna izquierda)
+with left:
+    with st.container(border=True, key="ox_man"):
+        st.markdown("<div class='ox-lbl'>Análisis manual</div>", unsafe_allow_html=True)
+        m_tipo = st.segmented_control("Tipo", ["CALL", "PUT"], default=LADO, key=f"man_tipo_{ticker}",
+                                      label_visibility="collapsed") or LADO
+        ks_all = sorted(CH[CH["type"] == m_tipo.lower()]["strike"].unique())
+        if m_tipo == "CALL":
+            k_def = next((k for k in ks_all if k > spot), ks_all[-1])
+        else:
+            k_def = next((k for k in reversed(ks_all) if k < spot), ks_all[0])
+        paso = float(np.min(np.diff(ks_all))) if len(ks_all) > 1 else 1.0
+        m_k = st.number_input("Strike", float(min(ks_all)), float(max(ks_all)), float(k_def), step=paso, format="%.2f",
+                              key=f"man_k_{ticker}_{m_tipo}")
+        m_d = st.number_input("Rango (días)", 0, int(CH["dte"].max()), min(10, int(CH["dte"].max())), 1, key=f"man_d_{ticker}")
+        m_money = st.segmented_control("Money", ["ITM", "OTM", "ATM"], default="OTM", key=f"man_m_{ticker}") or "OTM"
+        if m_money == "OTM":
+            ok_m = m_k > spot if m_tipo == "CALL" else m_k < spot
+        elif m_money == "ITM":
+            ok_m = m_k < spot if m_tipo == "CALL" else m_k > spot
+        else:
+            ok_m = abs(m_k / spot - 1) <= 0.025
+        if not ok_m:
+            regla = {("CALL", "OTM"): "mayor", ("CALL", "ITM"): "menor", ("PUT", "OTM"): "menor", ("PUT", "ITM"): "mayor"}
+            msg = (f"Para {m_tipo}/{m_money}, el strike debe ser {regla[(m_tipo, m_money)]} al precio del subyacente "
+                   f"({spot:,.2f} USD)." if m_money != "ATM" else
+                   f"Para ATM, el strike debe estar a ±2.5% del precio del subyacente ({spot:,.2f} USD).")
+            st.markdown(f"<div class='ox-red'><b>ALERTA:</b> {E(msg)}</div>", unsafe_allow_html=True)
+        if st.button("Analizar Opción", icon=":material/bolt:", width="stretch", key="ox_man_go", disabled=not ok_m,
+                     type="primary"):
+            ks_t = np.array(ks_all)
+            k_real = float(ks_t[np.argmin(abs(ks_t - m_k))])
+            exps = sorted(CH["exp"].unique())
+            dtes = [int(CH[CH["exp"] == e]["dte"].iloc[0]) for e in exps]
+            e_real = exps[int(np.argmin([abs(x - m_d) for x in dtes]))]
+            row = OP.contrato(CH, e_real, k_real, m_tipo)
+            ss[f"man_res_{ticker}"] = OP.evaluar(row, spot, CH, WALLS, GEXS) if row is not None else None
+MAN = ss.get(f"man_res_{ticker}")
+
+# ================================================================== contraria (escenario alternativo)
+stop_ = PLAN.get("stop")
+if LADO == "CALL":
+    pw_ = [w["strike"] for w in WALLS["put_walls"] if w["strike"] < spot]
+    disparo = max([x for x in [stop_] + pw_ if x is not None and x < spot] or [spot * 0.97])
+else:
+    cw_ = [w["strike"] for w in WALLS["call_walls"] if w["strike"] > spot]
+    disparo = min([x for x in [stop_] + cw_ if x is not None and x > spot] or [spot * 1.03])
+ALT = OP.contraria(EVS_OP, spot, MONEY, VENT, disparo, OPUESTO)
+ALT2 = None
+if EVS_OP and ALT:
+    _l2 = OP.opciones_tier(EVS_OP, spot, MONEY, VENT, 2)
+    if _l2 and (_l2[0]["contrato"], _l2[0]["exp"]) != (ALT["contrato"], ALT["exp"]):
+        ALT2 = dict(_l2[0])
+        ALT2["disparo"] = disparo
+        ALT2["limite"] = OP.bs_price(disparo, ALT2["strike"], max(ALT2["dte"] - 1, 0.25) / 365, ALT2["iv"] / 100,
+                                     OPUESTO == "CALL")
+
+# ================================================================== lectura IA (opcional)
 payload = {
     "ticker": ticker, "spot_price": round(spot, 2), "timestamp_utc": INFO["timestamp_utc"],
-    "technical_context": {
-        "timeframe": TF.upper(), "adx_14_14_23": ADX.get("adx"),
-        "trend_status": (f"Tendencia {ADX.get('direccion', '')} (ADX > {ADX.get('nivel_clave', 23):g})"
-                         if ADX.get("regimen") == "tendencia" else f"Rango / consolidación (ADX < {ADX.get('nivel_clave', 23):g})"),
-        "regimen_adx": ADX.get("regimen"), "escenario": ESC, "confianza_global": CON.get("confianza_global"),
-        "score_tecnico": A["tech"].get("score") if isinstance(A.get("tech"), dict) else None,
-        "macd": next((s_.get("Lectura") for s_ in (A["tech"].get("señales") or []) if str(s_.get("Indicador", "")).startswith("MACD")), None)
-        if isinstance(A.get("tech"), dict) else None,
-        "vrvp_poc": round(VP["poc"], 2) if VP.get("poc") else None,
-        "vrvp_vah": round(VP["vah"], 2) if VP.get("vah") else None,
-        "vrvp_val": round(VP["val"], 2) if VP.get("val") else None,
-    },
-    "options_summary": {k: v for k, v in SM.items()},
-    "highlighted_option": HL_RULE,
-    "key_liquidity_walls": {k: v for k, v in WALLS.items() if k != "criterio"},
-    "confluencias_vrvp": CONF,
-    "candidatos": CANDS["alcista"] + CANDS["bajista"],
-    "info": INFO,
+    "technical_context": {"timeframe": TF.upper(), "adx_14_14_23": ADX.get("adx"), "regimen_adx": ADX.get("regimen"),
+                          "escenario": ESC, "confianza_global": CON.get("confianza_global"), "market_pct": round(MK),
+                          "rsi": round(rsi, 1), "macd_hist": round(float(r_["MACD_hist"]), 4),
+                          "vrvp_poc": VP.get("poc"), "vrvp_vah": VP.get("vah"), "vrvp_val": VP.get("val")},
+    "options_summary": SM, "key_liquidity_walls": {k: v for k, v in WALLS.items() if k != "criterio"},
+    "confluencias_vrvp": CONF, "flujo_neto_usd": FLUJO, "porcentaje_calls": PC,
+    "opt_tiers": {f"OPT{t}": (None if not v else {k: v[k] for k in ("contrato", "vencimiento", "dte", "prima", "breakeven",
+                                                                    "delta", "pop", "ve", "objetivo")})
+                  for t, v in NIV.items()},
+    "inversion_usd": INV, "info": INFO,
+    "candidatos": [{"target_expiration_tab": v["vencimiento"], "option_type": v["tipo"], "strike": v["strike"]}
+                   for v in NIV.values() if v],
 }
-
-# ---------------------------------------------------------------- lectura (reglas por defecto, IA a pedido)
 akey = f"opt_ai_{ticker}_{TF}"
-R = st.session_state.get(akey) or ai.options_rule_based(payload)
-HL = R.get("highlighted_option")
-if HL and "exp" not in HL:  # resultado de la IA: validar contra la cadena real
-    HL = ai.validar_destacado(HL, payload["candidatos"])
+RAI = ss.get(akey)
 
+
+def _explicacion(o: dict) -> str:
+    """Cómo se hizo el análisis y cómo interactuaron los datos técnicos con la cadena de opciones."""
+    sesgo_txt = {"Alcista": "alcista", "Bajista": "bajista"}.get(ESC, "neutral")
+    w_fav = (WALLS["call_walls"] if o["tipo"] == "CALL" else WALLS["put_walls"])
+    wtxt = ", ".join(f"{w['strike']:g}" for w in w_fav) or "—"
+    conf = "; ".join(f"{c['tipo'].lower()} {c['strike']:g} coincide con el {c['nodo_vrvp']} del VRVP" for c in CONF[:2])
+    em = SM.get("expected_move_usd")
+    t = (f"<b>1 · Motor cuantitativo (70 %).</b> Escenario <b>{sesgo_txt}</b> en {TF}: puntaje combinado "
+         f"<b>{COMB:+.0f}</b>, ADX <b>{ADX.get('adx', '—')}</b> ({'tendencia' if ADX.get('regimen') == 'tendencia' else 'rango'} "
+         f"respecto al nivel 23), RSI <b>{rsi:.1f}</b>, MACD {'positivo' if r_['MACD_hist'] > 0 else 'negativo'} y "
+         f"precio {'sobre' if spot > (VP.get('poc') or spot) else 'bajo'} el POC del VRVP (<b>{_m(VP.get('poc'))}</b>). "
+         f"<br><b>2 · Flujo de opciones (30 %).</b> GEX {SM['net_gamma_exposure_gex'].lower()} "
+         f"({'movimientos amortiguados, el precio gravita hacia muros y max pain' if (SM.get('gex_total') or 0) >= 0 else 'movimientos amplificados'}); "
+         f"PCR {SM['pcr_open_interest'] or SM['pcr_volumen'] or '—'}; flujo neto {OP._fmt_m(FLUJO)}; "
+         f"muros a favor en <b>{wtxt}</b>" + (f"; {conf}" if conf else "") + "."
+         f"<br><b>3 · Selección del contrato.</b> Se evaluaron {len(EVS)} contratos {o['tipo']} líquidos con money "
+         f"{MONEY}. El objetivo es <b>{_m(o['objetivo'])}</b> (primer muro a favor acotado por el movimiento esperado"
+         + (f" ±{_m(em)}" if em else "") + f"). El <b>{o['contrato']} · {o['vencimiento']}</b> maximiza el valor esperado "
+         f"(<b>{o['ve']:+.1f}%</b>): {o['p_toque']:.0f}% de probabilidad de tocar el objetivo en {o['horizonte_dias']:.0f} "
+         f"días, {o['roi_objetivo']:+.0f}% si lo toca y {o['roi_sin_movimiento']:+.0f}% si el precio no se mueve. "
+         f"Probabilidad de terminar con ganancia al vencimiento: <b>{o['pop']:.0f}%</b>.")
+    if ESC == "Neutral":
+        t += (" <br><b>Atención:</b> el escenario es neutral; esta opción es un escenario condicionado a la ruptura "
+              "a favor, no una señal confirmada.")
+    return t
+
+
+def _riesgos_html(o):
+    rs = OP.riesgos(o, ESC, ADX, SM.get("gex_total") or 0, SM.get("gamma_flip_level"), spot)
+    return ("<div class='ox-box'><h4>Riesgos y cuidados</h4><ul style='margin:0 0 0 16px;padding:0;font-size:12px'>"
+            + "".join(f"<li>{E(x)}</li>" for x in rs) + "</ul></div>") if rs else ""
+
+
+def _graficos(principal: dict, extra=()):
+    cs = [{"nombre": principal["contrato"] + " · " + principal["vencimiento"], "tipo": principal["tipo"],
+           "strike": principal["strike"], "iv": principal["iv"] / 100, "prima": principal["prima"],
+           "dte": max(principal["dte"], 1), "color": GREEN}]
+    for n, c, col in extra:
+        cs.append({"nombre": n, "tipo": c["tipo"], "strike": c["strike"], "iv": c["iv"] / 100, "prima": c["prima"],
+                   "dte": max(c["dte"], 1), "color": col})
+    ks_ = [c["strike"] for c in cs] + [principal["objetivo"], spot]
+    lo, hi = min(min(ks_), spot * 0.93), max(max(ks_), spot * 1.07)
+    pad = (hi - lo) * 0.06
+    niv = ([{"v": w["strike"], "t": f"C-wall {w['strike']:g}", "c": RED} for w in WALLS["call_walls"]]
+           + [{"v": w["strike"], "t": f"P-wall {w['strike']:g}", "c": GREEN} for w in WALLS["put_walls"]])
+    components.html(PW.html(spot, principal["objetivo"], cs, int(round(principal["horizonte_dias"])), (lo - pad, hi + pad), niv),
+                    height=385, scrolling=True)
+
+
+# ================================================================== pestañas CALL / PUT (columna derecha)
+with right:
+    tabs_def = []
+    if SEL:
+        tabs_def.append((f"{SEL['tipo']} OPT{ss['opt_sel']}", "main", GREEN if SEL["tipo"] == "CALL" else RED))
+    if ALT:
+        tabs_def.append((f"{OPUESTO} {ALT['strike']:g}", "alt", GREEN if OPUESTO == "CALL" else RED))
+    if ALT2:
+        tabs_def.append((f"{OPUESTO} {ALT2['strike']:g} · {ALT2['dte']}d", "alt2", GREEN if OPUESTO == "CALL" else RED))
+    if MAN:
+        tabs_def.append((f"MANUAL {MAN['contrato']}", "man", AMBER))
+    if not tabs_def:
+        st.info("No hay contratos líquidos para los criterios elegidos. Cambia el rango visible o el money.")
+    else:
+        css = "".join(
+            f".st-key-ox_tabs [data-testid='stTab']:nth-child({i + 1}){{border:1px solid {BORDER};border-bottom:0;"
+            f"border-radius:6px 6px 0 0;padding:4px 14px;margin-right:4px;color:#8B949E}}"
+            f".st-key-ox_tabs [data-testid='stTab']:nth-child({i + 1})[aria-selected='true']{{background:{c}22;"
+            f"color:{c};border-color:{c}}}"
+            for i, (_, _, c) in enumerate(tabs_def))
+        st.markdown(f"<style>{css}.st-key-ox_tabs [data-baseweb='tab-highlight']{{display:none}}</style>",
+                    unsafe_allow_html=True)
+        with st.container(key="ox_tabs"):
+            T_ = st.tabs([t[0] for t in tabs_def])
+        for (lbl, kind, colr), tab in zip(tabs_def, T_):
+            with tab:
+                if kind == "main":
+                    o = SEL
+                    if RAI and RAI.get("diagnostico"):
+                        st.markdown(f"<div class='ox-box'><h4>Lectura de la IA · {E(RAI.get('_modelo', ''))}</h4>"
+                                    f"<div class='ox-exp'>{E(RAI['diagnostico'])}</div></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='ox-box'><h4>Cómo se hizo el análisis · {E(o['contrato'])} · "
+                                f"{E(o['vencimiento'])}</h4><div class='ox-exp'>{_explicacion(o)}</div></div>",
+                                unsafe_allow_html=True)
+                    if AJ:
+                        alt_ = AJ["alcanzable"]
+                        st.markdown(
+                            "<div class='ox-alert'><b>Inversión limitada:</b> con "
+                            f"{_m(INV)} no alcanza para 1 contrato de {E(o['contrato'])} ({_m(o['costo'], dec=0)}). "
+                            + (f"La opción más cercana dentro del presupuesto es <b>{E(alt_['contrato'])} · {E(alt_['vencimiento'])}</b> "
+                               f"(valor esperado {AJ['impacto_ve']:+.1f} pts, probabilidad de éxito {AJ['impacto_pop']:+.0f} pts "
+                               f"frente a OPT{ss['opt_sel']}). " if alt_ else "Ningún contrato de este nivel cabe en el presupuesto. ")
+                            + f"Capital sugerido: óptimo <b>{_m(AJ['capital_optimo'], dec=0)}</b> · cercano "
+                            f"<b>{_m(AJ['capital_cercano'], dec=0)}</b> ({E(AJ['contrato_cercano'])}).</div>",
+                            unsafe_allow_html=True)
+                        b1, b2, _ = st.columns([1, 1, 2])
+                        if b1.button(f"Ajustar a {_m(AJ['capital_optimo'], dec=0)}", key="ox_aj1"):
+                            ss["opt_inv_set"] = AJ["capital_optimo"]
+                            st.rerun()
+                        if AJ["capital_cercano"] != AJ["capital_optimo"] and b2.button(
+                                f"Ajustar a {_m(AJ['capital_cercano'], dec=0)}", key="ox_aj2"):
+                            ss["opt_inv_set"] = AJ["capital_cercano"]
+                            st.rerun()
+                    ex = [("Manual · " + MAN["contrato"] + " · " + MAN["vencimiento"], MAN, AMBER)] if MAN else []
+                    _graficos(o, ex)
+                    st.markdown(_riesgos_html(o), unsafe_allow_html=True)
+                    _prof = ss.get("profile") or {}
+                    _adm = _prof.get("role") == "admin"
+                    _gk, _ck = store.secret("GEMINI_API_KEY"), cfg["anthropic_key"]
+                    c1, c2, _ = st.columns([1, 1, 3])
+                    g_cl = c1.button("Lectura Claude", icon=":material/auto_awesome:", disabled=not (_adm and _ck), key="ox_cl")
+                    g_ge = c2.button("Lectura Gemini", icon=":material/bolt:", disabled=not _gk, key="ox_ge")
+                    if g_cl or g_ge:
+                        try:
+                            with st.spinner("Analizando con IA…"):
+                                out = (ai.analyze(payload, _ck, ai.MODELOS[cfg["modelo"]], system=ai.SYSTEM_OPCIONES) if g_cl
+                                       else ai.analyze_gemini(payload, _gk, store.secret("GEMINI_MODEL") or None,
+                                                              system=ai.SYSTEM_OPCIONES))
+                            if _prof:
+                                db.log_event(_prof["email"], "ai_options", f"{ticker} · {'claude' if g_cl else 'gemini'}")
+                            ss[akey] = out
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error con la IA: {e}")
+                elif kind in ("alt", "alt2"):
+                    o = ALT if kind == "alt" else ALT2
+                    dirx = "pierde" if LADO == "CALL" else "supera"
+                    st.markdown(
+                        f"<div class='ox-box'><h4>Escenario alternativo · {E(o['contrato'])} · {E(o['vencimiento'])}</h4>"
+                        f"<div class='ox-exp'>El análisis principal es <b>{LADO}</b>. Esta opción {OPUESTO} solo aparecería "
+                        f"si el precio <b>{dirx} {_m(o['disparo'])}</b> con cierre de vela y aumento de volumen/ADX "
+                        f"(nivel que invalida el escenario principal: stop del plan o muro de "
+                        f"{'puts' if LADO == 'CALL' else 'calls'}). <br><b>¿Considerarla?</b> "
+                        + ("Solo como cobertura o ante un cambio de escenario confirmado; hoy va contra el motor cuantitativo. "
+                           if ESC != "Neutral" else "El escenario es neutral: es tan válida como la principal si se confirma la ruptura. ")
+                        + f"<br><b>Punto de entrada:</b> orden límite ≈ <b>{_m(o['limite'])}</b> por acción "
+                        f"(prima estimada si el subyacente llega a {_m(o['disparo'])}; hoy cotiza {_m(o['prima'])}). "
+                        f"Breakeven {_m(o['breakeven'])} · prob. de éxito {o['pop']:.0f}% · {o['dte']} días.</div></div>",
+                        unsafe_allow_html=True)
+                    _graficos(o)
+                else:
+                    o = MAN
+                    st.markdown(
+                        f"<div class='ox-box'><h4>Análisis manual · {E(o['contrato'])} · {E(o['vencimiento'])} · {o['dte']}d</h4>"
+                        f"<div class='ox-exp'>Prima <b>{_m(o['prima'])}</b> ({_m(o['costo'], dec=0)} por contrato"
+                        + (f", {int(INV // o['costo'])} con tu inversión" if INV and o["costo"] else "") + f") · breakeven "
+                        f"<b>{_m(o['breakeven'])}</b> ({o['dist_breakeven_pct']:+.1f}%) · objetivo <b>{_m(o['objetivo'])}</b> · "
+                        f"prob. de tocarlo {o['p_toque']:.0f}% · valor esperado <b>{o['ve']:+.1f}%</b> · prob. de éxito "
+                        f"{o['pop']:.0f}%.</div></div>", unsafe_allow_html=True)
+                    if SEL:
+                        rows_ = [("Contrato", lambda e: f"{e['contrato']} · {e['vencimiento']}"),
+                                 ("Prima", lambda e: _m(e["prima"])), ("Breakeven", lambda e: _m(e["breakeven"])),
+                                 ("Delta", lambda e: f"{e['delta']:+.2f}" if e["delta"] is not None else "—"),
+                                 ("Theta / día", lambda e: f"{e['theta_dia_pct']:.1f}%" if e["theta_dia_pct"] else "—"),
+                                 ("Si toca el objetivo", lambda e: f"{e['roi_objetivo']:+.0f}%"),
+                                 ("Prob. de éxito", lambda e: f"{e['pop']:.0f}%"), ("Valor esperado", lambda e: f"{e['ve']:+.1f}%")]
+                        st.markdown("<div class='ox-box'><h4>Manual vs OPT" + str(ss["opt_sel"]) + "</h4><table class='ox-cmp'>"
+                                    "<tr><th></th><th>Manual</th><th>Motor</th></tr>"
+                                    + "".join(f"<tr><td>{E(n)}</td><td>{E(f(o))}</td><td>{E(f(SEL))}</td></tr>" for n, f in rows_)
+                                    + "</table></div>", unsafe_allow_html=True)
+                    _graficos(o, [("OPT" + str(ss["opt_sel"]) + " · " + SEL["contrato"], SEL, "#7C9CFF")] if SEL else [])
+                    st.markdown(_riesgos_html(o), unsafe_allow_html=True)
+
+# ================================================================== option chain (debajo del análisis)
 EXPS = sorted(CH["exp"].unique())
 LBL = {e: f"{OP.etiqueta_venc(e)} · {int(CH[CH['exp'] == e]['dte'].iloc[0])}d" for e in EXPS}
-hl_exp = next((e for e in EXPS if HL and OP.etiqueta_venc(e).upper() == HL["target_expiration_tab"].upper()), None)
-# apertura automática de la pestaña del vencimiento recomendado (una vez por recomendación nueva)
-sig = f"{ticker}|{HL['option_type']}|{HL['strike']}|{HL['target_expiration_tab']}" if hl_exp else None
-if sig and st.session_state.get("opt_hl_sig") != sig:
-    st.session_state["opt_hl_sig"] = sig
-    st.session_state["opt_exp"] = LBL[hl_exp]
-if st.session_state.get("opt_exp_tk") != ticker and not sig:
-    st.session_state["opt_exp"] = LBL[EXPS[0]]
-st.session_state["opt_exp_tk"] = ticker
-if st.session_state.get("opt_exp") not in LBL.values():
-    st.session_state["opt_exp"] = LBL[EXPS[0]]
-
-# ---------------------------------------------------------------- cabecera minimalista
-gex_pos = (SM.get("gex_total") or 0) >= 0
-ec = GREEN if ESC == "Alcista" else RED if ESC == "Bajista" else NEUTRAL
-em = SM.get("expected_move_usd")
-SUMMARY = {"expected_move": "—" if em is None else f"±${em:,.2f}",
-           "max_pain": "—" if not SM.get("max_pain") else f"${SM['max_pain']:,.2f} ({SM['nearest_expiration']})",
-           "gex_status": SM["net_gamma_exposure_gex"], "bias": ESC}
-payload["summary_bar"] = SUMMARY
-payload["ai_optimal_recommendation"] = (None if not HL else {"expiration": HL["target_expiration_tab"],
-                                                             "type": HL["option_type"], "strike": HL["strike"]})
-st.markdown(
-    f"<div class='op-hdr'>"
-    f"<span class='tk'>{E(ticker)}</span><span class='px'>${spot:,.2f}</span>"
-    f"{pill('Sesgo ' + ESC, ec)}"
-    f"<span class='op-sum'><span>Mov. esperado <b>{E(SUMMARY['expected_move'])}</b></span>"
-    f"<span>Max pain <b>{E(SUMMARY['max_pain'])}</b></span>"
-    f"<span>GEX <b style='color:{GREEN if gex_pos else RED}'>{E(SUMMARY['gex_status'])}</b></span></span>"
-    + (f"<span class='op-rec'>Óptima del motor <b>{E(HL['option_type'])} {HL['strike']:g} · {E(HL['target_expiration_tab'])}</b></span>"
-       if HL else "")
-    + f"<span class='muted small'>Feed {E(INFO['feed'])} · {E(INFO['timestamp_utc'])}</span></div>",
-    unsafe_allow_html=True)
-
-
-def _k(label, val, sub=""):
-    return f"<div class='op-k'><div class='l'>{E(label)}</div><div class='v'>{val}</div><div class='s'>{sub}</div></div>"
-
-
-def _m(v, pre="$"):
-    return "—" if v is None or (isinstance(v, float) and np.isnan(v)) else f"{pre}{v:,.2f}"
-
-
-# ---------------------------------------------------------------- acordeón 1: análisis del motor / IA
-with st.expander("Análisis del motor e IA · diagnóstico cuantitativo y recomendación", expanded=False,
-                 icon=":material/insights:"):
-    cw = " · ".join(f"{w['strike']:g}" for w in WALLS["call_walls"]) or "—"
-    pw = " · ".join(f"{w['strike']:g}" for w in WALLS["put_walls"]) or "—"
-    st.markdown(
-        "<div class='op-grid'>"
-        + _k("PCR volumen", "—" if SM["pcr_volumen"] is None else f"{SM['pcr_volumen']:.2f}", "puts / calls")
-        + _k("PCR interés abierto", "—" if SM["pcr_open_interest"] is None else f"{SM['pcr_open_interest']:.2f}", "puts / calls")
-        + _k("Movimiento esperado", "—" if em is None else f"±${em:,.2f}",
-             f"{SM['nearest_expiration']} · {SM['dte']}d" + ("" if em is None else f" · ±{em / spot * 100:.1f}%"))
-        + _k("IV ATM", "—" if SM["iv_rank_or_avg_iv"] is None else f"{SM['iv_rank_or_avg_iv']:.1f}%", "vencimiento próximo")
-        + _k("GEX neto", f"<span style='color:{GREEN if gex_pos else RED}'>{E(SM['net_gamma_exposure_gex'])}</span>",
-             "Γ × OI × 100 × S² × 1 %")
-        + _k("Gamma flip", _m(SM.get("gamma_flip_level")),
-             "—" if not SM.get("gamma_flip_level") else f"spot {'sobre' if spot > SM['gamma_flip_level'] else 'bajo'} el flip")
-        + _k("Max pain", _m(SM.get("max_pain")), SM["nearest_expiration"])
-        + _k("Muros calls / puts", f"<span style='color:{RED}'>{cw}</span> / <span style='color:{GREEN}'>{pw}</span>",
-             WALLS["criterio"])
-        + "</div>", unsafe_allow_html=True)
-
-    # ---------------------------------------------------------------- motor de lectura
-    _prof = st.session_state.get("profile") or {}
-    _is_admin = _prof.get("role") == "admin"
-    _gem_key, _cl_key = store.secret("GEMINI_API_KEY"), cfg["anthropic_key"]
-    with st.container(border=True):
-        h1, h2 = st.columns([2.2, 2], vertical_alignment="center")
-        h1.markdown(f"<div class='op-box op-hl' style='margin:0'><h4>Lectura del flujo de opciones · {E(R.get('_modelo', ''))}</h4>"
-                    f"{E(R.get('diagnostico', ''))}</div>", unsafe_allow_html=True)
-        b1, b2, b3 = h2.columns(3)
-        go_cl = b1.button("Claude", icon=":material/auto_awesome:", width="stretch", disabled=not (_is_admin and _cl_key),
-                          type="primary" if _is_admin else "secondary",
-                          help="Lectura con Claude" if _is_admin else "Disponible solo para el administrador")
-        go_ge = b2.button("Gemini", icon=":material/bolt:", width="stretch", disabled=not _gem_key,
-                          type="primary" if not _is_admin else "secondary")
-        go_rb = b3.button("Sin IA", icon=":material/calculate:", width="stretch")
-        if go_cl or go_ge or go_rb:
-            try:
-                with st.spinner("Analizando el flujo de opciones…"):
-                    if go_cl:
-                        out = ai.analyze(payload, _cl_key, ai.MODELOS[cfg["modelo"]], system=ai.SYSTEM_OPCIONES)
-                    elif go_ge:
-                        out = ai.analyze_gemini(payload, _gem_key, store.secret("GEMINI_MODEL") or None, system=ai.SYSTEM_OPCIONES)
-                    else:
-                        out = ai.options_rule_based(payload)
-                if (go_cl or go_ge) and _prof:
-                    db.log_event(_prof["email"], "ai_options", f"{ticker} · {'claude' if go_cl else 'gemini'}")
-            except Exception as e:
-                st.error(f"Error con la IA: {e}. Se muestra la lectura por reglas.")
-                out = ai.options_rule_based(payload)
-            st.session_state[akey] = out
-            st.session_state.pop("opt_hl_sig", None)
-            st.rerun()
-
-    # ---------------------------------------------------------------- contrato destacado y niveles
-    bx1, bx2, bx3, bx4 = st.columns([1, 1.35, 1, 1])
-    # contrato destacado
-    _w = bx1
-    if HL:
-        col = GREEN if HL["option_type"] == "CALL" else RED
-        _w.markdown(
-            f"<div class='op-box op-hl'><h4>Contrato destacado</h4>"
-            f"<div style='font-size:15px;font-weight:700;color:{col};font-family:JetBrains Mono,monospace'>"
-            f"{E(HL['option_type'])} {HL['strike']:g} · {E(HL['target_expiration_tab'])}</div>"
-            f"<div class='num muted small'>Δ {HL.get('delta', '—')} · {HL.get('dte', '—')}d · bid/ask "
-            f"{_m(HL.get('bid'))}/{_m(HL.get('ask'))} · IV {HL.get('iv', '—')}%</div>"
-            f"<div style='margin-top:6px'>{E(HL.get('rationale', ''))}</div></div>", unsafe_allow_html=True)
-    else:
-        _w.markdown("<div class='op-box'><h4>Contrato destacado</h4>Ninguno: el escenario cuantitativo es neutral o el "
-                    "flujo de opciones lo contradice.</div>", unsafe_allow_html=True)
-    niv = R.get("niveles_institucionales") or []
-    if niv:
-        bx2.markdown("<div class='op-box'><h4>Niveles institucionales</h4><table><tr><th>Nivel</th><th>Tipo</th><th>Efecto</th></tr>"
-                    + "".join(f"<tr><td class='num'>{float(n_['nivel']):,.2f}</td><td>{E(str(n_.get('tipo', '')))}"
-                              + (f"<div class='muted small'>{E(str(n_.get('confluencia')))}</div>" if n_.get('confluencia') else "")
-                              + f"</td><td>{E(str(n_.get('efecto', '')))}</td></tr>"
-                              for n_ in niv if n_.get("nivel") is not None)
-                    + "</table></div>", unsafe_allow_html=True)
-    bx3.markdown(f"<div class='op-box'><h4>Régimen gamma · {E(str(R.get('regimen_gex', '')))}</h4>"
-                f"{E(R.get('lectura_regimen', ''))}"
-                + (f"<div style='margin-top:6px'>Flujo {E(str(R.get('sesgo_flujo', '')).lower())} · "
-                   f"{'valida' if R.get('valida_escenario') else 'contradice'} el escenario · confianza "
-                   f"<span class='num'>{R.get('confianza', '—')}%</span></div>")
-                + "</div>", unsafe_allow_html=True)
-    if R.get("advertencias"):
-        bx4.markdown("<div class='op-box'><h4>Advertencias</h4><ul style='margin:0 0 0 16px;padding:0'>"
-                    + "".join(f"<li>{E(a)}</li>" for a in R["advertencias"]) + "</ul></div>", unsafe_allow_html=True)
-
-
-
-# ---------------------------------------------------------------- acordeón 2: simulador híbrido
-EXP_LBL = {OP.etiqueta_venc(e): e for e in EXPS}
-OPT = None
-if HL:
-    _r = OP.contrato(CH, EXP_LBL.get(HL["target_expiration_tab"]), HL["strike"], HL["option_type"])
-    OPT = OP.evaluar(_r, spot, CH, WALLS, GEXS) if _r is not None else None
-with st.expander("Simulador de decisión · Auto / Manual", expanded=True, icon=":material/tune:"):
-    t_def = HL["option_type"] if HL else ("PUT" if ESC == "Bajista" else "CALL")
-    g1, g2, g3, g4 = st.columns([0.9, 1.6, 1.6, 1.1], vertical_alignment="bottom")
-    tipo = g1.segmented_control("Tipo", ["CALL", "PUT"], default=t_def, key=f"sim_tipo_{ticker}") or t_def
-    opt_same = OPT if (OPT and OPT["tipo"] == tipo) else None
-    if opt_same is None:
-        # sin recomendación en esa dirección: óptimo matemático del motor para el tipo elegido
-        _best = [b for b in (OP.mejor_strike(CH, spot, e, tipo, WALLS, GEXS) for e in EXPS if
-                             int(CH[CH["exp"] == e]["dte"].iloc[0]) >= 7) if b]
-        opt_same = max(_best, key=lambda b: b["ve"]) if _best else None
-    with g2:
-        m_exp = st.segmented_control("Fecha de expiración", ["Auto", "Manual"], default="Auto", key=f"sim_mexp_{ticker}") or "Auto"
-        exp_opts = list(EXP_LBL)
-        e_def = opt_same["vencimiento"] if opt_same else exp_opts[0]
-        if m_exp == "Auto":
-            st.selectbox("Vencimiento", [e_def], disabled=True, label_visibility="collapsed", key=f"sim_ea_{ticker}")
-            sel_e = None
-        else:
-            sel_e = st.selectbox("Vencimiento", exp_opts, index=exp_opts.index(e_def) if e_def in exp_opts else 0,
-                                 label_visibility="collapsed", key=f"sim_e_{ticker}")
-    with g3:
-        m_k = st.segmented_control("Strike", ["Auto", "Manual"], default="Auto", key=f"sim_mk_{ticker}") or "Auto"
-        ks_src = CH[(CH["type"] == tipo.lower()) & ((CH["exp"] == EXP_LBL[sel_e]) if sel_e else True)]
-        k_opts = sorted(ks_src["strike"].unique())
-        k_def = opt_same["strike"] if opt_same else float(k_opts[int(np.argmin([abs(k - spot) for k in k_opts]))])
-        if m_k == "Auto":
-            st.selectbox("Strike", [f"{k_def:,.2f}"], disabled=True, label_visibility="collapsed", key=f"sim_ka_{ticker}")
-            sel_k = None
-        else:
-            sel_k = st.selectbox("Strike", k_opts, index=k_opts.index(k_def) if k_def in k_opts else 0,
-                                 format_func=lambda v: f"{v:,.2f}", label_visibility="collapsed", key=f"sim_k_{ticker}")
-    run_sim = g4.button("Analizar Opción", type="primary", icon=":material/play_arrow:", width="stretch")
-    SIM_CFG = {"expiration_mode": m_exp.upper(), "strike_mode": m_k.upper(),
-               "selected_expiration": sel_e or e_def, "selected_strike": float(sel_k if sel_k is not None else k_def),
-               "option_type": tipo}
-    payload["decision_simulator_config"] = SIM_CFG
-    skey = f"sim_res_{ticker}_{TF}"
-    if run_sim:
-        if sel_e and sel_k is None:          # escenario A: fecha manual, strike auto
-            res, modo = OP.mejor_strike(CH, spot, EXP_LBL[sel_e], tipo, WALLS, GEXS), "A"
-        elif sel_k is not None and not sel_e:  # escenario B: strike manual, fecha auto
-            res, modo = OP.mejor_vencimiento(CH, spot, sel_k, tipo, WALLS, GEXS), "B"
-        elif sel_e and sel_k is not None:     # ambos manuales: evaluar exactamente ese contrato
-            _r = OP.contrato(CH, EXP_LBL[sel_e], sel_k, tipo)
-            res, modo = (OP.evaluar(_r, spot, CH, WALLS, GEXS) if _r is not None else None), "M"
-        else:                                  # ambos auto: la combinación óptima del motor
-            res, modo = opt_same, "AUTO"
-        st.session_state[skey] = {"res": res, "modo": modo, "cfg": SIM_CFG}
-    SIMR = st.session_state.get(skey)
-    if SIMR:
-        res, modo = SIMR["res"], SIMR["modo"]
-        if res is None:
-            st.warning("No hay contratos líquidos (bid/ask e interés abierto) para esa combinación.")
-        else:
-            txt_modo = {"A": f"Mejor strike para el {res['vencimiento']} (fecha manual, strike automático)",
-                        "B": f"Mejor vencimiento para el strike {res['strike']:g} (strike manual, fecha automática)",
-                        "M": "Contrato elegido manualmente", "AUTO": "Combinación óptima del motor"}[modo]
-            riesg = OP.riesgos(res, ESC, ADX, SM.get("gex_total") or 0, SM.get("gamma_flip_level"), spot)
-            colr = GREEN if res["tipo"] == "CALL" else RED
-            r1, r2 = st.columns([1.1, 1.4])
-            r1.markdown(
-                f"<div class='op-box op-hl'><h4>{E(txt_modo)}</h4>"
-                f"<div style='font-size:16px;font-weight:700;color:{colr};font-family:JetBrains Mono,monospace'>"
-                f"{E(res['contrato'])} · {E(res['vencimiento'])} · {res['dte']}d</div>"
-                f"<div style='margin-top:6px'>Prima <b class='num'>${res['prima']:,.2f}</b> (${res['prima'] * 100:,.0f} por contrato) · "
-                f"breakeven <b class='num'>${res['breakeven']:,.2f}</b> ({res['dist_breakeven_pct']:+.1f}%) · objetivo "
-                f"<b class='num'>${res['objetivo']:,.2f}</b> en {res['horizonte_dias']:.0f} días.</div>"
-                f"<div style='margin-top:4px'>Si toca el objetivo: <b class='num' style='color:{GREEN if res['roi_objetivo'] >= 0 else RED}'>{res['roi_objetivo']:+.0f}%</b> · "
-                f"si el precio no se mueve: <b class='num' style='color:{GREEN if res['roi_sin_movimiento'] >= 0 else RED}'>{res['roi_sin_movimiento']:+.0f}%</b> · "
-                f"probabilidad de tocar el objetivo <b class='num'>{res['p_toque']:.0f}%</b> · valor esperado "
-                f"<b class='num' style='color:{GREEN if res['ve'] >= 0 else RED}'>{res['ve']:+.1f}%</b></div></div>",
-                unsafe_allow_html=True)
-            r1.markdown("<div class='op-box'><h4>Riesgos y cuidados</h4>"
-                        + ("<ul style='margin:0 0 0 16px;padding:0'>" + "".join(f"<li>{E(x)}</li>" for x in riesg) + "</ul>"
-                           if riesg else "Sin alertas relevantes con los datos actuales.") + "</div>", unsafe_allow_html=True)
-            o = opt_same
-
-            def _v(e, k, f):
-                if not e or e.get(k) is None:
-                    return "—"
-                return f(e[k])
-
-            filas = [
-                ("Contrato", lambda e: f"{e['contrato']} · {e['vencimiento']}", None),
-                ("Días al vencimiento", lambda e: f"{e['dte']}", None),
-                ("Prima (medio)", lambda e: f"${e['prima']:,.2f}", None),
-                ("Breakeven", lambda e: f"${e['breakeven']:,.2f} ({e['dist_breakeven_pct']:+.1f}%)", None),
-                ("Delta", lambda e: "—" if e["delta"] is None else f"{e['delta']:+.2f}", None),
-                ("IV", lambda e: f"{e['iv']:.1f}%", None),
-                ("Theta por día", lambda e: "—" if e["theta_dia_pct"] is None else f"{e['theta_dia_pct']:.1f}% de la prima", "min_theta"),
-                ("Objetivo (muro / mov. esperado)", lambda e: f"${e['objetivo']:,.2f}", None),
-                ("Rentabilidad si toca el objetivo", lambda e: f"{e['roi_objetivo']:+.0f}%", "max_roi"),
-                ("Si el precio no se mueve", lambda e: f"{e['roi_sin_movimiento']:+.0f}%", "max_roi0"),
-                ("Prob. de tocar el objetivo", lambda e: f"{e['p_toque']:.0f}%", "max_p"),
-                ("Valor esperado", lambda e: f"{e['ve']:+.1f}%", "max_ve"),
-                ("Spread", lambda e: f"{e['spread_pct']:.1f}%", "min_spread"),
-                ("Interés abierto / volumen", lambda e: f"{e['oi'] or 0:,} / {e['volumen']:,}", None),
-                ("GEX en el strike", lambda e: "—" if e["gex_strike"] is None else OP._fmt_m(e["gex_strike"]), None),
-            ]
-            mejor = {"min_theta": ("theta_dia_pct", min), "max_roi": ("roi_objetivo", max), "max_roi0": ("roi_sin_movimiento", max),
-                     "max_p": ("p_toque", max), "max_ve": ("ve", max), "min_spread": ("spread_pct", min)}
-            rows_ = []
-            for lab, f, crit in filas:
-                a_, b_ = _v(res, "contrato", lambda _: f(res)), _v(o, "contrato", lambda _: f(o))
-                ca = cb = ""
-                if crit and o and res is not o:
-                    k_, fn = mejor[crit]
-                    va, vb = res.get(k_), o.get(k_)
-                    if va is not None and vb is not None and round(va, 1) != round(vb, 1):
-                        w = fn(va, vb)
-                        ca, cb = ("best", "") if w == va else ("", "best")
-                rows_.append(f"<tr><td>{E(lab)}</td><td class='n {ca}'>{E(a_)}</td><td class='n {cb}'>{E(b_)}</td></tr>")
-            r2.markdown("<div class='op-box'><h4>Comparativa · tu selección vs combinación óptima del motor</h4>"
-                        "<table class='op-cmp'><tr><th></th><th style='text-align:right'>Tu selección</th>"
-                        "<th style='text-align:right'>Óptima del motor (IA)</th></tr>" + "".join(rows_) + "</table>"
-                        "<div class='muted small' style='margin-top:6px'>Verde = mejor valor de la fila. Valor esperado = "
-                        "P(toca objetivo) × rentabilidad en el objetivo + (1 − P) × resultado sin movimiento − medio spread, "
-                        "con Black-Scholes a la IV actual en un horizonte de min(días/2, 10).</div></div>",
-                        unsafe_allow_html=True)
-    # ---- gráfico P&L dinámico (time-to-target): opción del simulador vs óptima del motor
-    _u = (SIMR or {}).get("res")
-    _cs = []
-    if _u:
-        _cs.append(("Tu selección · " + _u["contrato"] + " · " + _u["vencimiento"], _u, "#F0B429"))
-    if opt_same and not (_u and _u["contrato"] == opt_same["contrato"] and _u["exp"] == opt_same["exp"]):
-        _cs.append(("Óptima del motor · " + opt_same["contrato"] + " · " + opt_same["vencimiento"], opt_same, "#7C9CFF"))
-    if _cs:
-        from core import pnl_widget as PW
-        _obj = (_u or opt_same)["objetivo"]
-        _ks = [c[1]["strike"] for c in _cs] + [_obj, spot]
-        _lo, _hi = min(min(_ks), spot * 0.9), max(max(_ks), spot * 1.1)
-        _pad = (_hi - _lo) * 0.08
-        _niv = ([{"v": w["strike"], "t": "C-wall", "c": RED} for w in WALLS["call_walls"]]
-                + [{"v": w["strike"], "t": "P-wall", "c": GREEN} for w in WALLS["put_walls"]])
-        st.markdown("<div class='muted small' style='margin:6px 0 2px'><b>P&amp;L dinámico por trayectoria</b> · "
-                    "elige en cuántos días llega el precio al objetivo (deslizador, botones o arrastrando el punto)</div>",
-                    unsafe_allow_html=True)
-        components.html(PW.html(spot, _obj,
-                                [{"nombre": n, "tipo": c["tipo"], "strike": c["strike"], "iv": c["iv"] / 100,
-                                  "prima": c["prima"], "dte": c["dte"], "color": colr_} for n, c, colr_ in _cs],
-                                int(round((_u or opt_same)["horizonte_dias"])), (_lo - _pad, _hi + _pad), _niv),
-                        height=640, scrolling=False)
-    if not SIMR:
-        st.markdown("<div class='muted small'>Ambos campos en <b>Auto</b> muestran la combinación óptima del motor. Pasa la "
-                    "fecha o el strike a <b>Manual</b> y pulsa <b>Analizar Opción</b>: con la fecha manual XStock busca el "
-                    "mejor strike; con el strike manual, el mejor vencimiento.</div>", unsafe_allow_html=True)
-
-# ---------------------------------------------------------------- pestañas de vencimiento
 labels = [LBL[e] for e in EXPS]
-st.markdown("<div class='muted small' style='margin-top:4px'>Vencimientos</div>", unsafe_allow_html=True)
-if hl_exp is not None:
-    k = labels.index(LBL[hl_exp]) + 1
-    st.markdown(
-        f"<style>.st-key-opt_exp button:nth-of-type({k}){{animation:opexp 1.4s ease-in-out infinite;"
-        f"border-color:{ACC} !important}}"
-        f"@keyframes opexp{{0%,100%{{background-color:rgba(41,98,255,.10)}}50%{{background-color:rgba(41,98,255,.45)}}}}"
-        f"</style>", unsafe_allow_html=True)
+sig = f"{ticker}|{SEL['contrato']}|{SEL['vencimiento']}" if SEL else None
+if sig and ss.get("opt_hl_sig") != sig:  # apertura automática del vencimiento del contrato seleccionado
+    ss["opt_hl_sig"] = sig
+    ss["opt_exp"] = LBL[SEL["exp"]]
+if ss.get("opt_exp") not in labels:
+    ss["opt_exp"] = labels[0]
+st.markdown("<div class='ox-lbl' style='margin-top:10px'>Cadena de opciones (option chain)</div>", unsafe_allow_html=True)
+if SEL:
+    kx = labels.index(LBL[SEL["exp"]]) + 1
+    st.markdown(f"<style>.st-key-opt_exp button:nth-of-type({kx}){{animation:opexp 1.4s ease-in-out infinite;"
+                f"border-color:{ACC} !important}}@keyframes opexp{{0%,100%{{background-color:rgba(41,98,255,.10)}}"
+                f"50%{{background-color:rgba(41,98,255,.45)}}}}</style>", unsafe_allow_html=True)
 sel_lbl = st.segmented_control("Vencimiento", labels, key="opt_exp", label_visibility="collapsed") or labels[0]
 sel_exp = EXPS[labels.index(sel_lbl)]
 DX = CH[CH["exp"] == sel_exp]
-
-# ---------------------------------------------------------------- cadena Put/Call lado a lado
-cwk = {w["strike"] for w in WALLS["call_walls"]}
-pwk = {w["strike"] for w in WALLS["put_walls"]}
-hl_here = HL if (hl_exp is not None and sel_exp == hl_exp) else None
-_sr = (st.session_state.get(f"sim_res_{ticker}_{TF}") or {}).get("res")
-sim_here = _sr if (_sr and _sr["exp"] == sel_exp) else None
 calls = DX[DX["type"] == "call"].set_index("strike")
 puts = DX[DX["type"] == "put"].set_index("strike")
 ks = sorted(set(calls.index) | set(puts.index))
 em_sel = OP.expected_move(DX, spot)
+cwk = {w["strike"] for w in WALLS["call_walls"]}
+pwk = {w["strike"] for w in WALLS["put_walls"]}
+atm_k = ks[int(np.argmin([abs(k - spot) for k in ks]))] if ks else None
+paso_k = (ks[1] - ks[0]) if len(ks) > 1 else 1
+marcas = {}  # (tipo, strike) -> (etiqueta, clase)
+for t, v in NIV.items():
+    if v and v["exp"] == sel_exp:
+        marcas[(v["tipo"], v["strike"])] = ({1: "RECOMENDADO · OPT1", 2: "AGRESIVO · OPT2", 3: "ULTRA RISK · OPT3"}[t],
+                                             "hot" if t == ss["opt_sel"] else "t2")
+if MAN and MAN["exp"] == sel_exp:
+    marcas.setdefault((MAN["tipo"], MAN["strike"]), ("MANUAL", "sim"))
 
 
 def _n(v, f="{:,.2f}"):
@@ -448,6 +542,23 @@ def _n(v, f="{:,.2f}"):
 
 def _i(v):
     return "" if v is None or pd.isna(v) else f"{int(v):,}"
+
+
+COLS_C = [("oi", "OI"), ("volume", "VOL"), ("iv", "IV"), ("delta", "DELTA"), ("theta", "THETA"), ("bid", "BID"), ("ask", "ASK")]
+COLS_P = list(reversed(COLS_C))
+
+
+def side(r, cols, itm, mark):
+    cls = ("itm " if itm else "") + (mark[1] if mark else "")
+    if r is None:
+        return "".join(f"<td class='{cls}'></td>" for _ in cols)
+    o_ = []
+    for name, _ in cols:
+        v = r[name]
+        txt = (_n(v * 100, "{:.1f}%") if name == "iv" else _n(v, "{:+.2f}") if name in ("delta", "theta")
+               else _i(v) if name in ("volume", "oi") else _n(v))
+        o_.append(f"<td class='{cls}{' q' if name in ('bid', 'ask') else ''}'>{txt}</td>")
+    return "".join(o_)
 
 
 rows = []
@@ -460,96 +571,90 @@ for k in ks:
         spot_done = True
     c = calls.loc[k] if k in calls.index else None
     p = puts.loc[k] if k in puts.index else None
-    hc = bool(hl_here and hl_here["option_type"] == "CALL" and abs(hl_here["strike"] - k) < 1e-6)
-    hp = bool(hl_here and hl_here["option_type"] == "PUT" and abs(hl_here["strike"] - k) < 1e-6)
-    sc = bool(sim_here and sim_here["tipo"] == "CALL" and abs(sim_here["strike"] - k) < 1e-6 and not hc)
-    sp = bool(sim_here and sim_here["tipo"] == "PUT" and abs(sim_here["strike"] - k) < 1e-6 and not hp)
-    itm_c, itm_p = k < spot, k > spot
-    tags = ("<span class='tg tc'>C-WALL</span>" if k in cwk else "") + ("<span class='tg tp'>P-WALL</span>" if k in pwk else "")
-    if SM.get("max_pain") == k and sel_exp == EXPS[0]:
-        tags += "<span class='tg tm'>MAX PAIN</span>"
+    mc, mp = marcas.get(("CALL", k)), marcas.get(("PUT", k))
+    tags = []
+    if k in pwk:
+        tags.append(("PUT HEDGE", "tp"))
+    if k in cwk:
+        tags.append(("C-WALL", "tc"))
+    if VP.get("poc") and abs(k - VP["poc"]) <= paso_k / 2:
+        tags.append(("POC / VRVP", "tv"))
+    if k == atm_k:
+        tags.append(("ATM SPOT", "ta"))
+    for m_ in (mc, mp):
+        if m_:
+            tags.append((m_[0], "tr" if m_[1] == "hot" else "tm"))
+    hot = bool((mc and mc[1] == "hot") or (mp and mp[1] == "hot"))
+    rows.append(f"<tr{' id=hl class=big' if hot else ''}>" + side(c, COLS_C, k < spot, mc)
+                + f"<td class='k{' hotk' if hot else ''}'><div>${k:,.2f}</div>"
+                + "".join(f"<span class='tg {cl}'>{E(t)}</span>" for t, cl in tags) + "</td>"
+                + side(p, COLS_P, k > spot, mp) + "</tr>")
 
-    def side(r, cols, itm, hot, sim=False):
-        cls = ("itm " if itm else "") + ("hot" if hot else "") + (" sim" if sim else "")
-        if r is None:
-            return "".join(f"<td class='{cls}'></td>" for _ in cols)
-        out = []
-        for name in cols:
-            v = r[name]
-            txt = (_n(v, "{:,.3f}") if name in ("delta", "theta") else _n(v, "{:,.4f}") if name == "gamma"
-                   else _i(v) if name in ("volume", "oi") else _n(v))
-            extra = " q" if name in ("bid", "ask") else ""
-            out.append(f"<td class='{cls}{extra}'>{txt}</td>")
-        return "".join(out)
-
-    rows.append(f"<tr id='{'hl' if (hc or hp) else ''}'>"
-                + side(c, ["theta", "gamma", "delta", "volume", "oi", "bid", "ask"], itm_c, hc, sc)
-                + f"<td class='k{' hotk' if (hc or hp) else ''}'>{k:,.2f}{tags}</td>"
-                + side(p, ["ask", "bid", "oi", "volume", "delta", "gamma", "theta"], itm_p, hp, sp) + "</tr>")
-
-head = ("<tr class='g'><th colspan='7' class='gc'>CALLS</th><th></th><th colspan='7' class='gp'>PUTS</th></tr>"
-        "<tr><th>Theta</th><th>Gamma</th><th>Delta</th><th>Volumen</th><th>Int. abierto</th><th>Bid</th><th>Ask</th>"
-        "<th class='k'>Ejercicio</th>"
-        "<th>Ask</th><th>Bid</th><th>Int. abierto</th><th>Volumen</th><th>Delta</th><th>Gamma</th><th>Theta</th></tr>")
+head = ("<tr class='g'><th colspan='7' class='gc'>CALLS (COMPRADORES ALCISTAS)</th><th class='k'>STRIKE</th>"
+        "<th colspan='7' class='gp'>PUTS (COBERTURA / BAJISTAS)</th></tr><tr>"
+        + "".join(f"<th>{h}</th>" for _, h in COLS_C) + "<th class='k'>PRECIO</th>"
+        + "".join(f"<th>{h}</th>" for _, h in COLS_P) + "</tr>")
 CHAIN_HTML = f"""<!doctype html><html><head><style>
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap');
-body{{margin:0;background:{BG};color:{TXT};font-family:'JetBrains Mono','Fira Code',monospace}}
-.wrap{{height:600px;overflow:auto;border:1px solid {BORDER};border-radius:6px;background:{PANEL}}}
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;600&display=swap');
+body{{margin:0;background:{BG};color:{TXT};font-family:{MONO}}}
+.wrap{{height:560px;overflow:auto;border:1px solid {BORDER};border-radius:8px;background:{PANEL}}}
 table{{border-collapse:collapse;width:100%;font-size:12px;font-variant-numeric:tabular-nums}}
-th{{position:sticky;top:0;background:#1C2128;color:#8B949E;font-weight:600;padding:5px 6px;text-align:right;
-  border-bottom:1px solid {BORDER};font-family:Inter,system-ui,sans-serif;font-size:11px;z-index:2;white-space:nowrap;height:16px}}
-tr.g th{{top:0;text-align:center;letter-spacing:.08em}}
-tr:nth-child(2) th{{top:25px}}
+th{{position:sticky;background:#1C2128;color:#8B949E;font-weight:600;padding:5px 6px;text-align:right;white-space:nowrap;height:16px;
+  border-bottom:1px solid {BORDER};font-family:Inter,system-ui,sans-serif;font-size:11px;z-index:2}}
+tr.g th{{top:0;text-align:center;letter-spacing:.06em}} tr:nth-child(2) th{{top:27px}}
 th.gc{{color:{GREEN}}} th.gp{{color:{RED}}}
-td{{padding:4px 6px;text-align:right;border-bottom:1px solid #21262D;white-space:nowrap}}
-td.itm{{background:rgba(41,98,255,.06)}}
+td{{padding:5px 6px;text-align:right;border-bottom:1px solid #21262D;white-space:nowrap;color:#C9D1D9}}
+td.itm{{background:rgba(38,166,154,.05)}}
 td.q{{color:{TXT};font-weight:600}}
-td.k,th.k{{text-align:center;background:#1C2128;color:{TXT};font-weight:600;min-width:150px;border-left:1px solid {BORDER};
+td.k,th.k{{text-align:center;background:#1C2128;color:{TXT};font-weight:700;min-width:150px;border-left:1px solid {BORDER};
   border-right:1px solid {BORDER}}}
-tr.spot td{{text-align:center;background:rgba(41,98,255,.18);color:#9DB6FF;font-size:11px;padding:3px;
+td.k div{{font-size:12px}}
+tr.big td{{padding:10px 6px;font-size:13px}}
+tr.big td.k div{{font-size:17px}}
+tr.spot td{{text-align:center;background:rgba(41,98,255,.16);color:#9DB6FF;font-size:11px;padding:3px;
   border-top:1px solid {ACC};border-bottom:1px solid {ACC}}}
-.tg{{display:inline-block;font-size:11px;line-height:14px;padding:0 3px;margin-left:5px;border-radius:3px}}
-.tc{{color:{RED};border:1px solid {RED}88}} .tp{{color:{GREEN};border:1px solid {GREEN}88}} .tm{{color:{AMBER};border:1px solid {AMBER}88}}
-td.hot{{animation:pulse 1.2s ease-in-out infinite}}
+.tg{{display:inline-block;font-size:11px;line-height:14px;padding:0 4px;margin:2px 2px 0;border-radius:3px;font-family:Inter,sans-serif;
+  font-weight:600}}
+.tc{{color:{RED};border:1px solid {RED}88}} .tp{{color:{GREEN};border:1px solid {GREEN}88}}
+.tv{{color:#9DB6FF;border:1px solid #9DB6FF88}} .ta{{color:{TXT};background:#30363D}}
+.tr{{color:#fff;background:{GREEN}}} .tm{{color:{AMBER};border:1px solid {AMBER}}}
+td.hot{{animation:pulse 1.3s ease-in-out infinite}}
+td.hotk{{animation:pulsek 1.3s ease-in-out infinite}}
+td.t2{{background:rgba(210,153,34,.08)}}
 td.sim{{background:rgba(240,180,41,.16);box-shadow:inset 0 1px 0 {AMBER},inset 0 -1px 0 {AMBER}}}
-td.hotk{{animation:pulsek 1.2s ease-in-out infinite;color:#fff}}
-@keyframes pulse{{0%,100%{{background:rgba(41,98,255,.08)}}50%{{background:rgba(41,98,255,.55)}}}}
-@keyframes pulsek{{0%,100%{{background:#1C2128}}50%{{background:{ACC}}}}}
+@keyframes pulse{{0%,100%{{background:rgba(38,166,154,.10)}}50%{{background:rgba(38,166,154,.45)}}}}
+@keyframes pulsek{{0%,100%{{background:#1C2128}}50%{{background:rgba(38,166,154,.55)}}}}
 </style></head><body><div class='wrap' id='w'><table>{head}{''.join(rows)}</table></div>
-<script>
-const w=document.getElementById('w');const h=document.getElementById('hl')||document.querySelector('tr.spot');
-if(h){{w.scrollTop=Math.max(0,h.offsetTop-w.clientHeight/2);}}
-</script></body></html>"""
+<script>const w=document.getElementById('w');const h=document.getElementById('hl')||document.querySelector('tr.spot');
+if(h){{w.scrollTop=Math.max(0,h.offsetTop-w.clientHeight/2);}}</script></body></html>"""
+components.html(CHAIN_HTML, height=572, scrolling=False)
+st.caption("Fondo verde tenue = dentro del dinero. La fila que destella es el contrato seleccionado (OPT"
+           f"{ss['opt_sel']}); en ámbar, los otros niveles y el análisis manual. PUT HEDGE / C-WALL = muros de mayor interés "
+           "abierto. Datos: Alpaca (" + INFO["feed"] + ") · " + INFO["timestamp_utc"])
 
-components.html(CHAIN_HTML, height=612, scrolling=False)
-st.caption("Fondo azul tenue = dentro del dinero. C-WALL / P-WALL = muros de mayor interés abierto (≤ 45 días). "
-           + ("La fila que destella es la combinación óptima del motor. " if hl_here else "")
-           + ("La fila en ámbar es el contrato del simulador." if sim_here else ""))
-
-# ---------------------------------------------------------------- GEX por strike
-gx = GEXS
 with st.expander("Ver Mapa GEX / Muros", expanded=False, icon=":material/bar_chart:"):
+    gx = GEXS
     if len(gx):
         fig = go.Figure(go.Bar(x=gx.values / 1e6, y=gx.index, orientation="h",
                                marker_color=[GREEN if v >= 0 else RED for v in gx.values],
                                hovertemplate="Strike %{y:,.2f}<br>GEX %{x:,.1f} M$<extra></extra>"))
-        lines = [(spot, ACC, f"Spot {spot:,.2f}", "solid", "bottom right")]
+        lns = [(spot, ACC, f"Spot {spot:,.2f}", "solid", "bottom right")]
         if SM.get("gamma_flip_level"):
-            lines.append((SM["gamma_flip_level"], AMBER, f"Gamma flip {SM['gamma_flip_level']:,.2f}", "dash", "top left"))
+            lns.append((SM["gamma_flip_level"], AMBER, f"Gamma flip {SM['gamma_flip_level']:,.2f}", "dash", "top left"))
         if VP.get("poc"):
-            lines.append((VP["poc"], MUTED, f"POC VRVP {VP['poc']:,.2f}", "dot", "top right"))
-        for y, colr, txt, dash, pos in lines:
+            lns.append((VP["poc"], MUTED, f"POC VRVP {VP['poc']:,.2f}", "dot", "top right"))
+        for y, colr, txt, dash, pos in lns:
             fig.add_hline(y=y, line=dict(color=colr, width=1, dash=dash), annotation_text=txt,
                           annotation_position=pos, annotation_font=dict(size=11, color=colr))
         fig.update_layout(height=420, margin=dict(l=10, r=10, t=30, b=10), paper_bgcolor=PANEL, plot_bgcolor=PANEL,
                           font=dict(family="JetBrains Mono, monospace", size=11, color=TXT), bargap=0.15,
-                          title=dict(text="Exposición gamma neta por strike (≤ 45 días, millones de $ por 1 % de movimiento)",
+                          title=dict(text="Exposición gamma neta por strike (millones de $ por 1 % de movimiento)",
                                      font=dict(size=12, color="#8B949E")),
-                          xaxis=dict(gridcolor="#21262D", zerolinecolor=BORDER),
-                          yaxis=dict(gridcolor="#21262D", tickformat=",.2f"))
+                          xaxis=dict(gridcolor="#21262D", zerolinecolor=BORDER), yaxis=dict(gridcolor="#21262D", tickformat=",.2f"))
         st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
-st.caption("Cálculos: PCR = Σ puts / Σ calls · movimiento esperado = (call ATM + put ATM) × 0.85 · GEX = Γ × OI × 100 × S² × "
-           "0.01 (calls +, puts −) · max pain = strike con el menor pago intrínseco total · gamma flip = precio donde el GEX "
-           "total cambia de signo. El interés abierto corresponde al cierre anterior.")
+st.caption("Cálculos: valor esperado = P(toca objetivo) × rentabilidad en el objetivo + (1 − P) × resultado sin movimiento − "
+           "medio spread (Black-Scholes, IV actual) · prob. de éxito = P(precio al vencimiento más allá del breakeven) · "
+           "PCR = Σ puts / Σ calls · GEX = Γ × OI × 100 × S² × 0.01 · max pain = strike con menor pago intrínseco. "
+           "MARKET = puntaje combinado del análisis técnico (0–100) · OPTIONS = % del volumen en calls.")
 st.markdown(DISCLAIMER, unsafe_allow_html=True)
