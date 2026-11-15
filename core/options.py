@@ -102,7 +102,7 @@ def _fridays(hoy: date, dias: int) -> list[date]:
     return out
 
 
-def _demo_chain(ticker: str, spot: float, hoy: date) -> pd.DataFrame:
+def _demo_chain(ticker: str, spot: float, hoy: date, dias: int = DIAS_MAX) -> pd.DataFrame:
     """Cadena sintética coherente (Black-Scholes con sonrisa de volatilidad) para el modo demo."""
     rng = np.random.default_rng(sum(map(ord, ticker)))
     paso = 0.5 if spot < 60 else 1 if spot < 150 else 2.5 if spot < 400 else 5
@@ -111,7 +111,11 @@ def _demo_chain(ticker: str, spot: float, hoy: date) -> pd.DataFrame:
     filas = []
     muro_c = ks[np.argmin(abs(ks - spot * 1.04))]
     muro_p = ks[np.argmin(abs(ks - spot * 0.96))]
-    for ex in _fridays(hoy, DIAS_MAX):
+    exps = _fridays(hoy, dias)
+    # vencimientos diarios de la primera semana (0–3 días) como en los ETF y acciones con 0DTE
+    exps = sorted(set(exps) | {date.fromordinal(hoy.toordinal() + k) for k in (1, 2, 3)
+                               if date.fromordinal(hoy.toordinal() + k).weekday() < 5})
+    for ex in exps:
         t = max((ex - hoy).days, 1) / 365
         for k in ks:
             m = math.log(k / spot)
@@ -162,7 +166,7 @@ def _open_interest(ticker: str, gte: date, lte: date, kmin: float, kmax: float) 
 
 
 @st.cache_data(ttl=180, show_spinner=False)
-def chain(ticker: str, spot: float) -> tuple[pd.DataFrame, dict]:
+def chain(ticker: str, spot: float, dias: int = DIAS_MAX) -> tuple[pd.DataFrame, dict]:
     """Cadena filtrada (≤ 45 días, ±15 % del spot) con griegas, IV, volumen e interés abierto.
     Devuelve (df, info) con info = {fuente, feed, oi_disponible, timestamp_utc}."""
     from zoneinfo import ZoneInfo
@@ -170,13 +174,13 @@ def chain(ticker: str, spot: float) -> tuple[pd.DataFrame, dict]:
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     kmin, kmax = spot * (1 - RANGO_STRIKE), spot * (1 + RANGO_STRIKE)
     if _demo():
-        df = _demo_chain(ticker, spot, hoy)
+        df = _demo_chain(ticker, spot, hoy, dias)
         info = {"fuente": "demo (sintética)", "feed": "demo", "oi_disponible": True, "timestamp_utc": ts}
     else:
         from . import alpaca
         if not alpaca.available():
             raise RuntimeError("Faltan las claves de Alpaca (ALPACA_API_KEY / ALPACA_SECRET_KEY).")
-        lte = date.fromordinal(hoy.toordinal() + DIAS_MAX)
+        lte = date.fromordinal(hoy.toordinal() + dias)
         params = {"expiration_date_gte": hoy.isoformat(), "expiration_date_lte": lte.isoformat(),
                   "strike_price_gte": f"{kmin:.2f}", "strike_price_lte": f"{kmax:.2f}", "limit": 1000}
         snaps, feed = {}, "opra"
@@ -455,6 +459,9 @@ def evaluar(r: pd.Series, spot: float, df: pd.DataFrame, walls: dict, gex: pd.Se
     spread = (r["ask"] - r["bid"]) / prima if pd.notna(r["bid"]) and pd.notna(r["ask"]) and r["bid"] > 0 else 0.25
     ve = p * roi_t + (1 - p) * roi_0 - spread / 2
     be = r["strike"] + prima if call else r["strike"] - prima
+    tt = dte / 365
+    d2 = (math.log(spot / be) + (TASA - iv * iv / 2) * tt) / (iv * math.sqrt(tt)) if be > 0 else 0
+    pop = _ncdf(d2) if call else _ncdf(-d2)  # probabilidad de terminar con ganancia al vencimiento
     cw = sorted(w["strike"] for w in walls.get("call_walls", []))
     pw = sorted(w["strike"] for w in walls.get("put_walls", []))
     return {"contrato": f"{tipo} {r['strike']:g}", "tipo": tipo, "strike": float(r["strike"]), "exp": r["exp"],
@@ -466,6 +473,10 @@ def evaluar(r: pd.Series, spot: float, df: pd.DataFrame, walls: dict, gex: pd.Se
             "theta_dia_pct": None if pd.isna(r["theta"]) else float(abs(r["theta"]) / prima * 100),
             "objetivo": float(t_px), "horizonte_dias": h, "roi_objetivo": float(roi_t * 100),
             "roi_sin_movimiento": float(roi_0 * 100), "p_toque": float(p * 100), "ve": float(ve * 100),
+            "pop": float(pop * 100), "rr": float(max(roi_t, 0)), "gamma": None if pd.isna(r["gamma"]) else float(r["gamma"]),
+            "theta": None if pd.isna(r["theta"]) else float(r["theta"]),
+            "vega": None if pd.isna(r.get("vega", np.nan)) else float(r["vega"]),
+            "costo": float((r["ask"] if pd.notna(r["ask"]) and r["ask"] > 0 else prima) * MULT),
             "spread_pct": float(spread * 100), "oi": None if pd.isna(r["oi"]) else int(r["oi"]),
             "volumen": int(r["volume"] or 0),
             "gex_strike": None if gex is None or r["strike"] not in gex.index else float(gex.loc[r["strike"]]),
@@ -549,3 +560,91 @@ def pnl_trayectoria(strike: float, tipo: str, iv: float, prima: float, dte: int,
             "quema_theta_usd": (v_spot_hoy - v_spot_t) * MULT,
             "aprox_delta_usd": g["delta"] * (t_px - spot) * MULT,
             "aprox_theta_usd": g["theta"] * dias * MULT}
+
+
+
+# ------------------------------------------------------------------ terminal de opciones: OPT1 / OPT2 / OPT3
+RANGOS = {"2S": 14, "1M": 31, "3M": 92, "6M": 183}
+MONEY = {"ITM": (0.55, 0.85), "ATM": (0.40, 0.60), "OTM": (0.15, 0.45)}
+TIERS = {1: ("Óptimo", "equilibrio entre strike y vencimiento", None),
+         2: ("Agresivo", "vencimiento de 4 a 10 días", (4, 10)),
+         3: ("Ultra riesgo", "vencimiento de 0 a 3 días", (0, 3))}
+
+
+def _money_ok(e: dict, money: str, spot: float) -> bool:
+    lo, hi = MONEY.get(money, (0.15, 0.85))
+    if e["delta"] is None or not (lo <= abs(e["delta"]) <= hi):
+        return False
+    k, call = e["strike"], e["tipo"] == "CALL"
+    if money == "OTM":
+        return k > spot if call else k < spot
+    if money == "ITM":
+        return k < spot if call else k > spot
+    return abs(k / spot - 1) <= 0.025
+
+
+def evaluar_todos(df, spot, tipo: str, walls, gex=None) -> list[dict]:
+    d = _liquido(df[df["type"] == tipo.lower()])
+    return [e for _, r in d.iterrows() if (e := evaluar(r, spot, df, walls, gex))]
+
+
+def opciones_tier(evs: list[dict], spot, money: str, ventana: int, tier: int) -> list[dict]:
+    """Contratos elegibles de un nivel de riesgo, ordenados por valor esperado."""
+    rng = TIERS[tier][2]
+    if rng is None:  # OPT1: más de 10 días dentro de la ventana visible (o toda la ventana si es corta)
+        lo = 11 if ventana > 14 else 4
+        rng = (lo, ventana)
+    out = [e for e in evs if rng[0] <= e["dte"] <= rng[1] and _money_ok(e, money, spot) and e["spread_pct"] <= 25]
+    return sorted(out, key=lambda e: e["ve"], reverse=True)
+
+
+def niveles(evs, spot, money: str, ventana: int, presupuesto: float | None = None) -> dict:
+    """{1: OPT1, 2: OPT2, 3: OPT3}. Cada uno: el mejor por valor esperado, número de contratos que permite el
+    presupuesto y, si no alcanza, la alternativa más cercana dentro del presupuesto y el capital sugerido."""
+    out = {}
+    for t in (1, 2, 3):
+        lst = opciones_tier(evs, spot, money, ventana, t)
+        if not lst:
+            out[t] = None
+            continue
+        best = dict(lst[0])
+        best["tier"] = t
+        best["contratos"] = int(presupuesto // best["costo"]) if presupuesto else None
+        if presupuesto is not None and best["contratos"] == 0:
+            asequibles = [e for e in lst if e["costo"] <= presupuesto]
+            alt = asequibles[0] if asequibles else None
+            cerca = next((e for e in sorted(lst, key=lambda e: e["costo"])
+                          if e["ve"] >= best["ve"] - abs(best["ve"]) * 0.15), best)
+            best["ajuste"] = {
+                "alcanzable": alt,
+                "impacto_ve": None if not alt else alt["ve"] - best["ve"],
+                "impacto_pop": None if not alt else alt["pop"] - best["pop"],
+                "capital_optimo": math.ceil(best["costo"] / 5) * 5,
+                "capital_cercano": math.ceil(cerca["costo"] / 5) * 5,
+                "contrato_cercano": cerca["contrato"] + " · " + cerca["vencimiento"],
+            }
+        out[t] = best
+    return out
+
+
+def flujo_neto(df: pd.DataFrame) -> float:
+    """Prima neta negociada hoy: Σ volumen × precio medio × 100 (calls − puts)."""
+    v = df["volume"].fillna(0) * df["mid"].fillna(0) * MULT
+    return float(v[df["type"] == "call"].sum() - v[df["type"] == "put"].sum())
+
+
+def porcentaje_calls(df: pd.DataFrame) -> float | None:
+    c, p = df[df["type"] == "call"]["volume"].sum(), df[df["type"] == "put"]["volume"].sum()
+    return None if (c + p) == 0 else float(c / (c + p) * 100)
+
+
+def contraria(evs_op, spot, money, ventana, disparo: float, tipo_op: str) -> dict | None:
+    """Mejor opción del lado contrario y su precio límite estimado si el subyacente llega al nivel de disparo."""
+    lst = opciones_tier(evs_op, spot, money, ventana, 1) or opciones_tier(evs_op, spot, "OTM", ventana, 1)
+    if not lst:
+        return None
+    e = dict(lst[0])
+    resto = max(e["dte"] - 2, 0.25) / 365  # llegada al disparo en ~2 sesiones
+    e["disparo"] = float(disparo)
+    e["limite"] = float(bs_price(disparo, e["strike"], resto, e["iv"] / 100, tipo_op == "CALL"))
+    return e
