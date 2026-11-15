@@ -133,6 +133,28 @@ last, prev = d.iloc[-1], d.iloc[-2]
 from core import patterns as PT  # noqa: E402
 ESTR = {"canal": A.get("canal"), "figuras": A.get("figuras") or []}
 LECT = PT.lectura_canal(ESTR["canal"], money)
+
+# ---- multi-temporalidad: la temporalidad elegida + dos mayores, con pesos según el horizonte de la operación
+from core import mtf as MTF  # noqa: E402
+MT = None
+try:
+    _an = {TF: A}
+    with st.spinner("Analizando temporalidades mayores…"):
+        for _t in MTF.triada(TF):
+            if _t not in _an:
+                try:
+                    _an[_t] = _run(ticker, cfg["tp_atr"], cfg["sl_atr"], int(cfg["horizonte"]) if _t == "1D" else None,
+                                   cfg["capital"], cfg["riesgo_pct"], cfg["alphavantage_key"],
+                                   "alphavantage" if cfg.get("proveedor", "").startswith("Alpha Vantage") else "yahoo",
+                                   _t, json.dumps(profiles.engine_settings(SETTINGS), sort_keys=True))
+                except Exception:
+                    pass
+    if len(_an) > 1:
+        MT = MTF.combinar(_an, MTF.HORIZONTE_TF.get(TF, 10), TF)
+        _pl = A.get("plan") or {}
+        ESTR["mtf"] = MTF.lineas_grafico(MT, [_pl.get("entrada"), _pl.get("stop"), _pl.get("objetivo_1"), _pl.get("objetivo_2")])
+except Exception:
+    MT = None
 try:
     EXT = data.extended_quote(ticker)
 except Exception:
@@ -306,6 +328,8 @@ def _informe():
                                                 for f in ESTR["figuras"]]},
                                    {k_: ([{a: b for a, b in x.items() if a not in ("barra", "zona")} for x in v]
                                          if k_ == "apoyos" else v) for k_, v in (A.get("metodo") or {}).items()})
+        if MT:
+            payload["multi_temporalidad"] = MTF.resumen_ia(MT)
         if go:
             try:
                 with st.spinner("Generando el informe del analista…"):
@@ -611,6 +635,10 @@ with right:
            f"{_CON['aporte_patrones']:+.1f} patrones)</span><b class='num'>{_CON['confianza_global']:.0f}% · {E(_CON['nivel'])}</b></div>"
            if _CON else "")
         + "</div>", unsafe_allow_html=True)
+    if MT:
+        _cb = _CON.get("confianza_global")
+        _sp = 1 if str(plan.get("direccion", "")).startswith("COMPRA") else -1
+        st.markdown(MTF.tarjeta_html(MT, _cb, MTF.confianza_ajustada(_cb, _sp, MT)), unsafe_allow_html=True)
     with st.expander(f"Score multivariable · {comb:+.0f}", expanded=False):
         st.markdown(
             "<div class='mp' style='border:none;padding:0;background:transparent'>"

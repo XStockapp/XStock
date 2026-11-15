@@ -62,6 +62,10 @@ Reglas de análisis:
   condicionado («Si el precio rompe [X] con cierre de vela y expansión de volumen/ADX, se confirma y proyecta [Y]»)
   usando su "condicion", "activacion", "invalidacion" y "objetivo", y usa "consolidado.aporte_si_confirma" como el
   aporte de confianza que tendría al confirmarse. Solo los recién confirmados suman a la confianza actual.
+- "multi_temporalidad" (si viene): la temporalidad elegida y dos mayores, con pesos según el horizonte de la operación
+  (corto → mandan las menores y las mayores son soportes/resistencias de segundo nivel; largo → mandan las mayores y
+  las menores solo afinan la entrada). Si el estado es «Rebote contra la tendencia mayor» u «Operativa en contra»,
+  dilo y reduce la confianza; usa su objetivo, invalidación y segundo nivel como límites de la predicción.
 - Tono objetivo y probabilístico: describe escenarios y niveles; evita lenguaje especulativo.
 - Veredictos (los mismos del escáner): "COMPRA" = escenario y entrada válidos ahora; "REBOTE" = valor esperado
   favorable pero la entrada espera el pullback/rebote al soporte (orden límite) o la señal va contra la tendencia;
