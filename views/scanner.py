@@ -53,7 +53,7 @@ def _logo(url, ticker):
 
 
 st.markdown(f"""<style>
-.mv-logo{{position:relative;width:28px;height:28px;border-radius:50%;background:#21262D;color:#C9D1D9;font:600 10px Inter,sans-serif;
+.mv-logo{{position:relative;width:28px;height:28px;border-radius:50%;background:#21262D;color:#C9D1D9;font:600 11px Inter,sans-serif;
   display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none}}
 .mv-logo img{{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#fff;border-radius:50%}}
 .mv-px{{text-align:right;font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:.92rem;padding-top:6px}}
