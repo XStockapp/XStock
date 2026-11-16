@@ -83,3 +83,22 @@ def test_mtf_por_vencimiento_de_cada_contrato():
     largo = [e for e in evs if e["dte"] >= 25]
     assert corto and all(not e["mtf_contra"] for e in corto)      # a corto plazo el CALL va a favor
     assert largo and all(e["mtf_contra"] for e in largo)          # a largo plazo el diario lo contradice
+
+
+def test_iv_coherente_con_la_prima():
+    """La IV del feed (sesgada) se reemplaza por la implícita en el precio medio: calls y puts del mismo strike
+    quedan coherentes (paridad put-call) y el precio Black-Scholes reproduce la prima."""
+    import numpy as np
+    import pandas as pd
+    from datetime import date
+    rows = [("call", 535, 37.98, 41.89, .818), ("call", 550, 31.80, 34.63, .802),
+            ("put", 535, 38.00, 39.86, .578), ("put", 550, 45.30, 49.39, .56)]
+    df = pd.DataFrame([{"type": t, "exp": date(2026, 12, 11), "strike": k, "bid": b, "ask": a, "iv": iv,
+                        "delta": np.nan, "gamma": np.nan, "theta": np.nan, "vega": np.nan, "dte": 26}
+                       for t, k, b, a, iv in rows])
+    df["mid"] = (df.bid + df.ask) / 2
+    out = OP.recalcular_iv(df, 534.06)
+    c550, p550 = out[(out.strike == 550) & (out.type == "call")].iloc[0], out[(out.strike == 550) & (out.type == "put")].iloc[0]
+    assert abs(c550.iv - p550.iv) < 0.02  # antes: 0.80 vs 0.56
+    assert abs(OP.bs_price(534.06, 550, 26 / 365, c550.iv, True) - c550.mid) < 1.0
+    assert c550.iv_feed == .802
