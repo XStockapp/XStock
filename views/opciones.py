@@ -171,8 +171,20 @@ SC_MTF = MT0["puntaje"] if MT0 else COMB
 # lado principal: el del puntaje multi-temporalidad para el horizonte del nivel elegido
 LADO = "CALL" if SC_MTF >= 0 else "PUT"
 OPUESTO = "PUT" if LADO == "CALL" else "CALL"
-EVS = OP.evaluar_todos(CH, spot, LADO, WALLS, GEXS, NIVM)
-EVS_OP = OP.evaluar_todos(CH, spot, OPUESTO, WALLS, GEXS, NIVM)
+
+
+def _mtf_dte(dte: int):
+    """Análisis multi-temporalidad con los pesos del vencimiento exacto de un contrato."""
+    if len(AN) < 2:
+        return None
+    m_ = MTF.combinar(AN, max(float(dte), 0.5), TF)
+    ob = m_["limites"].get("objetivo")
+    return {"puntaje": m_["puntaje"], "niveles": m_["niveles"], "objetivo": ob["precio"] if ob else None,
+            "pesos": {k: round(v, 3) for k, v in m_["pesos"].items()}}
+
+
+EVS = OP.evaluar_todos(CH, spot, LADO, WALLS, GEXS, NIVM, _mtf_dte)
+EVS_OP = OP.evaluar_todos(CH, spot, OPUESTO, WALLS, GEXS, NIVM, _mtf_dte)
 NIV = OP.niveles(EVS, spot, MONEY, VENT, INV)
 if not NIV.get(ss["opt_sel"]):
     ss["opt_sel"] = next((t for t in (1, 2, 3) if NIV.get(t)), 1)
@@ -318,7 +330,8 @@ with left:
             dtes = [int(CH[CH["exp"] == e]["dte"].iloc[0]) for e in exps]
             e_real = exps[int(np.argmin([abs(x - m_d) for x in dtes]))]
             row = OP.contrato(CH, e_real, k_real, m_tipo)
-            ss[f"man_res_{ticker}"] = OP.evaluar(row, spot, CH, WALLS, GEXS) if row is not None else None
+            ss[f"man_res_{ticker}"] = (OP.evaluar(row, spot, CH, WALLS, GEXS, NIVM, _mtf_dte(int(row["dte"])))
+                                       if row is not None else None)
 MAN = ss.get(f"man_res_{ticker}")
 
 # ================================================================== contraria (escenario alternativo)
@@ -516,6 +529,8 @@ with right:
                         f"(prima estimada si el subyacente llega a {_m(o['disparo'])}; hoy cotiza {_m(o['prima'])}). "
                         f"Breakeven {_m(o['breakeven'])} · prob. de éxito {o['pop']:.0f}% · {o['dte']} días.</div></div>",
                         unsafe_allow_html=True)
+                    if len(AN) > 1:
+                        st.markdown(MTF.tarjeta_html(MTF.combinar(AN, max(o["dte"], 0.5), TF)), unsafe_allow_html=True)
                     _graficos(o)
                 else:
                     o = MAN
@@ -537,6 +552,8 @@ with right:
                                     "<tr><th></th><th>Manual</th><th>Motor</th></tr>"
                                     + "".join(f"<tr><td>{E(n)}</td><td>{E(f(o))}</td><td>{E(f(SEL))}</td></tr>" for n, f in rows_)
                                     + "</table></div>", unsafe_allow_html=True)
+                    if len(AN) > 1:
+                        st.markdown(MTF.tarjeta_html(MTF.combinar(AN, max(o["dte"], 0.5), TF)), unsafe_allow_html=True)
                     _graficos(o, [("OPT" + str(ss["opt_sel"]) + " · " + SEL["contrato"], SEL, "#7C9CFF")] if SEL else [])
                     st.markdown(_riesgos_html(o), unsafe_allow_html=True)
 

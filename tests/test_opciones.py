@@ -107,3 +107,22 @@ def test_niveles_opt123_y_presupuesto():
     assert rico[1]["contratos"] > 0 and "ajuste" not in rico[1]
     itm = OP.niveles(evs, spot, "ITM", 31)
     assert itm[1] is None or itm[1]["strike"] < spot
+
+
+def test_mtf_por_vencimiento_de_cada_contrato():
+    from core import mtf as MTF
+    df, spot = _cadena(), 267.73
+    w, gx = OP.muros(df), OP.gex_por_strike(df, spot)
+    vistos = []
+
+    def fn(dte):
+        vistos.append(dte)
+        p = MTF.pesos(max(dte, 0.5), ["1h", "4h", "1D"])
+        # 1h alcista, 1D bajista: a corto plazo manda 1h, a largo plazo 1D
+        return {"puntaje": p["1h"] * 60 + p["4h"] * 0 + p["1D"] * -60, "niveles": [], "objetivo": None, "pesos": p}
+    evs = OP.evaluar_todos(df, spot, "CALL", w, gx, None, fn)
+    assert sorted(set(vistos)) == sorted(set(e["dte"] for e in evs)) and len(vistos) == len(set(vistos))
+    corto = [e for e in evs if e["dte"] <= 3]
+    largo = [e for e in evs if e["dte"] >= 25]
+    assert corto and all(not e["mtf_contra"] for e in corto)      # a corto plazo el CALL va a favor
+    assert largo and all(e["mtf_contra"] for e in largo)          # a largo plazo el diario lo contradice
