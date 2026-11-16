@@ -587,7 +587,8 @@ def riesgos(e: dict, sesgo: str, adx: dict, gex_total: float, flip: float | None
         out.append("El strike está por encima del muro de calls: el precio debe romper una resistencia institucional.")
     if e.get("obstaculos"):
         out.append("Antes del objetivo el precio debe atravesar " + ", ".join(f"{p:,.2f}" for p in e["obstaculos"][:3])
-                   + " (pegado al precio, no cuenta como objetivo): cada nivel puede frenar el avance.")
+                   + f": están a menos de ¼ del movimiento esperado (±{(e.get('mov_esperado') or 0):,.2f}), por eso no se toman como "
+                   "objetivo, pero cada uno puede frenar el avance.")
     if e.get("objetivo") is not None and ((e["tipo"] == "CALL" and e["strike"] >= e["objetivo"])
                                           or (e["tipo"] == "PUT" and e["strike"] <= e["objetivo"])):
         out.append(f"El strike ({e['strike']:,.2f}) está más allá del objetivo realista ({e['objetivo']:,.2f}): aunque el "
