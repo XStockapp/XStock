@@ -99,11 +99,14 @@ function path(svg,pts,attr,anim){{const d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixe
  if(anim){{const l=e.getTotalLength();e.style.setProperty('--l',l);e.classList.add('draw');}}return e;}}
 function area(svg,pts,z,fill,anim){{svg.appendChild(ns('path',{{d:'M'+pts[0][0]+','+z+pts.map(p=>'L'+p[0].toFixed(1)+','+p[1].toFixed(1)).join('')+'L'+pts[pts.length-1][0]+','+z+'Z',
  fill:fill,class:anim?'fade':''}}));}}
+function libre(svg,t){{const P_=svg._tags||(svg._tags=[]);let b=t.getBBox(),k=0;
+ const choca=bb=>P_.some(q=>bb.x<q.x+q.width+3&&bb.x+bb.width+3>q.x&&bb.y<q.y+q.height&&bb.y+bb.height>q.y);
+ while(choca(b)&&k<8){{t.setAttribute('y',+t.getAttribute('y')+13);b=t.getBBox();k++;}}P_.push(b);}}
 function dot(svg,x,y,col,lbl,anchor){{svg.appendChild(ns('circle',{{cx:x,cy:y,r:9,fill:col,class:'pulse'}}));
  svg.appendChild(ns('circle',{{cx:x,cy:y,r:4.5,fill:'#0D1117',stroke:col,'stroke-width':2}}));
- if(lbl)svg.appendChild(ns('text',{{x:x+(anchor==='end'?-9:9),y:y-9,'text-anchor':anchor||'start',style:'fill:'+col,class:'tag'}},lbl));}}
+ if(lbl)libre(svg,svg.appendChild(ns('text',{{x:x+(anchor==='end'?-9:9),y:y-9,'text-anchor':anchor||'start',style:'fill:'+col,class:'tag'}},lbl)));}}
 function vline(svg,x,col,lbl,y,y0,y1,dash){{svg.appendChild(ns('line',{{x1:x,x2:x,y1:y0,y2:y1,stroke:col,'stroke-dasharray':dash||'3 3','stroke-opacity':.8}}));
- if(lbl)svg.appendChild(ns('text',{{x:x+4,y:y,style:'fill:'+col,class:'tag'}},lbl));}}
+ if(lbl)libre(svg,svg.appendChild(ns('text',{{x:x+4,y:y,style:'fill:'+col,class:'tag'}},lbl)));}}
 function draw(){{
  $('dl').value=dias+' d';$('obj').value=T.toFixed(2);
  const u=pnl(C0,T,dias),burn=(val(C0,D.spot,0)-val(C0,D.spot,dias))*100,ret=u/(C0.prima*100)*100;
@@ -112,7 +115,7 @@ function draw(){{
   <div><span class='lbl'>Quema de theta</span><b style='color:#EF5350'>−$${{Math.abs(burn).toFixed(0)}}</b></div>`;
  $('t1').textContent='trayectoria '+dias+'d';$('t2').textContent='Black-Scholes · IV '+(C0.iv*100).toFixed(1)+'%';
  // ----- gráfico 1: P&L vs días
- const g1=$('g1');g1.innerHTML='';size(g1);defs(g1,'ga','#26A69A');
+ const g1=$('g1');g1.innerHTML='';g1._tags=[];size(g1);defs(g1,'ga','#26A69A');
  const ds=[];const st=Math.max(0.25,maxD/120);for(let d=0;d<maxD;d+=st)ds.push(d);ds.push(maxD);
  let ys=[];D.c.forEach(c=>ds.forEach(d=>{{ys.push(pnl(c,T,d));ys.push(pnl(c,D.spot,d));}}));
  let y0=Math.min(...ys,0),y1=Math.max(...ys,0);const pd=(y1-y0)*.12||1;y0-=pd;y1+=pd;
@@ -130,7 +133,7 @@ function draw(){{
   dias=Math.max(1,Math.min(maxD,Math.round((x-P.l)/(W-P.l-P.r)*maxD)));draw();}}
  g1.style.cursor='grab';
  // ----- gráfico 2: P&L vs precio del subyacente
- const g2=$('g2');g2.innerHTML='';size(g2);defs(g2,'gb','#2962FF');
+ const g2=$('g2');g2.innerHTML='';g2._tags=[];size(g2);defs(g2,'gb','#2962FF');
  const xs=[];for(let i=0;i<=140;i++)xs.push(D.lo+(D.hi-D.lo)*i/140);
  let zs=[];D.c.forEach(c=>xs.forEach(x=>{{zs.push(pnl(c,x,dias));zs.push(pnl(c,x,c.dte));}}));
  let a0=Math.min(...zs),a1=Math.max(...zs);const pa=(a1-a0)*.1||1;a0-=pa;a1+=pa;

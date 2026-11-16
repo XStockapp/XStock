@@ -338,11 +338,14 @@ def resumen(df: pd.DataFrame, spot: float) -> dict:
         dn = df[df["exp"] == near]
     gex = gex_por_strike(df, spot)
     tot = float(gex.sum()) if len(gex) else 0.0
-    atm = _atm(dn, spot)
-    iv_atm = dn[dn["strike"] == atm]["iv"].mean()
+    e30 = min(exps, key=lambda e: abs(int(df[df["exp"] == e]["dte"].iloc[0]) - 30))
+    d30 = df[df["exp"] == e30]
+    atm = _atm(d30, spot)
+    iv_atm = d30[d30["strike"] == atm]["iv"].mean()
     return {
         "nearest_expiration": etiqueta_venc(near), "dte": int(dn["dte"].iloc[0]),
         "iv_rank_or_avg_iv": None if pd.isna(iv_atm) else round(float(iv_atm) * 100, 1),
+        "iv_atm_venc": etiqueta_venc(e30), "iv_atm_dte": int(d30["dte"].iloc[0]),
         "expected_move_usd": None if (em := expected_move(dn, spot)) is None else round(em, 2),
         "max_pain": max_pain(dn),
         "net_gamma_exposure_gex": f"{'Positivo' if tot >= 0 else 'Negativo'} ({_fmt_m(tot)})",
@@ -430,19 +433,37 @@ def _p_toque(s, t_price, iv, dias, sesiones_habiles: int | None = None):
     return float(min(1.0, 2 * (1 - _ncdf(z))))
 
 
-def objetivo(spot, tipo: str, em: float | None, walls: dict, niveles: list | None = None,
-             extra: float | None = None) -> float:
-    """Precio objetivo del escenario: el primer muro de opciones o nivel fuerte multi-temporalidad a favor que esté al
-    menos a medio movimiento esperado (uno pegado al precio no es un objetivo útil), acotado por el movimiento esperado."""
-    em = em or spot * 0.03
+DIST_MIN_EM = 0.25  # un nivel a menos de ¼ del movimiento esperado está pegado al precio: no es un objetivo útil
+
+
+def _candidatos_obj(spot, tipo, walls, niveles, extra):
     fuertes = [n["precio"] for n in (niveles or []) if n.get("fuerza", 0) >= 4] + ([extra] if extra else [])
     if tipo == "CALL":
-        ws = sorted([w["strike"] for w in walls.get("call_walls", [])] + [p for p in fuertes if p > spot])
-        ws = [p for p in ws if p >= spot + 0.5 * em]
+        return sorted({w["strike"] for w in walls.get("call_walls", [])} | {p for p in fuertes if p > spot})
+    return sorted({w["strike"] for w in walls.get("put_walls", [])} | {p for p in fuertes if p < spot}, reverse=True)
+
+
+def objetivo(spot, tipo: str, em: float | None, walls: dict, niveles: list | None = None,
+             extra: float | None = None) -> float:
+    """Precio objetivo realista: el PRIMER muro de opciones o nivel fuerte multi-temporalidad a favor (una resistencia
+    para un CALL, un soporte para un PUT), ignorando solo los pegados al precio (< ¼ del movimiento esperado) y acotado
+    por el movimiento esperado. No se salta resistencias intermedias: si el precio debe atravesarlas, el objetivo es
+    la primera, no la última."""
+    em = em or spot * 0.03
+    ws = _candidatos_obj(spot, tipo, walls, niveles, extra)
+    if tipo == "CALL":
+        ws = [p for p in ws if p >= spot + DIST_MIN_EM * em]
         return min(ws[0], spot + em) if ws else spot + em
-    ws = sorted([w["strike"] for w in walls.get("put_walls", [])] + [p for p in fuertes if p < spot], reverse=True)
-    ws = [p for p in ws if p <= spot - 0.5 * em]
+    ws = [p for p in ws if p <= spot - DIST_MIN_EM * em]
     return max(ws[0], spot - em) if ws else spot - em
+
+
+def obstaculos(spot, objetivo_px, tipo, walls, niveles=None, extra=None) -> list[float]:
+    """Niveles a favor que el precio debe atravesar antes del objetivo (resistencias o soportes intermedios)."""
+    ws = _candidatos_obj(spot, tipo, walls, niveles, extra)
+    if tipo == "CALL":
+        return [p for p in ws if spot < p < objetivo_px - 1e-9]
+    return [p for p in ws if objetivo_px + 1e-9 < p < spot]
 
 
 def evaluar(r: pd.Series, spot: float, df: pd.DataFrame, walls: dict, gex: pd.Series | None = None,
@@ -464,6 +485,7 @@ def evaluar(r: pd.Series, spot: float, df: pd.DataFrame, walls: dict, gex: pd.Se
     if mtf:  # pesos multi-temporalidad para el vencimiento de ESTE contrato
         niveles = mtf.get("niveles") or niveles
     t_px = objetivo(spot, tipo, em, walls, niveles, (mtf or {}).get("objetivo"))
+    obst = obstaculos(spot, t_px, tipo, walls, niveles, (mtf or {}).get("objetivo"))
     v_t = bs_price(t_px, r["strike"], resto, iv, call)
     v_0 = bs_price(spot, r["strike"], resto, iv, call)
     roi_t, roi_0 = v_t / prima - 1, v_0 / prima - 1
@@ -511,7 +533,7 @@ def evaluar(r: pd.Series, spot: float, df: pd.DataFrame, walls: dict, gex: pd.Se
             "bajo_muro_puts": bool((not call) and pw and r["strike"] < min(pw)),
             "tras_nivel_mayor": None if not tras else float(tras[0]["precio"]),
             "mtf_puntaje": None if not mtf else float(mtf["puntaje"]), "mtf_pesos": None if not mtf else mtf.get("pesos"),
-            "mtf_contra": contra_mtf, "sesiones_venc": ses_venc, "sesiones_horizonte": ses_h, "exp_iso": exp_d.isoformat(),
+            "mtf_contra": contra_mtf, "sesiones_venc": ses_venc, "sesiones_horizonte": ses_h, "exp_iso": exp_d.isoformat(), "obstaculos": obst,
             "feriados": [(f.isoformat(), n) for f, n in fer]}
 
 
@@ -563,6 +585,13 @@ def riesgos(e: dict, sesgo: str, adx: dict, gex_total: float, flip: float | None
         out.append("Interés abierto bajo: poca liquidez para cerrar la posición.")
     if e["sobre_muro_calls"]:
         out.append("El strike está por encima del muro de calls: el precio debe romper una resistencia institucional.")
+    if e.get("obstaculos"):
+        out.append("Antes del objetivo el precio debe atravesar " + ", ".join(f"{p:,.2f}" for p in e["obstaculos"][:3])
+                   + " (pegado al precio, no cuenta como objetivo): cada nivel puede frenar el avance.")
+    if e.get("objetivo") is not None and ((e["tipo"] == "CALL" and e["strike"] >= e["objetivo"])
+                                          or (e["tipo"] == "PUT" and e["strike"] <= e["objetivo"])):
+        out.append(f"El strike ({e['strike']:,.2f}) está más allá del objetivo realista ({e['objetivo']:,.2f}): aunque el "
+                   "precio llegue, la opción seguiría fuera del dinero y su valor dependería solo de la volatilidad.")
     if e.get("feriados"):
         fs = ", ".join(f"{n} ({f[8:10]}/{f[5:7]})" for f, n in e["feriados"])
         out.append(f"Feriado de la bolsa antes del vencimiento: {fs}. Son {e['sesiones_venc']} sesiones hábiles para "
