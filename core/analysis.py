@@ -5,7 +5,7 @@ from . import data
 from . import fundamental as F
 from . import probability as P
 from .levels import trade_plan
-from .technical import compute_all, explain_last, score_series, volume_profile
+from .technical import compute_all, explain_last, score_series, signal_matrix, volume_profile
 from .timeframes import TIMEFRAMES, is_crypto, marco, unidad, validate
 
 
@@ -17,8 +17,9 @@ def full_analysis(ticker: str, tp=3.0, sl=1.5, horizon=None, account=10_000.0, r
     horizon = int(horizon or TIMEFRAMES[tf]["horizonte"])
     raw = data.history_tf(ticker, tf, provider, av_key or "")
     d = compute_all(raw, settings)
-    s = score_series(d)
-    tech = explain_last(d)
+    S = signal_matrix(d)  # una sola vez: el puntaje y la explicación salen de la misma matriz
+    s = score_series(d, S)
+    tech = explain_last(d, S, s)
     cur = tech["score"]
     direction = "long" if cur >= -20 else "short"
 
@@ -88,3 +89,30 @@ def full_analysis(ticker: str, tp=3.0, sl=1.5, horizon=None, account=10_000.0, r
             "fscore": fscore, "piotroski": pio, "plan": plan, "planes": planes, "news": news, "combinado": comb,
             "finviz": fv, "finviz_items": fv_items, "vprofile": vpf,
             "canal": canal, "figuras": figuras, "metodo": metodo}
+
+
+def analisis_usuario(ticker: str, tf: str, cfg: dict, settings: dict) -> dict:
+    """Análisis con la configuración del usuario, compartido (misma caché) por Análisis de acción y Opciones:
+    al pasar de una página a la otra no se recalcula. En 1D el horizonte es el del perfil; en el resto, el de la
+    temporalidad."""
+    import json
+
+    return _cacheado(ticker, float(cfg["tp_atr"]), float(cfg["sl_atr"]),
+                     int(cfg["horizonte"]) if tf == "1D" else None, float(cfg["capital"]), float(cfg["riesgo_pct"]),
+                     cfg.get("alphavantage_key") or "",
+                     "alphavantage" if str(cfg.get("proveedor", "")).startswith("Alpha Vantage") else "yahoo",
+                     tf, json.dumps(settings, sort_keys=True))
+
+
+def _cacheado(ticker, tp, sl, hz, acct, risk, av, prov, tf, settings_json):
+    import json
+
+    return full_analysis(ticker, tp, sl, hz, acct, risk, av or None, prov, tf, json.loads(settings_json))
+
+
+try:  # en Streamlit: caché compartida entre páginas y sesiones (15 min)
+    import streamlit as _st
+
+    _cacheado = _st.cache_data(ttl=900, show_spinner=False)(_cacheado)
+except Exception:  # pragma: no cover
+    pass

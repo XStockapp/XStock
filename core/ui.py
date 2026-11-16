@@ -208,16 +208,6 @@ def inject_css():
     st.markdown(CSS, unsafe_allow_html=True)
 
 
-def color_for(v: float, good=0, bad=0) -> str:
-    return GREEN if v > good else (RED if v < bad else NEUTRAL)
-
-
-def kpi(col, label: str, value: str, sub: str = "", color: str = TXT):
-    col.markdown(f"<div class='kpi'><div class='lbl'>{label}</div>"
-                 f"<div class='val' style='color:{color}'>{value}</div>"
-                 f"<div class='sub'>{sub}</div></div>", unsafe_allow_html=True)
-
-
 def pill(text: str, color: str) -> str:
     return f"<span class='pill' style='background:{color}22;color:{color};border:1px solid {color}55'>{text}</span>"
 

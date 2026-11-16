@@ -7,7 +7,7 @@ import html
 
 import plotly.graph_objects as go
 
-from .ui import AMBER, BORDER, GREEN, MUTED, NEUTRAL, RED
+from .ui import GREEN, MUTED, NEUTRAL, RED
 
 E = html.escape
 PRICE = "#8B949E"
@@ -150,5 +150,3 @@ def block_card(nombre: str, score: float | None, peso: float, items: list[dict])
             f"<span class='dd-a num' style='color:{c}'>{'—' if score is None else f'{score:+.0f}'}</span></div>"
             f"{bar(score)}<div class='dd-ms'>{rows or '<span class=muted>Sin datos</span>'}</div></div>")
 
-
-CSS_COLORS = {"AMBER": AMBER, "BORDER": BORDER}

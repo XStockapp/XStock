@@ -6,7 +6,6 @@ Distribución:
   [option chain] [mapa GEX]
 """
 import html
-import json
 
 import numpy as np
 import pandas as pd
@@ -15,7 +14,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from core import ai, calendario as CAL, data, db, mtf as MTF, options as OP, pnl_widget as PW, profiles, store
-from core.analysis import full_analysis
+from core.analysis import analisis_usuario
 from core.timeframes import is_crypto
 from core.ui import AMBER, DISCLAIMER, GREEN, MUTED, RED
 
@@ -27,9 +26,6 @@ BG, PANEL, BORDER, TXT = "#0D1117", "#161B22", "#30363D", "#E6EDF3"
 MONO = "'JetBrains Mono','Fira Code',monospace"
 
 
-@st.cache_data(ttl=900, show_spinner=False)
-def _run(ticker, tp, sl, acct, risk, av, prov, tf, settings_json):
-    return full_analysis(ticker, tp, sl, None, acct, risk, av or None, prov, tf, json.loads(settings_json))
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -147,9 +143,7 @@ if is_crypto(ticker):
 SETTINGS = ss.get("technical_settings") or profiles.BASE_SETTINGS
 try:
     with st.spinner(f"Analizando {ticker}…"):
-        A = _run(ticker, cfg["tp_atr"], cfg["sl_atr"], cfg["capital"], cfg["riesgo_pct"], cfg["alphavantage_key"],
-                 "alphavantage" if cfg.get("proveedor", "").startswith("Alpha Vantage") else "yahoo",
-                 TF, json.dumps(profiles.engine_settings(SETTINGS), sort_keys=True))
+        A = analisis_usuario(ticker, TF, cfg, profiles.engine_settings(SETTINGS))
         CH, INFO = OP.chain(ticker, round(float(A["df"]["Close"].iloc[-1]), 1), OP.RANGOS[RNG])
 except Exception as e:
     st.error(f"No se pudo analizar {ticker}: {e}")
@@ -189,9 +183,7 @@ with st.spinner("Analizando temporalidades mayores…"):
     for _t in MTF.triada(TF):
         if _t not in AN:
             try:
-                AN[_t] = _run(ticker, cfg["tp_atr"], cfg["sl_atr"], cfg["capital"], cfg["riesgo_pct"], cfg["alphavantage_key"],
-                              "alphavantage" if cfg.get("proveedor", "").startswith("Alpha Vantage") else "yahoo",
-                              _t, json.dumps(profiles.engine_settings(SETTINGS), sort_keys=True))
+                AN[_t] = analisis_usuario(ticker, _t, cfg, profiles.engine_settings(SETTINGS))
             except Exception:
                 pass
 ss.setdefault("opt_sel", 1)
@@ -407,8 +399,6 @@ payload = {
                                                                     "delta", "pop", "ve", "objetivo")})
                   for t, v in NIV.items()},
     "inversion_usd": INV, "info": INFO, "multi_temporalidad": MTF.resumen_ia(MT) if MT else None,
-    "candidatos": [{"target_expiration_tab": v["vencimiento"], "option_type": v["tipo"], "strike": v["strike"]}
-                   for v in NIV.values() if v],
 }
 akey = f"opt_ai_{ticker}_{TF}"
 RAI = ss.get(akey)
@@ -510,8 +500,11 @@ with right:
                 if kind == "main":
                     o = SEL
                     if RAI and RAI.get("diagnostico"):
+                        _adv = "".join(f"<li>{E(str(a_))}</li>" for a_ in (RAI.get("advertencias") or [])[:4])
                         st.markdown(f"<div class='ox-box'><h4>Lectura de la IA · {E(RAI.get('_modelo', ''))}</h4>"
-                                    f"<div class='ox-exp'>{E(RAI['diagnostico'])}</div></div>", unsafe_allow_html=True)
+                                    f"<div class='ox-exp'>{E(RAI['diagnostico'])}</div>"
+                                    + (f"<ul style='margin:6px 0 0 16px;padding:0;font-size:12px'>{_adv}</ul>" if _adv else "")
+                                    + "</div>", unsafe_allow_html=True)
                     st.markdown(f"<div class='ox-box'><h4>Cómo se hizo el análisis · {E(o['contrato'])} · "
                                 f"{E(o['vencimiento'])}</h4><div class='ox-exp'>{_explicacion(o)}</div></div>",
                                 unsafe_allow_html=True)

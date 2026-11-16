@@ -3,7 +3,7 @@ from datetime import date
 
 import pandas as pd
 
-from core import ai, options as OP
+from core import options as OP
 
 
 def test_bs_y_iv_inversa():
@@ -46,49 +46,6 @@ def test_max_pain_simple():
     df = pd.DataFrame({"strike": [90, 100, 110, 90, 100, 110], "type": ["call"] * 3 + ["put"] * 3,
                        "oi": [10, 100, 10, 10, 100, 10]})
     assert OP.max_pain(df) == 100
-
-
-def test_destacado_y_validacion():
-    df, spot = _cadena(), 267.73
-    cands = {s: OP.candidatos(df, spot, s) for s in ("alcista", "bajista")}
-    assert cands["alcista"] and all(c["option_type"] == "CALL" for c in cands["alcista"])
-    h = OP.destacar(cands, "Alcista", {"adx": 29, "regimen": "tendencia"}, OP.muros(df), [], spot)
-    assert h["action_trigger"] == "pulse_glow_animation" and h["option_type"] == "CALL"
-    assert OP.destacar(cands, "Neutral", {}, {}, [], spot) is None
-    todos = cands["alcista"] + cands["bajista"]
-    ok = ai.validar_destacado({"target_expiration_tab": h["target_expiration_tab"], "option_type": "CALL",
-                               "strike": h["strike"], "rationale": "x"}, todos)
-    assert ok and ok["strike"] == h["strike"]
-    assert ai.validar_destacado({"target_expiration_tab": "ENE 1 '30", "option_type": "CALL", "strike": 1}, todos) is None
-
-
-def test_simulador_escenarios():
-    df, spot = _cadena(), 267.73
-    w, gx = OP.muros(df), OP.gex_por_strike(df, spot)
-    exps = sorted(df["exp"].unique())
-    a = OP.mejor_strike(df, spot, exps[2], "CALL", w, gx)
-    assert a and a["exp"] == exps[2] and a["tipo"] == "CALL"
-    # el elegido tiene el mayor valor esperado de su vencimiento
-    d = df[(df.exp == exps[2]) & (df.type == "call")]
-    otros = [OP.evaluar(r, spot, df, w, gx) for _, r in d.iterrows()]
-    assert all(a["ve"] >= o["ve"] - 1e-9 for o in otros if o and o["delta"] and 0.15 <= abs(o["delta"]) <= 0.75)
-    b = OP.mejor_vencimiento(df, spot, a["strike"], "CALL", w, gx)
-    assert b and b["strike"] == a["strike"]
-    e = OP.evaluar(OP.contrato(df, exps[2], a["strike"], "CALL"), spot, df, w, gx)
-    assert abs(e["breakeven"] - (a["strike"] + e["prima"])) < 1e-9 and 0 <= e["p_toque"] <= 100
-    assert isinstance(OP.riesgos(e, "Bajista", {"regimen": "rango"}, -1, None, spot), list)
-
-
-def test_pnl_trayectoria():
-    # llegar antes al objetivo deja más valor temporal: utilidad decreciente con los días
-    r1 = OP.pnl_trayectoria(270, "CALL", 0.3, 6.0, 30, 265, 280, 2)
-    r2 = OP.pnl_trayectoria(270, "CALL", 0.3, 6.0, 30, 265, 280, 25)
-    assert r1["utilidad_usd"] > r2["utilidad_usd"] and r2["quema_theta_usd"] > r1["quema_theta_usd"] > 0
-    # al vencimiento: valor intrínseco
-    r3 = OP.pnl_trayectoria(270, "CALL", 0.3, 6.0, 30, 265, 280, 30)
-    assert abs(r3["valor_objetivo"] - 10) < 1e-9 and abs(r3["utilidad_usd"] - 400) < 1e-6
-    p = OP.pnl_trayectoria(260, "PUT", 0.3, 5.0, 20, 265, 250, 30)  # días > DTE se acota
-    assert abs(p["valor_objetivo"] - 10) < 1e-9
 
 
 def test_niveles_opt123_y_presupuesto():

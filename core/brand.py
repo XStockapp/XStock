@@ -43,11 +43,3 @@ def wordmark(font_px: int = 40, ground: str = INK, tagline: bool = True) -> str:
                  f"letter-spacing:.32em;text-transform:uppercase;margin-top:{int(font_px*.3)}px'>{TAGLINE}</div>")
     return html
 
-
-def sidebar_brand() -> str:
-    """Versión compacta para la barra lateral."""
-    return (FONTS + "<div style='display:flex;align-items:center;gap:10px;margin:-6px 0 4px'>" + icon_badge(34) +
-            "<div><div style='font-family:Sora,system-ui,sans-serif;font-size:20px;font-weight:700;color:#E8ECF2;"
-            "letter-spacing:-.02em;line-height:1.05'><span style='color:#1FBF75'>X</span>Stock</div>"
-            f"<div style='font-family:\"IBM Plex Mono\",monospace;font-size:11px;letter-spacing:.18em;color:{MUTED};"
-            "text-transform:uppercase;margin-top:2px'>Trading · Data · Analytics</div></div></div>")

@@ -184,9 +184,28 @@ def admin_emails() -> set[str]:
     return {_norm(e) for e in secret("ADMIN_EMAILS").replace(";", ",").split(",") if e.strip()}
 
 
+_PERFILES: dict = {}  # email → (instante, fila): la app consultaba el perfil en CADA interacción
+_TTL_PERFIL = 30.0
+
+
+def _olvidar(email: str | None = None) -> None:
+    if email is None:
+        _PERFILES.clear()
+    else:
+        _PERFILES.pop(_norm(email), None)
+
+
 def get_profile(email: str) -> dict | None:
-    rows = backend().select("profiles", {"email": _norm(email)})
-    return rows[0] if rows else None
+    """Perfil del usuario, con caché de 30 s en el proceso (cualquier escritura del perfil la invalida)."""
+    import time
+    k = _norm(email)
+    hit = _PERFILES.get(k)
+    if hit and time.monotonic() - hit[0] < _TTL_PERFIL:
+        return dict(hit[1]) if hit[1] else None
+    rows = backend().select("profiles", {"email": k})
+    row = rows[0] if rows else None
+    _PERFILES[k] = (time.monotonic(), dict(row) if row else None)
+    return row
 
 
 def list_profiles() -> list[dict]:
@@ -200,11 +219,13 @@ def create_profile(email: str, name: str, role: str = "user", ai_quota: int = 10
            "created_at": now_iso(), "last_login": now_iso(), "login_count": 1, "notes": "",
            "password_hash": password_hash}
     backend().insert("profiles", row)
+    _olvidar(email)
     return row
 
 
 def update_profile(email: str, **fields) -> None:
     backend().update("profiles", {"email": _norm(email)}, fields)
+    _olvidar(email)
 
 
 def save_trader_profile(email: str, trader_profile: str, settings: dict, default_tf: str) -> None:
@@ -215,6 +236,7 @@ def save_trader_profile(email: str, trader_profile: str, settings: dict, default
 
 def delete_profile(email: str, purge_events: bool = True) -> None:
     backend().delete("profiles", {"email": _norm(email)})
+    _olvidar(email)
     if purge_events:
         backend().delete("usage_events", {"email": _norm(email)})
 
@@ -335,17 +357,30 @@ def events_since(days: int = 90) -> list[dict]:
 # =============================================================================
 # Watchlist por usuario
 # =============================================================================
+_WL: dict = {}  # email → (instante, watchlist): el menú lateral la leía en cada interacción
+
+
 def watchlist_get(email: str) -> dict:
+    """Watchlist del usuario, con caché de 30 s (se invalida al agregar o quitar un símbolo)."""
+    import copy
+    import time
+    k = _norm(email)
+    hit = _WL.get(k)
+    if hit and time.monotonic() - hit[0] < _TTL_PERFIL:
+        return copy.deepcopy(hit[1])
     out = {}
-    for r in backend().select("watchlist", {"email": _norm(email)}):
+    for r in backend().select("watchlist", {"email": k}):
         d = r.get("data")
         out[r["ticker"]] = json.loads(d) if isinstance(d, str) else (d or {})
+    _WL[k] = (time.monotonic(), copy.deepcopy(out))
     return out
 
 
 def watchlist_put(email: str, ticker: str, data: dict) -> None:
     backend().upsert("watchlist", {"email": _norm(email), "ticker": ticker, "data": data}, "email,ticker")
+    _WL.pop(_norm(email), None)
 
 
 def watchlist_del(email: str, ticker: str) -> None:
     backend().delete("watchlist", {"email": _norm(email), "ticker": ticker})
+    _WL.pop(_norm(email), None)

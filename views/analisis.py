@@ -5,14 +5,13 @@ import pandas as pd
 import streamlit as st
 
 from core import ai, data, db, store
-from core.analysis import full_analysis
+from core.analysis import analisis_usuario
 from core.fundamental import BLOCK_W
-import json
 
 from core import profiles
 from core.levels import MODOS
 from core.timeframes import RANGO_NOMBRE, RANGOS, is_crypto, rango_valido, rango_velas, unidad
-from core.ui import (AMBER, projection_chart, show_chart, DISCLAIMER, GREEN, MUTED, NEUTRAL, RED, SIGNAL_COLORS, color_for, equity_chart, is_mobile,
+from core.ui import (AMBER, projection_chart, show_chart, DISCLAIMER, GREEN, MUTED, NEUTRAL, RED, SIGNAL_COLORS, equity_chart, is_mobile,
                      pill, price_chart)
 
 cfg = st.session_state.cfg
@@ -20,9 +19,6 @@ E = html.escape
 MOBILE = is_mobile()
 
 
-@st.cache_data(ttl=900, show_spinner=False)
-def _run(ticker, tp, sl, hz, acct, risk, av, prov, tf, settings_json):
-    return full_analysis(ticker, tp, sl, hz, acct, risk, av or None, prov, tf, json.loads(settings_json))
 
 
 PKEY = st.session_state.get("trader_profile")
@@ -113,10 +109,7 @@ cst.markdown(
 
 try:
     with st.spinner(f"Analizando {ticker}…"):
-        A = _run(ticker, cfg["tp_atr"], cfg["sl_atr"], int(cfg["horizonte"]) if TF == "1D" else None,
-                 cfg["capital"], cfg["riesgo_pct"], cfg["alphavantage_key"],
-                 "alphavantage" if cfg.get("proveedor", "").startswith("Alpha Vantage") else "yahoo",
-                 TF, json.dumps(profiles.engine_settings(SETTINGS), sort_keys=True))
+        A = analisis_usuario(ticker, TF, cfg, profiles.engine_settings(SETTINGS))
 except Exception as e:
     st.error(f"No se pudo analizar {ticker}: {e}")
     st.stop()
@@ -140,10 +133,7 @@ try:
         for _t in MTF.triada(TF):
             if _t not in _an:
                 try:
-                    _an[_t] = _run(ticker, cfg["tp_atr"], cfg["sl_atr"], int(cfg["horizonte"]) if _t == "1D" else None,
-                                   cfg["capital"], cfg["riesgo_pct"], cfg["alphavantage_key"],
-                                   "alphavantage" if cfg.get("proveedor", "").startswith("Alpha Vantage") else "yahoo",
-                                   _t, json.dumps(profiles.engine_settings(SETTINGS), sort_keys=True))
+                    _an[_t] = analisis_usuario(ticker, _t, cfg, profiles.engine_settings(SETTINGS))
                 except Exception:
                     pass
     if len(_an) > 1:

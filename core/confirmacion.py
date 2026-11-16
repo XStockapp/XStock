@@ -232,6 +232,9 @@ def evidencia(aps: list[dict], sentido: int, solo_confirmados: bool = True) -> f
     return float(np.clip(e, -1, 1))
 
 
+LOOKBACK = 300
+
+
 def calibrar(d: pd.DataFrame, score: pd.Series, h: int = HORIZONTE, ventana: int = 400, paso: int = 3,
              tf: str | None = None) -> dict:
     """Acierto direccional histórico del motor cuantitativo y de los patrones (al confirmarse) en este activo, y el
@@ -249,10 +252,15 @@ def calibrar(d: pd.DataFrame, score: pd.Series, h: int = HORIZONTE, ventana: int
          and np.isfinite(fut[i]) and fut[i] != 0]
     acc_q, n_q = (float(np.mean(m)), len(m)) if m else (0.5, 0)
     hits = []
+    # solo las columnas que usan los patrones y las últimas LOOKBACK velas de cada corte: mismo resultado
+    # (los detectores miran como máximo ~200 velas) sin copiar todo el historial y sus ~40 indicadores en cada paso
+    cols = [k for k in ("Open", "High", "Low", "Close", "Volume", "ATR", "SMA50", "SMA200", "EMA21") if k in d]
+    dd = d[cols]
     for i in range(i0, n - h, paso):
-        w = d.iloc[: i + 1]
+        a0 = max(0, i + 1 - LOOKBACK)
+        w = dd.iloc[a0: i + 1]
         try:
-            aps = [a for a in apoyos(w) if a["estado"] == "Recién confirmado" and a["barra"] >= i - VENTANA_EVAL
+            aps = [a for a in apoyos(w) if a["estado"] == "Recién confirmado" and a["barra"] + a0 >= i - VENTANA_EVAL
                    and a["sesgo"] in ("alcista", "bajista")]
         except Exception:
             continue

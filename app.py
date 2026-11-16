@@ -19,7 +19,7 @@ st.set_page_config(page_title="XStock · Trading · Data · Analytics", page_ico
 inject_css()
 
 # ---- Acceso: invitaciones + Auth0 (Google o correo con código) / modo personal ----
-from core import auth, brand  # noqa: E402
+from core import auth  # noqa: E402
 
 profile = auth.gate()
 ADMIN = profile.get("role") == "admin"
