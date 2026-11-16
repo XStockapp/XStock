@@ -284,10 +284,67 @@ else:
     view["Casos similares"] = view["Casos similares corto"]
     sig_opts, sig_def = ["VENTA FUERTE", "VENTA", "NEUTRAL"], ["VENTA FUERTE", "VENTA"]
 sig_filter = f1.multiselect("Filtrar señal", sig_opts, default=sig_def)
-min_prob = f2.slider("Prob. mínima", 0, 90, 0, 5) / 100
+min_prob = f2.number_input("Prob. mínima (%)", 0, 90, 0, 5, key="scan_min_prob") / 100
 if sig_filter:
     view = view[view["Señal"].isin(sig_filter)]
-view = view[view["Prob. ganancia"] >= min_prob].head(top_n)
+view = view[view["Prob. ganancia"] >= min_prob]
+
+# ---- filtros tipo Excel: una lista con casillas por columna (desmarcar = ocultar). Se aplican ANTES del recorte
+# al top N, así el ranking muestra las mejores acciones entre las que cumplen; se recuerdan durante la sesión.
+_EST_TXT = {"FORMING": "en formación", "PENDING_BREAKOUT": "por confirmar", "CONFIRMED": "recién confirmado"}
+_SIN = "Sin patrón"
+_cols_f = {}
+if "Patrón" in view.columns:
+    _cols_f["Patrón vigente"] = view["Patrón"].fillna(_SIN)
+    _cols_f["Estado del patrón"] = view["Patrón estado"].map(_EST_TXT).fillna(_SIN)
+    _cols_f["Sesgo del patrón"] = view["Patrón sesgo"].fillna(_SIN)
+if "Sector" in view.columns:
+    _cols_f["Sector"] = view["Sector"].fillna("Sin sector")
+_lado = "l" if is_long else "s"
+
+
+def _filtro_excel(slot, nombre: str, serie: pd.Series):
+    """Popover con la lista de valores encontrados (con su cuenta) y una casilla por valor, como el filtro de
+    una columna de Excel. Guarda los valores DESMARCADOS: un valor nuevo de otro escaneo aparece marcado."""
+    k = f"xf_{_lado}_{nombre}"
+    fuera = st.session_state.setdefault(k, set())
+    cuenta = serie.value_counts()
+    vals = sorted(cuenta.index, key=lambda v: (v == _SIN, -cuenta[v], v))
+    activos = [v for v in vals if v in fuera]
+    with slot.popover(nombre + (f" · {len(vals) - len(activos)}/{len(vals)}" if activos else ""), width="stretch"):
+        c1, c2 = st.columns(2)
+        if c1.button("Todos", key=f"{k}_all", width="stretch"):
+            fuera.clear()
+            for v in vals:
+                st.session_state[f"{k}_{v}"] = True
+        if c2.button("Ninguno", key=f"{k}_none", width="stretch"):
+            fuera.update(vals)
+            for v in vals:
+                st.session_state[f"{k}_{v}"] = False
+        for v in vals:
+            on = st.checkbox(f"{v}  ({cuenta[v]})", value=v not in fuera, key=f"{k}_{v}")
+            (fuera.discard if on else fuera.add)(v)
+    return fuera
+
+
+if _cols_f:
+    _fx = st.columns(len(_cols_f) + 1, vertical_alignment="bottom")
+    _mask = pd.Series(True, index=view.index)
+    for _slot, (_nom, _ser) in zip(_fx, _cols_f.items()):
+        _fuera = _filtro_excel(_slot, _nom, _ser)
+        if _fuera:
+            _mask &= ~_ser.isin(_fuera)
+    _n_antes = len(view)
+    if _fx[-1].button("Limpiar filtros", width="stretch", key=f"xf_{_lado}_clear"):
+        for _nom in _cols_f:
+            st.session_state[f"xf_{_lado}_{_nom}"] = set()
+            for _k in [k for k in st.session_state if k.startswith(f"xf_{_lado}_{_nom}_")]:
+                del st.session_state[_k]
+        st.rerun()
+    view = view[_mask]
+    st.caption(f"Mostrando {min(len(view), top_n)} de {_n_antes} · los filtros se aplican antes del top {top_n} · "
+               "ordena con un clic en el título de cualquier columna de la tabla (otro clic invierte el orden)")
+view = view.head(top_n)
 view["#"] = range(1, len(view) + 1)
 view["dir"] = 1 if is_long else -1
 
@@ -333,20 +390,27 @@ def _pat_txt(r):
     if not _HAS_PAT or not isinstance(r.get("Patrón"), str):
         return "—"
     flecha = {"alcista": "▲", "bajista": "▼"}.get(r.get("Patrón sesgo"), "◆")
+    return f"◉ {flecha} {r['Patrón']}"
+
+
+def _est_txt(r):
+    if not _HAS_PAT or not isinstance(r.get("Patrón"), str):
+        return "—"
     extra = f" · ⚡ {_ses_txt.get(EXQ[r['Ticker']]['sesion'], '')} rompe" if _rompe(r) else ""
-    return f"◉ {flecha} {r['Patrón']} · {_EST.get(r.get('Patrón estado'), '')}{extra}"
+    return f"{_EST.get(r.get('Patrón estado'), '')}{extra}"
 
 
 view["Pre/After"] = [_ext_txt(t) for t in view["Ticker"]]
 view["Patrón vigente"] = [_pat_txt(r) for _, r in view.iterrows()]
+view["Estado del patrón"] = [_est_txt(r) for _, r in view.iterrows()]
 
 vt = pd.concat([view[["#", "Ticker", "Señal", "Prob. ganancia", "Valor esperado (R)", "Entrada", "Stop", "Objetivo 1",
-                      "Pre/After", "Patrón vigente"]],
+                      "Pre/After", "Patrón vigente", "Estado del patrón"]],
                 MK.drop(columns=[c for c in ("Ticker",) if c in MK.columns])], axis=1)
 if MOBILE:  # tabla compacta en celular
-    order = ["#", "Logo", "Ticker", "Señal", "Patrón vigente", "Prob. ganancia", "Precio", "Pre/After"] + _perf[:1] + _spark
+    order = ["#", "Logo", "Ticker", "Señal", "Patrón vigente", "Estado del patrón", "Prob. ganancia", "Precio", "Pre/After"] + _perf[:1] + _spark
 else:
-    order = (["#", "Logo"] + _ident + ["Precio", "Pre/After", "Patrón vigente"] + _perf + _spark
+    order = (["#", "Logo"] + _ident + ["Precio", "Pre/After", "Patrón vigente", "Estado del patrón"] + _perf + _spark
              + ["Señal", "Prob. ganancia", "Valor esperado (R)"]
              + _met + ["Entrada", "Stop", "Objetivo 1"] + _tec)
 vt = vt[[c for c in order if c in vt.columns and not (IS_CR and c == "Pre/After")]]
@@ -377,9 +441,13 @@ if "Pre/After" in vt.columns:
     sty = sty.map(lambda v: f"color: {GREEN}" if "+" in str(v) else f"color: {RED}" if "-" in str(v).split("$")[-1] else f"color: {MUTED}",
                   subset=["Pre/After"])
 if "Patrón vigente" in vt.columns:
-    sty = sty.map(lambda v: (f"color: {AMBER}; font-weight: 600" if "⚡" in str(v) else f"color: {GREEN}" if "▲" in str(v)
-                             else f"color: {RED}" if "▼" in str(v) else f"color: {AMBER}" if "◆" in str(v) else f"color: {MUTED}"),
+    sty = sty.map(lambda v: (f"color: {GREEN}" if "▲" in str(v) else f"color: {RED}" if "▼" in str(v)
+                             else f"color: {AMBER}" if "◆" in str(v) else f"color: {MUTED}"),
                   subset=["Patrón vigente"])
+if "Estado del patrón" in vt.columns:
+    sty = sty.map(lambda v: (f"color: {AMBER}; font-weight: 600" if "⚡" in str(v) else f"color: {GREEN}" if "recién" in str(v)
+                             else f"color: #E6EDF3" if "por confirmar" in str(v) else f"color: {MUTED}"),
+                  subset=["Estado del patrón"])
 
 # tira de alertas: un punto que destella por cada acción con patrón vigente (las tablas de Streamlit se dibujan en
 # un lienzo y no admiten animación, por eso el destello vive aquí, encima de la tabla)
@@ -431,9 +499,12 @@ sel = st.dataframe(
                        help="Último precio de premercado (4:00–9:30) o postmercado (16:00–20:00) y su variación frente "
                             "al último cierre regular"),
                    "Patrón vigente": st.column_config.TextColumn(
-                       "Patrón vigente", width="large",
-                       help="Patrón chartista del movimiento actual (velas diarias). ⚡ = el precio de premercado o "
-                            "postmercado ya cruza el nivel de activación: se confirmaría con el cierre de la sesión")},
+                       "Patrón vigente", width=210,
+                       help="Patrón chartista del movimiento actual (velas diarias). ▲ alcista · ▼ bajista · ◆ neutral"),
+                   "Estado del patrón": st.column_config.TextColumn(
+                       "Estado", width=150,
+                       help="En formación · por confirmar (cerca del nivel de activación) · recién confirmado. ⚡ = el "
+                            "precio de premercado o postmercado ya cruza el nivel de activación")},
 )
 st.caption("Probabilidad: verde = ventaja de compra · rojo = ventaja de venta en corto · azul = indeciso (compra y venta "
            "difieren ≤ 5 puntos). Más intenso = mayor probabilidad.")
@@ -456,13 +527,68 @@ _csv = vt.drop(columns=[c for c in vt.columns if c == "Logo" or c.startswith("Ú
 b3.download_button("⬇️ Exportar ranking (CSV)", _csv.to_csv(index=False).encode("utf-8"),
                    "ranking_xstock.csv", "text/csv")
 
-with st.expander("¿Cómo se calcula la probabilidad?"):
+with st.expander("¿Cómo se calcula todo? (probabilidad, backtest, señal y ranking)"):
+    _rr = cfg["tp_atr"] / cfg["sl_atr"]
     st.markdown(f"""
-- Para cada día de los últimos 2 años se simula una compra al cierre con **objetivo = +{cfg['tp_atr']}×ATR** y
-  **stop = −{cfg['sl_atr']}×ATR**, máximo **{cfg['horizonte']} sesiones** (método de triple barrera).
-- Se toman los días cuyo **puntaje técnico era similar al de hoy (±15 puntos)** y se mide qué porcentaje tocó el objetivo antes que el stop.
-- Ese porcentaje se **ajusta (bayesiano)** hacia la tasa del universo completo con el mismo puntaje, para no sobreconfiar en pocas muestras.
-- **Valor esperado (R)** = p × {cfg['tp_atr'] / cfg['sl_atr']:.1f} − (1 − p). Con esta relación, el punto de equilibrio es
-  {1 / (1 + cfg['tp_atr'] / cfg['sl_atr']) * 100:.0f}% de acierto.
+**1 · Universo y filtros.** Se descargan 2 años de velas diarias de cada acción (Alpaca; si no responde, Yahoo
+Finance). Quedan fuera las que tienen menos de 260 velas, un precio menor al mínimo elegido o un volumen negociado
+promedio de 20 días menor al mínimo en dólares.
+
+**2 · Puntaje técnico (−100 a +100).** Para cada vela se calculan 13 indicadores y cada uno da una señal entre −1 y +1:
+tendencia SMA50/200 (peso 2.0), SMA50/EMA21 (1.5), cruce EMA9/EMA21 (1.0), MACD (1.5), RSI (1.2), ADX/DMI (1.2),
+Bollinger %B (0.8), estocástico (0.8), volumen/OBV (1.2), Money Flow Index (0.6), VWAP 20 (0.6), Ichimoku (1.0) y
+canal/rango (1.2). El puntaje es el promedio ponderado × 100. **Filtro de régimen (ADX):** si el ADX está bajo su
+nivel clave, las señales de tendencia pesan la mitad (mercado en rango); si está sobre él, los osciladores pesan 70 %.
+Se necesita al menos 10 indicadores con dato para que haya puntaje.
+
+**3 · Backtest de cada día (triple barrera).** Para **cada vela de los 2 años** se simula una operación, en las dos
+direcciones (compra y venta en corto):
+- entrada al cierre de esa vela;
+- **objetivo** a +{cfg['tp_atr']} ATR y **stop** a −{cfg['sl_atr']} ATR (en corto, al revés), con el ATR de ese día;
+- se recorren las **{cfg['horizonte']} sesiones** siguientes con sus máximos y mínimos: gana si toca primero el objetivo y pierde
+  si toca primero el stop. Si ambos caen en la misma vela, se cuenta como pérdida (criterio conservador);
+- si no toca ninguno en {cfg['horizonte']} sesiones, se cierra al precio de la última: el resultado en R va de −1 a +{_rr:.1f}
+  y cuenta como ganadora si es positivo.
+
+El puntaje de cada día usa solo datos hasta ese día (sin mirar el futuro). Cada día es un caso: los casos de días
+seguidos se solapan, así que no son independientes.
+
+**4 · Casos similares.** De ese historial se toman los días cuyo puntaje estaba a **±15 puntos del puntaje de hoy**
+(columna *Casos similares*) y se cuenta qué porcentaje ganó.
+
+**5 · Probabilidad ajustada (bayesiana).** Con pocos casos ese porcentaje es poco fiable, así que se mezcla con la tasa
+de todo el universo escaneado para el mismo puntaje: **p = (ganadoras + 25 × tasa del universo) / (casos + 25)**.
+Con muchos casos manda la historia de la acción; con pocos, la del universo. Es la columna *Prob. ganancia*
+(en el ranking de cortos, la de la venta en corto).
+
+**6 · Valor esperado (R).** VE = p × {_rr:.1f} − (1 − p): lo que se gana o pierde en promedio por cada unidad de riesgo.
+El punto de equilibrio es {1 / (1 + _rr) * 100:.0f} % de acierto; por encima, el VE es positivo.
+
+**7 · Señal.**
+- Compra: **COMPRA FUERTE** si el VE ≥ 0.30 R y el puntaje ≥ 20; **COMPRA** si el VE ≥ 0.10 R y el puntaje ≥ 0;
+  **REBOTE (contratendencia)** si el VE ≥ 0.10 R con puntaje negativo; **EVITAR / VENTA** si el puntaje ≤ −30 con VE
+  negativo; si no, **NEUTRAL**.
+- Venta en corto: **VENTA FUERTE** si el VE ≥ 0.30 R y el puntaje ≤ −20; **VENTA** si el VE ≥ 0.10 R y el puntaje ≤ 0.
+
+**8 · Orden del ranking.** Compras: VE × 100 + 0.15 × puntaje + 0.10 × fuerza relativa. Cortos: VE × 100 − 0.15 ×
+puntaje + 0.10 × (100 − fuerza relativa). La **fuerza relativa** es el percentil del rendimiento de 3 meses de la
+acción dentro del universo escaneado (100 = la que más subió).
+
+**9 · Plan (Entrada, Stop, Objetivo 1).** Entrada al último cierre o, si el impulso va en contra, una entrada límite
+proyectada en el soporte (o resistencia) más cercano. Stop a −{cfg['sl_atr']} ATR, o bajo el soporte estructural − 0.25 ATR
+si ese queda más cerca. Objetivos según el riesgo de la entrada al stop y la relación objetivo/stop configurada.
+
+**10 · Patrón vigente y estado.** Patrones chartistas en velas diarias que terminan dentro de las últimas 20 velas
+(los antiguos o con el objetivo ya alcanzado se descartan). Estado: *en formación*, *por confirmar* (precio cerca del
+nivel de activación) o *recién confirmado* (rompió el nivel). ⚡ = el precio de premercado o postmercado ya cruza el
+nivel de activación.
+
+**11 · Pre/After.** Último precio de premercado (4:00–9:30) o postmercado (16:00–20:00) hora de Nueva York según Alpaca,
+con su variación frente al último cierre regular.
+
+**Límites.** La probabilidad describe cómo se comportó la acción en situaciones técnicas parecidas de los últimos 2
+años: no garantiza el resultado. No incluye comisiones ni deslizamiento, y como los casos se solapan, la cantidad
+efectiva de casos independientes es menor que la columna *Casos similares*. La validación fuera de muestra de la
+fórmula está en Validación del modelo (administradores).
 """)
 st.markdown(DISCLAIMER, unsafe_allow_html=True)
