@@ -230,6 +230,8 @@ with top_a:
 MK = float(np.clip(((MT['puntaje'] if MT else COMB) + 100) / 2, 0, 100))
 mk_lbl, mk_col = (("STRONG BUY", GREEN) if MK >= 70 else ("BUY", GREEN) if MK >= 57 else ("NEUTRAL", MUTED)
                   if MK > 43 else ("SELL", RED) if MK > 30 else ("STRONG SELL", RED))
+if MT and MT["estado"] in ("Mixto", "Lateral") and mk_lbl != "NEUTRAL":  # sin acuerdo entre temporalidades no hay señal limpia
+    mk_lbl, mk_col = MT["estado"].upper(), MUTED
 PC = OP.porcentaje_calls(CH)
 op_lbl = SEL["tipo"] if SEL else "ESPERAR"
 op_col = GREEN if op_lbl == "CALL" else RED if op_lbl == "PUT" else MUTED
@@ -393,8 +395,11 @@ def _explicacion(o: dict) -> str:
     wtxt = ", ".join(f"{w['strike']:g}" for w in w_fav) or "—"
     conf = "; ".join(f"{c['tipo'].lower()} {c['strike']:g} coincide con el {c['nodo_vrvp']} del VRVP" for c in CONF[:2])
     em = SM.get("expected_move_usd")
-    t = (f"<b>1 · Motor cuantitativo (70 %).</b> Escenario <b>{sesgo_txt}</b> en {TF}: puntaje combinado "
-         f"<b>{COMB:+.0f}</b>, ADX <b>{ADX.get('adx', '—')}</b> ({'tendencia' if ADX.get('regimen') == 'tendencia' else 'rango'} "
+    _tec = float((A.get("tech") or {}).get("score", COMB))
+    _fs = (A.get("fscore") or {}).get("score")
+    t = (f"<b>1 · Motor cuantitativo (70 %).</b> Escenario <b>{sesgo_txt}</b> en {TF}: puntaje técnico "
+         f"<b>{_tec:+.0f}</b>" + (f" (fundamental {_fs:+.0f}, se pondera aparte según el horizonte)" if _fs is not None else "")
+         + f", ADX <b>{ADX.get('adx', '—')}</b> ({'tendencia' if ADX.get('regimen') == 'tendencia' else 'rango'} "
          f"respecto al nivel 23), RSI <b>{rsi:.1f}</b>, MACD {'positivo' if r_['MACD_hist'] > 0 else 'negativo'} y "
          f"precio {'sobre' if spot > (VP.get('poc') or spot) else 'bajo'} el POC del VRVP (<b>{_m(VP.get('poc'))}</b>). "
          f"<br><b>2 · Flujo de opciones (30 %).</b> GEX {SM['net_gamma_exposure_gex'].lower()} "
@@ -402,8 +407,8 @@ def _explicacion(o: dict) -> str:
          f"PCR {SM['pcr_open_interest'] or SM['pcr_volumen'] or '—'}; flujo neto {OP._fmt_m(FLUJO)}; "
          f"muros a favor en <b>{wtxt}</b>" + (f"; {conf}" if conf else "") + "."
          f"<br><b>3 · Selección del contrato.</b> Se evaluaron {len(EVS)} contratos {o['tipo']} líquidos con money "
-         f"{MONEY}. El objetivo es <b>{_m(o['objetivo'])}</b> (primer muro a favor acotado por el movimiento esperado"
-         + (f" ±{_m(em)}" if em else "") + f"). El <b>{o['contrato']} · {o['vencimiento']}</b> maximiza el valor esperado "
+         f"{MONEY}. El objetivo es <b>{_m(o['objetivo'])}</b> (primer muro o nivel fuerte a favor, acotado por el movimiento esperado"
+         + (f" del vencimiento ±{_m(em)}" if em else "") + f"). El <b>{o['contrato']} · {o['vencimiento']}</b> maximiza el valor esperado "
          f"(<b>{o['ve']:+.1f}%</b>): {o['p_toque']:.0f}% de probabilidad de tocar el objetivo en {o['horizonte_dias']:.0f} "
          f"días, {o['roi_objetivo']:+.0f}% si lo toca y {o['roi_sin_movimiento']:+.0f}% si el precio no se mueve. "
          f"Probabilidad de terminar con ganancia al vencimiento: <b>{o['pop']:.0f}%</b>.")
@@ -411,8 +416,8 @@ def _explicacion(o: dict) -> str:
         pw_txt = " / ".join(f"{f['tf']} {f['peso'] * 100:.0f}%" for f in MT["filas"])
         L_ = MT["limites"]
         t += (f"<br><b>4 · Multi-temporalidad.</b> Con {o['dte']} días al vencimiento los pesos son {pw_txt} "
-              f"(a menor plazo mandan las temporalidades menores; a mayor plazo, las mayores). Puntaje combinado "
-              f"<b>{MT['puntaje']:+.0f}</b>, alineación <b>{MT['alineacion'] * 100:.0f}%</b>: <b>{MT['estado'].lower()}</b>. "
+              f"(a menor plazo mandan las temporalidades menores; a mayor plazo, las mayores). Puntaje técnico "
+              f"<b>{MT.get('puntaje_tecnico', MT['puntaje']):+.0f}</b>, con fundamental <b>{MT['puntaje']:+.0f}</b>, alineación <b>{MT['alineacion'] * 100:.0f}%</b>: <b>{MT['estado'].lower()}</b>. "
               f"Objetivo {MTF.etiqueta(L_['objetivo'])}, invalidación {MTF.etiqueta(L_['invalidacion'])}, "
               f"segundo nivel {MTF.etiqueta(L_['segundo_nivel'])}.")
         if MT["estado"] in ("Rebote contra la tendencia mayor", "Operativa en contra"):
@@ -730,5 +735,5 @@ with st.expander("Ver Mapa GEX / Muros", expanded=False, icon=":material/bar_cha
 st.caption("Cálculos: valor esperado = P(toca objetivo) × rentabilidad en el objetivo + (1 − P) × resultado sin movimiento − "
            "medio spread (Black-Scholes, IV actual) · prob. de éxito = P(precio al vencimiento más allá del breakeven) · "
            "PCR = Σ puts / Σ calls · GEX = Γ × OI × 100 × S² × 0.01 · max pain = strike con menor pago intrínseco. "
-           "MARKET = puntaje combinado del análisis técnico (0–100) · OPTIONS = % del volumen en calls.")
+           "MARKET = puntaje multi-temporalidad (técnico + fundamental según el horizonte, 0–100; MIXTO si las temporalidades no coinciden) · OPTIONS = % del volumen en calls.")
 st.markdown(DISCLAIMER, unsafe_allow_html=True)
