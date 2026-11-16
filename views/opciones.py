@@ -14,7 +14,7 @@ import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
 
-from core import ai, data, db, mtf as MTF, options as OP, pnl_widget as PW, profiles, store
+from core import ai, calendario as CAL, data, db, mtf as MTF, options as OP, pnl_widget as PW, profiles, store
 from core.analysis import full_analysis
 from core.timeframes import is_crypto
 from core.ui import AMBER, DISCLAIMER, GREEN, MUTED, RED
@@ -107,6 +107,11 @@ with left:
         st.button("Analizar Opción", type="primary", icon=":material/bolt:", width="stretch", key="ox_go")
 
 ticker = tk_in or "SPY"
+try:  # próxima publicación de resultados (riesgo de gap e IV crush)
+    from core import eventos as EV
+    RES_PROX = EV.proximos_resultados(ticker, CAL.hoy_ny())
+except Exception:
+    RES_PROX = None
 ss.ticker = ticker
 TF, RNG, MONEY = ss.get("opt_tf") or "1h", ss.get("opt_rng") or "1M", ss.get("opt_money") or "OTM"
 if is_crypto(ticker):
@@ -252,6 +257,8 @@ with top_b:
         ("GEX / gamma flip", f"{SM['net_gamma_exposure_gex'].split(' ')[0]} / {_m(SM.get('gamma_flip_level'), '')}"),
         ("Max pain", _m(SM.get("max_pain"))),
         ("P/E forward", "—" if not MX.get("P/E forward") else f"{MX['P/E forward']:.1f}"),
+        ("Próx. resultados", f"{RES_PROX:%d/%m/%y}" if RES_PROX else "—"),
+        ("Próximo feriado bolsa", next((f"{d_:%d/%m} {n_[:22]}" for d_, n_ in CAL.proximos(CAL.hoy_ny(), 1)), "—")),
     ]
     st.markdown(_bar("MARKET", MK, mk_lbl, mk_col)
                 + "<div class='ox-box'><h4>Datos técnicos y fundamentales</h4><div class='ox-dt'>"
@@ -277,7 +284,7 @@ with top_c:
                     else "fuera de presupuesto" if INV else "")
             st.markdown(
                 f"<div class='ox-st'><span class='k' style='color:{colr}'>${O['strike']:g} {O['tipo'][0]}</span>"
-                f"<span class='v'>{E(O['vencimiento'])} · {O['dte']} DTE</span>"
+                f"<span class='v'>{E(O['vencimiento'])} · {O['dte']} DTE · {O['sesiones_venc']} ses.</span>"
                 f"<span class='muted small'>{nom} · {dsc}</span></div>"
                 f"<div class='ox-g3'><div><span>Prima</span><b>${O['prima']:,.2f}</b></div>"
                 f"<div><span>Costo total</span><b>${O['costo']:,.0f}</b></div>"
@@ -412,7 +419,7 @@ def _explicacion(o: dict) -> str:
 
 
 def _riesgos_html(o):
-    rs = OP.riesgos(o, ESC, ADX, SM.get("gex_total") or 0, SM.get("gamma_flip_level"), spot)
+    rs = OP.riesgos(o, ESC, ADX, SM.get("gex_total") or 0, SM.get("gamma_flip_level"), spot, RES_PROX)
     return ("<div class='ox-box'><h4>Riesgos y cuidados</h4><ul style='margin:0 0 0 16px;padding:0;font-size:12px'>"
             + "".join(f"<li>{E(x)}</li>" for x in rs) + "</ul></div>") if rs else ""
 
@@ -559,7 +566,9 @@ with right:
 
 # ================================================================== option chain (debajo del análisis)
 EXPS = sorted(CH["exp"].unique())
-LBL = {e: f"{OP.etiqueta_venc(e)} · {int(CH[CH['exp'] == e]['dte'].iloc[0])}d" for e in EXPS}
+_hoy = CAL.hoy_ny()
+LBL = {e: f"{OP.etiqueta_venc(e)} · {int(CH[CH['exp'] == e]['dte'].iloc[0])}d"
+          + (" · feriado" if CAL.feriados_entre(_hoy, e) else "") for e in EXPS}
 labels = [LBL[e] for e in EXPS]
 sig = f"{ticker}|{SEL['contrato']}|{SEL['vencimiento']}" if SEL else None
 if sig and ss.get("opt_hl_sig") != sig:  # apertura automática del vencimiento del contrato seleccionado

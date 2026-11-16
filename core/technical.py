@@ -46,8 +46,16 @@ def true_range(df: pd.DataFrame) -> pd.Series:
     ).max(axis=1)
 
 
+def true_range_robusto(df: pd.DataFrame, k: float = 3.0, ventana: int = 50) -> pd.Series:
+    """Rango verdadero recortado a k × la mediana de las `ventana` velas anteriores: una vela de evento
+    (resultados, noticia) no infla el ATR durante semanas ni agranda stops y objetivos de los días siguientes."""
+    tr = true_range(df)
+    tope = k * tr.shift(1).rolling(ventana, min_periods=10).median()
+    return tr.where(tope.isna() | (tr <= tope), tope)
+
+
 def atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
-    return wilder(true_range(df), n)
+    return wilder(true_range_robusto(df), n)
 
 
 def adx(df: pd.DataFrame, n: int = 14):

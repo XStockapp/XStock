@@ -125,6 +125,23 @@ if MODO == "Backtest por cortes":
                 "(1 R = distancia al stop). Esperanza = ganancia media por operación en R. Una operación que no toca ni "
                 "objetivo ni stop se cierra al final del horizonte a precio de mercado. Si objetivo y stop caen en la misma "
                 "vela se cuenta el stop.</div></div>", unsafe_allow_html=True)
+    filas_e = []
+    for f in RB["horizontes"]:
+        for nom, blk in (("Actual", f["actual"]), ("Ajustada", f.get("ajustado"))):
+            if not blk or "sin_eventos" not in blk["test"]:
+                continue
+            te = blk["test"]
+            filas_e.append(f"<tr><td class='l'>{f['horizonte_dias']} d</td><td class='l'>{nom}</td>"
+                           + "".join(f"<td>{te[k]['ops']}</td><td>{_r(te[k]['esperanza_r'])}</td><td>{_p(te[k]['ganadoras'])}</td>"
+                                     for k in ("sin_eventos", "con_eventos")) + "</tr>")
+    if filas_e:
+        st.markdown("<div class='vl-box'><h4>Prueba separada por velas de evento</h4><table class='vl-t'><tr><th>Horizonte</th>"
+                    "<th>Fórmula</th><th>Sin eventos · ops</th><th>Esperanza</th><th>Ganadoras</th><th>Con eventos · ops</th>"
+                    "<th>Esperanza</th><th>Ganadoras</th></tr>" + "".join(filas_e) + "</table><div class='muted small'>"
+                    "Una operación «con evento» cruza una vela anómala (retorno |z| ≥ 4, gap ≥ 2 ATR o volumen ≥ 3× con "
+                    "|z| ≥ 3): resultados, noticias o shocks de sector. Su resultado depende del evento, no de la fórmula; "
+                    "por eso el ajuste elige los parámetros con las operaciones sin eventos.</div></div>",
+                    unsafe_allow_html=True)
     txt = []
     for hd, acc, pr, a, b in recs:
         if acc == "ajustar":

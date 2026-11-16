@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import math
 import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import numpy as np
 import pandas as pd
@@ -417,11 +417,16 @@ def destacar(cands: dict, escenario: str, adx: dict, walls: dict, conf: list, sp
 
 
 # ------------------------------------------------------------------ simulador de decisión
-def _p_toque(s, t_price, iv, dias):
-    """Probabilidad aproximada de que el precio toque `t_price` en `dias` (principio de reflexión, sin deriva)."""
+def _p_toque(s, t_price, iv, dias, sesiones_habiles: int | None = None):
+    """Probabilidad aproximada de que el precio toque `t_price` en `dias` (principio de reflexión, sin deriva).
+    El precio solo se mueve en sesiones hábiles: con `sesiones_habiles` la varianza usa sesiones/252 (descuenta
+    fines de semana y feriados); si no, días de calendario/365."""
     if dias <= 0 or iv <= 0 or s <= 0:
         return 0.0
-    z = abs(math.log(t_price / s)) / (iv * math.sqrt(dias / 365))
+    t = (sesiones_habiles / 252) if sesiones_habiles is not None else (dias / 365)
+    if t <= 0:
+        return 0.0
+    z = abs(math.log(t_price / s)) / (iv * math.sqrt(t))
     return float(min(1.0, 2 * (1 - _ncdf(z))))
 
 
@@ -462,7 +467,13 @@ def evaluar(r: pd.Series, spot: float, df: pd.DataFrame, walls: dict, gex: pd.Se
     v_t = bs_price(t_px, r["strike"], resto, iv, call)
     v_0 = bs_price(spot, r["strike"], resto, iv, call)
     roi_t, roi_0 = v_t / prima - 1, v_0 / prima - 1
-    p = _p_toque(spot, t_px, iv, h)
+    from . import calendario as CAL
+    hoy = CAL.hoy_ny()
+    ses_h = CAL.sesiones(hoy, hoy + timedelta(days=int(math.ceil(h))))
+    p = _p_toque(spot, t_px, iv, h, ses_h)
+    exp_d = r["exp"] if isinstance(r["exp"], date) else pd.Timestamp(r["exp"]).date()
+    ses_venc = CAL.sesiones(hoy, exp_d)
+    fer = CAL.feriados_entre(hoy, exp_d)
     spread = (r["ask"] - r["bid"]) / prima if pd.notna(r["bid"]) and pd.notna(r["ask"]) and r["bid"] > 0 else 0.25
     ve = p * roi_t + (1 - p) * roi_0 - spread / 2
     # strike detrás de una resistencia (soporte en PUT) fuerte de la temporalidad mayor: el precio tendría que romperla
@@ -500,7 +511,8 @@ def evaluar(r: pd.Series, spot: float, df: pd.DataFrame, walls: dict, gex: pd.Se
             "bajo_muro_puts": bool((not call) and pw and r["strike"] < min(pw)),
             "tras_nivel_mayor": None if not tras else float(tras[0]["precio"]),
             "mtf_puntaje": None if not mtf else float(mtf["puntaje"]), "mtf_pesos": None if not mtf else mtf.get("pesos"),
-            "mtf_contra": contra_mtf}
+            "mtf_contra": contra_mtf, "sesiones_venc": ses_venc, "sesiones_horizonte": ses_h, "exp_iso": exp_d.isoformat(),
+            "feriados": [(f.isoformat(), n) for f, n in fer]}
 
 
 def _liquido(d: pd.DataFrame) -> pd.DataFrame:
@@ -528,9 +540,14 @@ def contrato(df, exp, strike, tipo: str) -> pd.Series | None:
     return None if d.empty else d.iloc[0]
 
 
-def riesgos(e: dict, sesgo: str, adx: dict, gex_total: float, flip: float | None, spot: float) -> list[str]:
-    """Cuidados a tener en cuenta para un contrato evaluado."""
+def riesgos(e: dict, sesgo: str, adx: dict, gex_total: float, flip: float | None, spot: float,
+            resultados: date | None = None) -> list[str]:
+    """Cuidados a tener en cuenta para un contrato evaluado. `resultados`: próxima publicación de resultados."""
     out = []
+    if resultados and e.get("exp_iso") and resultados <= date.fromisoformat(e["exp_iso"]):
+        out.append(f"Resultados el {resultados:%d/%m}, antes del vencimiento: la prima ya incluye ese riesgo (IV alta) y "
+                   "tras la publicación la volatilidad implícita suele desplomarse (IV crush). Aunque el precio vaya a "
+                   "favor, la opción puede perder valor; el gap puede saltar el objetivo o el stop.")
     if (e["tipo"] == "CALL" and sesgo == "Bajista") or (e["tipo"] == "PUT" and sesgo == "Alcista"):
         out.append(f"Va en contra del escenario cuantitativo ({sesgo.lower()}): el motor principal (70 %) no lo respalda.")
     if sesgo == "Neutral":
@@ -546,6 +563,10 @@ def riesgos(e: dict, sesgo: str, adx: dict, gex_total: float, flip: float | None
         out.append("Interés abierto bajo: poca liquidez para cerrar la posición.")
     if e["sobre_muro_calls"]:
         out.append("El strike está por encima del muro de calls: el precio debe romper una resistencia institucional.")
+    if e.get("feriados"):
+        fs = ", ".join(f"{n} ({f[8:10]}/{f[5:7]})" for f, n in e["feriados"])
+        out.append(f"Feriado de la bolsa antes del vencimiento: {fs}. Son {e['sesiones_venc']} sesiones hábiles para "
+                   f"{e['dte']} días: el precio tiene una sesión menos para moverse, pero la theta sigue corriendo.")
     if e.get("mtf_contra"):
         out.append(f"Para {e['dte']} días al vencimiento, el análisis multi-temporalidad va en contra de un {e['tipo']} "
                    f"(puntaje {e['mtf_puntaje']:+.0f}).")

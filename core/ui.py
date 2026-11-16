@@ -154,6 +154,8 @@ header[data-testid="stHeader"] {{ background: transparent; height: 2.6rem; }}
 .x-dl2 {{ display: flex; justify-content: space-between; gap: 8px; border-top: 1px solid #21262D; padding: 6px 0 0;
   margin-top: 6px; font-size: 12px; color: #8B949E; }}
 .x-dl2 b {{ color: #E6EDF3; font-weight: 600; white-space: nowrap; }}
+.x-evw {{ font-size: 12px; color: #E6EDF3; border-left: 2px solid #D29922; padding: 4px 8px; margin: 6px 0;
+          background: rgba(210,153,34,.06); line-height: 1.45; }}
 .x-mtf {{ width: 100%; border-collapse: collapse; font-size: 12px; margin: 6px 0 2px; }}
 .x-mtf th {{ text-align: left; color: #8B949E; font-weight: 600; border-bottom: 1px solid #30363D; padding: 3px 4px; }}
 .x-mtf td {{ padding: 3px 4px; border-bottom: 1px solid #21262D; color: #E6EDF3; }}
@@ -253,6 +255,14 @@ def draw_structure(fig, x, fx, estructura: dict | None, row: int | None = None, 
                                  line=dict(color=c_, width=1, dash="dot"), opacity=.8, showlegend=False), **kw)
         fig.add_annotation(x=x[-n_vis], y=n_["precio"], text=n_["texto"], showarrow=False, xanchor="left",
                            yanchor="bottom", yshift=1, font=dict(size=11, color=c_), **kw)
+    evs = [e for e in estructura.get("eventos") or [] if e["x"] >= x[0]]
+    if evs:  # velas de evento: rombo bajo la vela con la causa probable al pasar el cursor
+        fig.add_trace(go.Scatter(
+            x=[e["x"] for e in evs], y=[e["y"] for e in evs], mode="markers", showlegend=False, name="xevt",
+            marker=dict(symbol="diamond", size=9, color=BG, line=dict(color=AMBER, width=1.6)),
+            customdata=[[f"{e['ret'] * 100:+.1f}%", e["causa"], ((e.get("titular") or {}).get("titulo") or "")[:90]]
+                        for e in evs],
+            hovertemplate="Evento %{customdata[0]}<br>%{customdata[1]}<br>%{customdata[2]}<extra></extra>"), **kw)
     ch = estructura.get("canal")
     if ch and ch.get("tipo") in ("alcista", "bajista", "lateral"):
         col = {"alcista": GREEN, "bajista": RED, "lateral": "#8B949E"}[ch["tipo"]]

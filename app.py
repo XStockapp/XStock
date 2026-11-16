@@ -102,13 +102,14 @@ with st.sidebar:
     from zoneinfo import ZoneInfo as _Z
     from core import alpaca as _alp
     _ny = _dt.now(_Z("America/New_York"))
-    _mins = _ny.hour * 60 + _ny.minute
-    _open = _ny.weekday() < 5 and 570 <= _mins < 960
+    from core.data import estado_mercado as _em
+    _est, _nota = _em(_ny)
+    _open = _est == "ABIERTO"
     _src = ("DEMO" if os.environ.get("TRADING_DEMO") == "1" else
             "ALPHA VANTAGE" if str(cfg.get("proveedor", "")).startswith("Alpha") else
             "ALPACA SIP −15m" if _alp.available() else "YAHOO")
     st.markdown(f"<div class='x-status'><span><i style='background:{'#26A69A' if _open else '#8B949E'}'></i>"
-                f"NYSE {'ABIERTO' if _open else 'CERRADO'}</span><span>{_ny:%H:%M} NY</span>"
+                f"NYSE {_est}{(' · ' + _nota.upper()) if _nota else ''}</span><span>{_ny:%H:%M} NY</span>"
                 f"<span>DATOS {_src}</span></div>", unsafe_allow_html=True)
 
 pages.run()
