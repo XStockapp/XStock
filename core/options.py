@@ -425,18 +425,23 @@ def _p_toque(s, t_price, iv, dias):
     return float(min(1.0, 2 * (1 - _ncdf(z))))
 
 
-def objetivo(spot, tipo: str, em: float | None, walls: dict) -> float:
-    """Precio objetivo del escenario: el primer muro a favor que esté al menos a medio movimiento esperado
-    (un muro pegado al precio no es un objetivo útil), acotado por el movimiento esperado del vencimiento."""
+def objetivo(spot, tipo: str, em: float | None, walls: dict, niveles: list | None = None,
+             extra: float | None = None) -> float:
+    """Precio objetivo del escenario: el primer muro de opciones o nivel fuerte multi-temporalidad a favor que esté al
+    menos a medio movimiento esperado (uno pegado al precio no es un objetivo útil), acotado por el movimiento esperado."""
     em = em or spot * 0.03
+    fuertes = [n["precio"] for n in (niveles or []) if n.get("fuerza", 0) >= 4] + ([extra] if extra else [])
     if tipo == "CALL":
-        ws = sorted(w["strike"] for w in walls.get("call_walls", []) if w["strike"] >= spot + 0.5 * em)
+        ws = sorted([w["strike"] for w in walls.get("call_walls", [])] + [p for p in fuertes if p > spot])
+        ws = [p for p in ws if p >= spot + 0.5 * em]
         return min(ws[0], spot + em) if ws else spot + em
-    ws = sorted((w["strike"] for w in walls.get("put_walls", []) if w["strike"] <= spot - 0.5 * em), reverse=True)
+    ws = sorted([w["strike"] for w in walls.get("put_walls", [])] + [p for p in fuertes if p < spot], reverse=True)
+    ws = [p for p in ws if p <= spot - 0.5 * em]
     return max(ws[0], spot - em) if ws else spot - em
 
 
-def evaluar(r: pd.Series, spot: float, df: pd.DataFrame, walls: dict, gex: pd.Series | None = None) -> dict | None:
+def evaluar(r: pd.Series, spot: float, df: pd.DataFrame, walls: dict, gex: pd.Series | None = None,
+            niveles: list | None = None, mtf: dict | None = None) -> dict | None:
     """Métricas de rentabilidad y riesgo de un contrato.
     Horizonte h = min(DTE/2, 10) días. Objetivo T = muro a favor acotado por el movimiento esperado del vencimiento.
     ROI_T = valor BS en T tras h días / prima − 1 · ROI_0 = valor si el precio no se mueve (coste de theta).
@@ -451,13 +456,24 @@ def evaluar(r: pd.Series, spot: float, df: pd.DataFrame, walls: dict, gex: pd.Se
     h = max(1.0, min(dte / 2, 10))
     resto = max(dte - h, 0.25) / 365
     em = expected_move(df[df["exp"] == r["exp"]], spot)
-    t_px = objetivo(spot, tipo, em, walls)
+    if mtf:  # pesos multi-temporalidad para el vencimiento de ESTE contrato
+        niveles = mtf.get("niveles") or niveles
+    t_px = objetivo(spot, tipo, em, walls, niveles, (mtf or {}).get("objetivo"))
     v_t = bs_price(t_px, r["strike"], resto, iv, call)
     v_0 = bs_price(spot, r["strike"], resto, iv, call)
     roi_t, roi_0 = v_t / prima - 1, v_0 / prima - 1
     p = _p_toque(spot, t_px, iv, h)
     spread = (r["ask"] - r["bid"]) / prima if pd.notna(r["bid"]) and pd.notna(r["ask"]) and r["bid"] > 0 else 0.25
     ve = p * roi_t + (1 - p) * roi_0 - spread / 2
+    # strike detrás de una resistencia (soporte en PUT) fuerte de la temporalidad mayor: el precio tendría que romperla
+    tras = [n for n in (niveles or []) if n.get("rango") == 3 and n.get("fuerza", 0) >= 6
+            and ((spot < n["precio"] < r["strike"]) if call else (r["strike"] < n["precio"] < spot))]
+    if tras:
+        ve -= 0.05
+    # el puntaje multi-temporalidad para este vencimiento va en contra del tipo de opción
+    contra_mtf = bool(mtf and ((mtf["puntaje"] <= -15 and call) or (mtf["puntaje"] >= 15 and not call)))
+    if contra_mtf:
+        ve -= 0.10
     be = r["strike"] + prima if call else r["strike"] - prima
     tt = dte / 365
     d2 = (math.log(spot / be) + (TASA - iv * iv / 2) * tt) / (iv * math.sqrt(tt)) if be > 0 else 0
@@ -481,7 +497,10 @@ def evaluar(r: pd.Series, spot: float, df: pd.DataFrame, walls: dict, gex: pd.Se
             "volumen": int(r["volume"] or 0),
             "gex_strike": None if gex is None or r["strike"] not in gex.index else float(gex.loc[r["strike"]]),
             "sobre_muro_calls": bool(call and cw and r["strike"] > max(cw)),
-            "bajo_muro_puts": bool((not call) and pw and r["strike"] < min(pw))}
+            "bajo_muro_puts": bool((not call) and pw and r["strike"] < min(pw)),
+            "tras_nivel_mayor": None if not tras else float(tras[0]["precio"]),
+            "mtf_puntaje": None if not mtf else float(mtf["puntaje"]), "mtf_pesos": None if not mtf else mtf.get("pesos"),
+            "mtf_contra": contra_mtf}
 
 
 def _liquido(d: pd.DataFrame) -> pd.DataFrame:
@@ -527,6 +546,12 @@ def riesgos(e: dict, sesgo: str, adx: dict, gex_total: float, flip: float | None
         out.append("Interés abierto bajo: poca liquidez para cerrar la posición.")
     if e["sobre_muro_calls"]:
         out.append("El strike está por encima del muro de calls: el precio debe romper una resistencia institucional.")
+    if e.get("mtf_contra"):
+        out.append(f"Para {e['dte']} días al vencimiento, el análisis multi-temporalidad va en contra de un {e['tipo']} "
+                   f"(puntaje {e['mtf_puntaje']:+.0f}).")
+    if e.get("tras_nivel_mayor"):
+        out.append(f"El strike queda detrás de un nivel fuerte de la temporalidad mayor ({e['tras_nivel_mayor']:,.2f}): "
+                   "el precio tendría que romperlo para que la opción gane.")
     if e["bajo_muro_puts"]:
         out.append("El strike está por debajo del muro de puts: el precio debe romper un soporte institucional.")
     if gex_total < 0:
@@ -583,9 +608,19 @@ def _money_ok(e: dict, money: str, spot: float) -> bool:
     return abs(k / spot - 1) <= 0.025
 
 
-def evaluar_todos(df, spot, tipo: str, walls, gex=None) -> list[dict]:
+def evaluar_todos(df, spot, tipo: str, walls, gex=None, niveles=None, mtf_fn=None) -> list[dict]:
+    """mtf_fn(dte) → {puntaje, niveles, objetivo, pesos}: el análisis multi-temporalidad con los pesos del
+    vencimiento de cada contrato (se calcula una vez por vencimiento)."""
     d = _liquido(df[df["type"] == tipo.lower()])
-    return [e for _, r in d.iterrows() if (e := evaluar(r, spot, df, walls, gex))]
+    cache: dict = {}
+
+    def _m(dte):
+        if mtf_fn is None:
+            return None
+        if dte not in cache:
+            cache[dte] = mtf_fn(dte)
+        return cache[dte]
+    return [e for _, r in d.iterrows() if (e := evaluar(r, spot, df, walls, gex, niveles, _m(int(r["dte"]))))]
 
 
 def opciones_tier(evs: list[dict], spot, money: str, ventana: int, tier: int) -> list[dict]:

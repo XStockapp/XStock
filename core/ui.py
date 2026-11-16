@@ -154,6 +154,10 @@ header[data-testid="stHeader"] {{ background: transparent; height: 2.6rem; }}
 .x-dl2 {{ display: flex; justify-content: space-between; gap: 8px; border-top: 1px solid #21262D; padding: 6px 0 0;
   margin-top: 6px; font-size: 12px; color: #8B949E; }}
 .x-dl2 b {{ color: #E6EDF3; font-weight: 600; white-space: nowrap; }}
+.x-mtf {{ width: 100%; border-collapse: collapse; font-size: 12px; margin: 6px 0 2px; }}
+.x-mtf th {{ text-align: left; color: #8B949E; font-weight: 600; border-bottom: 1px solid #30363D; padding: 3px 4px; }}
+.x-mtf td {{ padding: 3px 4px; border-bottom: 1px solid #21262D; color: #E6EDF3; }}
+.x-mtf td.n {{ text-align: right; font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }}
 .x-tab {{ width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 12px; }}
 .x-tab th {{ text-align: left; color: #8B949E; font-weight: 600; border-bottom: 1px solid #30363D; padding: 4px 6px; }}
 .x-tab td {{ color: #E6EDF3; border-bottom: 1px solid #21262D; padding: 4px 6px; }}
@@ -241,6 +245,14 @@ def draw_structure(fig, x, fx, estructura: dict | None, row: int | None = None, 
     if not estructura:
         return
     kw = {"row": row, "col": 1} if row else {}
+    # niveles multi-temporalidad: objetivo, invalidación, segundo nivel y entrada (líneas cortas a la derecha)
+    n_vis = max(8, int(len(x) * 0.45))
+    for n_ in estructura.get("mtf") or []:
+        c_ = {"objetivo": GREEN, "invalidacion": RED, "segundo_nivel": "#8B949E", "entrada": NEUTRAL}.get(n_["rol"], "#8B949E")
+        fig.add_trace(go.Scatter(x=[x[-n_vis], fx(3)], y=[n_["precio"], n_["precio"]], mode="lines", hoverinfo="skip",
+                                 line=dict(color=c_, width=1, dash="dot"), opacity=.8, showlegend=False), **kw)
+        fig.add_annotation(x=x[-n_vis], y=n_["precio"], text=n_["texto"], showarrow=False, xanchor="left",
+                           yanchor="bottom", yshift=1, font=dict(size=11, color=c_), **kw)
     ch = estructura.get("canal")
     if ch and ch.get("tipo") in ("alcista", "bajista", "lateral"):
         col = {"alcista": GREEN, "bajista": RED, "lateral": "#8B949E"}[ch["tipo"]]

@@ -14,7 +14,7 @@ import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
 
-from core import ai, data, db, options as OP, pnl_widget as PW, profiles, store
+from core import ai, data, db, mtf as MTF, options as OP, pnl_widget as PW, profiles, store
 from core.analysis import full_analysis
 from core.timeframes import is_crypto
 from core.ui import AMBER, DISCLAIMER, GREEN, MUTED, RED
@@ -151,17 +151,47 @@ VENT = OP.RANGOS[RNG]
 INV = float(ss.get("opt_inv") or 0)
 rsi = float(r_["RSI"])
 
-# lado principal: el del escenario cuantitativo (neutral → el del puntaje combinado, como escenario condicionado)
-LADO = "CALL" if (ESC == "Alcista" or (ESC == "Neutral" and COMB >= 0)) else "PUT"
-OPUESTO = "PUT" if LADO == "CALL" else "CALL"
-EVS = OP.evaluar_todos(CH, spot, LADO, WALLS, GEXS)
-EVS_OP = OP.evaluar_todos(CH, spot, OPUESTO, WALLS, GEXS)
-NIV = OP.niveles(EVS, spot, MONEY, VENT, INV)
+# ---- multi-temporalidad: la temporalidad elegida + dos mayores; los pesos dependen del vencimiento
+AN = {TF: A}
+with st.spinner("Analizando temporalidades mayores…"):
+    for _t in MTF.triada(TF):
+        if _t not in AN:
+            try:
+                AN[_t] = _run(ticker, cfg["tp_atr"], cfg["sl_atr"], cfg["capital"], cfg["riesgo_pct"], cfg["alphavantage_key"],
+                              "alphavantage" if cfg.get("proveedor", "").startswith("Alpha Vantage") else "yahoo",
+                              _t, json.dumps(profiles.engine_settings(SETTINGS), sort_keys=True))
+            except Exception:
+                pass
 ss.setdefault("opt_sel", 1)
+H_TIER = {1: float(min(max(VENT * 0.6, 14), 45)), 2: 7.0, 3: 1.5}  # horizonte típico de cada nivel
+MT0 = MTF.combinar(AN, H_TIER.get(ss["opt_sel"], 14), TF) if len(AN) > 1 else None
+NIVM = (MT0 or {}).get("niveles") or []
+SC_MTF = MT0["puntaje"] if MT0 else COMB
+
+# lado principal: el del puntaje multi-temporalidad para el horizonte del nivel elegido
+LADO = "CALL" if SC_MTF >= 0 else "PUT"
+OPUESTO = "PUT" if LADO == "CALL" else "CALL"
+
+
+def _mtf_dte(dte: int):
+    """Análisis multi-temporalidad con los pesos del vencimiento exacto de un contrato."""
+    if len(AN) < 2:
+        return None
+    m_ = MTF.combinar(AN, max(float(dte), 0.5), TF)
+    ob = m_["limites"].get("objetivo")
+    return {"puntaje": m_["puntaje"], "niveles": m_["niveles"], "objetivo": ob["precio"] if ob else None,
+            "pesos": {k: round(v, 3) for k, v in m_["pesos"].items()}}
+
+
+EVS = OP.evaluar_todos(CH, spot, LADO, WALLS, GEXS, NIVM, _mtf_dte)
+EVS_OP = OP.evaluar_todos(CH, spot, OPUESTO, WALLS, GEXS, NIVM, _mtf_dte)
+NIV = OP.niveles(EVS, spot, MONEY, VENT, INV)
 if not NIV.get(ss["opt_sel"]):
     ss["opt_sel"] = next((t for t in (1, 2, 3) if NIV.get(t)), 1)
 SEL = NIV.get(ss["opt_sel"])
 AJ = (SEL or {}).get("ajuste")
+# con el contrato elegido, los pesos se recalculan con su vencimiento exacto
+MT = MTF.combinar(AN, max(SEL["dte"], 0.5), TF) if (SEL and len(AN) > 1) else MT0
 
 # balance e inversión (con destello si el presupuesto limita el pronóstico)
 with inv_ph.container():
@@ -187,7 +217,7 @@ with top_a:
                 f"<span>CAMBIO</span><b style='color:{cc}'>{chg_pct:+.2f}% {'▲' if chg >= 0 else '▼'}</b></div>",
                 unsafe_allow_html=True)
 
-MK = float(np.clip((COMB + 100) / 2, 0, 100))
+MK = float(np.clip(((MT['puntaje'] if MT else COMB) + 100) / 2, 0, 100))
 mk_lbl, mk_col = (("STRONG BUY", GREEN) if MK >= 70 else ("BUY", GREEN) if MK >= 57 else ("NEUTRAL", MUTED)
                   if MK > 43 else ("SELL", RED) if MK > 30 else ("STRONG SELL", RED))
 PC = OP.porcentaje_calls(CH)
@@ -205,6 +235,9 @@ FLUJO = OP.flujo_neto(CH)
 with top_b:
     ema_x = "EMA9 > EMA21" if r_["EMA9"] > r_["EMA21"] else "EMA9 < EMA21"
     filas = [
+        ("Alineación " + " · ".join(f["tf"] for f in MT["filas"]) if MT else "Alineación",
+         " ".join("▲" if f["puntaje"] >= 15 else "▼" if f["puntaje"] <= -15 else "◆" for f in MT["filas"]) + f"  {MT['estado']}"
+         if MT else "—"),
         ("Precio vs VWAP 20", f"{(spot / r_['VWAP20'] - 1) * 100:+.2f}%"),
         ("Cruce de medias", ema_x),
         ("SMA50 / SMA200", f"{r_['SMA50']:,.2f} / {r_['SMA200']:,.2f}" if pd.notna(r_["SMA200"]) else f"{r_['SMA50']:,.2f} / —"),
@@ -297,11 +330,14 @@ with left:
             dtes = [int(CH[CH["exp"] == e]["dte"].iloc[0]) for e in exps]
             e_real = exps[int(np.argmin([abs(x - m_d) for x in dtes]))]
             row = OP.contrato(CH, e_real, k_real, m_tipo)
-            ss[f"man_res_{ticker}"] = OP.evaluar(row, spot, CH, WALLS, GEXS) if row is not None else None
+            ss[f"man_res_{ticker}"] = (OP.evaluar(row, spot, CH, WALLS, GEXS, NIVM, _mtf_dte(int(row["dte"])))
+                                       if row is not None else None)
 MAN = ss.get(f"man_res_{ticker}")
 
 # ================================================================== contraria (escenario alternativo)
 stop_ = PLAN.get("stop")
+if MT and MT["limites"].get("invalidacion"):
+    stop_ = MT["limites"]["invalidacion"]["precio"]
 if LADO == "CALL":
     pw_ = [w["strike"] for w in WALLS["put_walls"] if w["strike"] < spot]
     disparo = max([x for x in [stop_] + pw_ if x is not None and x < spot] or [spot * 0.97])
@@ -330,7 +366,7 @@ payload = {
     "opt_tiers": {f"OPT{t}": (None if not v else {k: v[k] for k in ("contrato", "vencimiento", "dte", "prima", "breakeven",
                                                                     "delta", "pop", "ve", "objetivo")})
                   for t, v in NIV.items()},
-    "inversion_usd": INV, "info": INFO,
+    "inversion_usd": INV, "info": INFO, "multi_temporalidad": MTF.resumen_ia(MT) if MT else None,
     "candidatos": [{"target_expiration_tab": v["vencimiento"], "option_type": v["tipo"], "strike": v["strike"]}
                    for v in NIV.values() if v],
 }
@@ -359,6 +395,16 @@ def _explicacion(o: dict) -> str:
          f"(<b>{o['ve']:+.1f}%</b>): {o['p_toque']:.0f}% de probabilidad de tocar el objetivo en {o['horizonte_dias']:.0f} "
          f"días, {o['roi_objetivo']:+.0f}% si lo toca y {o['roi_sin_movimiento']:+.0f}% si el precio no se mueve. "
          f"Probabilidad de terminar con ganancia al vencimiento: <b>{o['pop']:.0f}%</b>.")
+    if MT:
+        pw_txt = " / ".join(f"{f['tf']} {f['peso'] * 100:.0f}%" for f in MT["filas"])
+        L_ = MT["limites"]
+        t += (f"<br><b>4 · Multi-temporalidad.</b> Con {o['dte']} días al vencimiento los pesos son {pw_txt} "
+              f"(a menor plazo mandan las temporalidades menores; a mayor plazo, las mayores). Puntaje combinado "
+              f"<b>{MT['puntaje']:+.0f}</b>, alineación <b>{MT['alineacion'] * 100:.0f}%</b>: <b>{MT['estado'].lower()}</b>. "
+              f"Objetivo {MTF.etiqueta(L_['objetivo'])}, invalidación {MTF.etiqueta(L_['invalidacion'])}, "
+              f"segundo nivel {MTF.etiqueta(L_['segundo_nivel'])}.")
+        if MT["estado"] in ("Rebote contra la tendencia mayor", "Operativa en contra"):
+            t += " <b>Cuidado:</b> la operación va contra una temporalidad de peso; conviene un vencimiento corto y tamaño menor."
     if ESC == "Neutral":
         t += (" <br><b>Atención:</b> el escenario es neutral; esta opción es un escenario condicionado a la ruptura "
               "a favor, no una señal confirmada.")
@@ -383,6 +429,11 @@ def _graficos(principal: dict, extra=()):
     pad = (hi - lo) * 0.06
     niv = ([{"v": w["strike"], "t": f"C-wall {w['strike']:g}", "c": RED} for w in WALLS["call_walls"]]
            + [{"v": w["strike"], "t": f"P-wall {w['strike']:g}", "c": GREEN} for w in WALLS["put_walls"]])
+    if MT:
+        for k_, c_ in (("objetivo", GREEN), ("invalidacion", RED), ("segundo_nivel", MUTED)):
+            n_ = MT["limites"].get(k_)
+            if n_:
+                niv.append({"v": n_["precio"], "t": f"{n_['tipo']} {n_['tf']} {n_['precio']:,.0f}", "c": c_})
     components.html(PW.html(spot, principal["objetivo"], cs, int(round(principal["horizonte_dias"])), (lo - pad, hi + pad), niv),
                     height=385, scrolling=True)
 
@@ -421,6 +472,8 @@ with right:
                     st.markdown(f"<div class='ox-box'><h4>Cómo se hizo el análisis · {E(o['contrato'])} · "
                                 f"{E(o['vencimiento'])}</h4><div class='ox-exp'>{_explicacion(o)}</div></div>",
                                 unsafe_allow_html=True)
+                    if MT:
+                        st.markdown(MTF.tarjeta_html(MT), unsafe_allow_html=True)
                     if AJ:
                         alt_ = AJ["alcanzable"]
                         st.markdown(
@@ -476,6 +529,8 @@ with right:
                         f"(prima estimada si el subyacente llega a {_m(o['disparo'])}; hoy cotiza {_m(o['prima'])}). "
                         f"Breakeven {_m(o['breakeven'])} · prob. de éxito {o['pop']:.0f}% · {o['dte']} días.</div></div>",
                         unsafe_allow_html=True)
+                    if len(AN) > 1:
+                        st.markdown(MTF.tarjeta_html(MTF.combinar(AN, max(o["dte"], 0.5), TF)), unsafe_allow_html=True)
                     _graficos(o)
                 else:
                     o = MAN
@@ -497,6 +552,8 @@ with right:
                                     "<tr><th></th><th>Manual</th><th>Motor</th></tr>"
                                     + "".join(f"<tr><td>{E(n)}</td><td>{E(f(o))}</td><td>{E(f(SEL))}</td></tr>" for n, f in rows_)
                                     + "</table></div>", unsafe_allow_html=True)
+                    if len(AN) > 1:
+                        st.markdown(MTF.tarjeta_html(MTF.combinar(AN, max(o["dte"], 0.5), TF)), unsafe_allow_html=True)
                     _graficos(o, [("OPT" + str(ss["opt_sel"]) + " · " + SEL["contrato"], SEL, "#7C9CFF")] if SEL else [])
                     st.markdown(_riesgos_html(o), unsafe_allow_html=True)
 
