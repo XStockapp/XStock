@@ -108,3 +108,14 @@ def evaluar(op: dict, df: pd.DataFrame | None) -> dict:
     o["resultado_R"] = None if ref is None or not o["riesgo"] else o["resultado"] / o["riesgo"]
     o["abierta"] = abierta or o["estado"] == "Pendiente"
     return o
+
+
+def valor_abierto(precios: dict) -> float:
+    """Valor de las posiciones abiertas del portafolio simulado: capital comprometido + resultado no realizado.
+    `precios`: {ticker: velas diarias}. Las órdenes límite aún no llenadas no cuentan."""
+    tot = 0.0
+    for o in ops():
+        e = evaluar(o, precios.get(o["ticker"]))
+        if e["abierta"] and e["estado"] != "Pendiente":
+            tot += e["entrada"] * e["acciones"] + (e["resultado"] or 0)
+    return tot

@@ -58,7 +58,7 @@ st.markdown(f"""<style>
 .ox-box h4{{margin:0 0 6px;font-size:11px;color:#8B949E;text-transform:uppercase;letter-spacing:.05em;font-weight:600}}
 .ox-dt{{display:grid;grid-template-columns:1fr;gap:0}}
 .ox-dt div{{display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #21262D;padding:3px 0;font-size:12px}}
-.ox-dt span{{color:#8B949E;white-space:nowrap}} .ox-dt b{{font-family:{MONO};font-variant-numeric:tabular-nums;font-weight:600;color:{TXT};text-align:right;white-space:nowrap}}
+.ox-dt span{{color:#8B949E;min-width:0;flex:1 1 auto}} .ox-dt b{{font-family:{MONO};font-variant-numeric:tabular-nums;font-weight:600;color:{TXT};text-align:right;min-width:0;overflow-wrap:anywhere}}
 .ox-st{{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}}
 .ox-st .k{{font-family:{MONO};font-size:24px;font-weight:700}}
 .ox-st .v{{font-size:11px;padding:2px 8px;border-radius:4px;background:#21262D;color:{TXT};font-family:{MONO}}}
@@ -71,6 +71,8 @@ st.markdown(f"""<style>
 .ox-red{{color:{RED};font-size:12px;line-height:1.45}}
 .ox-exp{{font-size:12.5px;line-height:1.6;color:{TXT}}}
 .ox-exp b{{font-family:{MONO};font-variant-numeric:tabular-nums}}
+.ox-invl{{display:flex;justify-content:space-between;align-items:baseline;font-size:14px;color:#E6EDF3;margin:2px 0 4px}}
+.ox-invl b{{font-family:{MONO};font-size:12px;font-weight:600;color:#8B949E;font-variant-numeric:tabular-nums}}
 .ox-lbl{{font-size:11px;color:#8B949E;text-transform:uppercase;letter-spacing:.05em;margin:2px 0 4px}}
 .ox-mbar{{height:6px;background:#21262D;border-radius:3px;overflow:hidden;margin:2px 0 6px}}
 .ox-mbar div{{height:100%;background:{GREEN};border-radius:3px}}
@@ -85,13 +87,31 @@ st.markdown(f"""<style>
 ss.setdefault("opt_tf", "1h")
 ss.setdefault("opt_rng", "1M")
 ss.setdefault("opt_money", "OTM")
-BAL = float(cfg.get("capital") or 0)
-ss.setdefault("opt_inv", float(round(max(BAL * 0.3, 100) / 5) * 5) if BAL else 200.0)
+@st.cache_data(ttl=600, show_spinner=False)
+def _precios_pf(tickers: tuple) -> dict:
+    return data.batch_history(list(tickers), "1y")
+
+
+# balance = valor de las posiciones abiertas del portafolio simulado + la inversión que se está evaluando
+try:
+    from core import portfolio as PF
+    _ops_pf = PF.ops()
+    _px_pf = _precios_pf(tuple(sorted({o["ticker"] for o in _ops_pf}))) if _ops_pf else {}
+    PORT = PF.valor_abierto(_px_pf)
+except Exception:
+    PORT = 0.0
+_CAP = float(cfg.get("capital") or 0)
+ss.setdefault("opt_inv", float(round(max(_CAP * 0.3, 100) / 5) * 5) if _CAP else 200.0)
 if ss.get("opt_inv_set") is not None:  # «Ajustar a $XX» desde la alerta de capital
     ss["opt_inv"] = float(ss.pop("opt_inv_set"))
 
-top_a, top_b, top_c = st.columns([1.05, 1.6, 1.6], gap="small")
+# columna izquierda continua (cotización + entradas, sin hueco bajo la cotización); a la derecha, MARKET/OPTIONS
+# arriba y el análisis debajo
 left, right = st.columns([1.05, 3.2], gap="small")
+with left:
+    top_a = st.container()
+with right:
+    top_b, top_c = st.columns(2, gap="small")
 
 with left:
     with st.container(border=True, key="ox_cfg"):
@@ -159,6 +179,7 @@ GEXS = OP.gex_por_strike(CH, spot)
 CONF = OP.confluencias(WALLS, VP, spot)
 VENT = OP.RANGOS[RNG]
 INV = float(ss.get("opt_inv") or 0)
+BAL = PORT + INV
 rsi = float(r_["RSI"])
 
 # ---- multi-temporalidad: la temporalidad elegida + dos mayores; los pesos dependen del vencimiento
@@ -207,14 +228,18 @@ MT = MTF.combinar(AN, max(SEL["dte"], 0.5), TF) if (SEL and len(AN) > 1) else MT
 with inv_ph.container():
     pct_inv = INV / BAL * 100 if BAL else 0
     st.markdown(f"<div class='ox-lbl'>Balance</div><div class='ox-mbar'><div style='width:100%'></div></div>"
-                f"<div style='font-family:{MONO};font-size:14px;margin:-2px 0 6px'>{_m(BAL)}</div>", unsafe_allow_html=True)
+                f"<div style='font-family:{MONO};font-size:14px;margin:-2px 0 0'>{_m(BAL)}</div>"
+                f"<div class='muted small' style='margin:0 0 6px'>Portafolio {_m(PORT)} + inversión {_m(INV)}</div>",
+                unsafe_allow_html=True)
     if AJ:
         st.markdown("<style>.st-key-opt_inv input{animation:oxinv 1s ease-in-out infinite}"
                     f"@keyframes oxinv{{0%,100%{{box-shadow:inset 0 0 0 1px {AMBER}55}}50%{{box-shadow:inset 0 0 0 2px {AMBER};"
                     "background:rgba(210,153,34,.15)}}</style>", unsafe_allow_html=True)
-    st.number_input("Inversión (USD)", 0.0, max(BAL, 1e7), step=5.0, format="%.2f", key="opt_inv")
-    st.markdown(f"<div class='ox-mbar'><div style='width:{min(pct_inv, 100):.0f}%;background:{ACC}'></div></div>"
-                f"<div class='muted small' style='margin-top:-4px'>{pct_inv:.0f}% del balance</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='ox-invl'><span>Inversión (USD)</span><b>{pct_inv:.0f}% del balance</b></div>",
+                unsafe_allow_html=True)
+    st.number_input("Inversión (USD)", 0.0, 1e8, step=5.0, format="%.2f", key="opt_inv", label_visibility="collapsed")
+    st.markdown(f"<div class='ox-mbar'><div style='width:{min(pct_inv, 100):.0f}%;background:{ACC}'></div></div>",
+                unsafe_allow_html=True)
 
 # ================================================================== cabecera (fila superior)
 chg = ult - prev
