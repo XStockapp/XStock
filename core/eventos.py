@@ -142,6 +142,7 @@ def analizar(ticker: str, d_diario: pd.DataFrame, sector: str = "", industria: s
     etf = ETF_SECTOR.get(industria) or ETF_SECTOR.get(sector)
     sec = _serie_ret(etf) if etf and etf != ticker.upper() else pd.Series(dtype=float)
     out = []
+    n_news = 0  # titulares solo para los 6 eventos más recientes (los que se muestran): una llamada de red por evento
     for i, row in filas.iloc[::-1].iterrows():
         f = _fecha(i)
         fs = f.isoformat()
@@ -158,7 +159,8 @@ def analizar(ticker: str, d_diario: pd.DataFrame, sector: str = "", industria: s
                 causa, tipo = f"Movimiento de todo el mercado (SPY {rm * 100:+.1f}%)", "mercado"
             elif np.isfinite(rs) and abs(rs) >= 0.5 * abs(ret) and abs(rs) >= 0.02 and np.sign(rs) == np.sign(ret):
                 causa, tipo = f"Movimiento del sector ({etf} {rs * 100:+.1f}%)", "sector"
-        if con_noticias and tipo in (None, "sector", "mercado"):
+        if con_noticias and tipo in (None, "sector", "mercado") and n_news < 6:
+            n_news += 1
             n = _relevante(ticker, noticias_dia(ticker, fs))
             if n:
                 titular = n

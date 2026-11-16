@@ -29,14 +29,6 @@ def test_canal_alcista_y_bajista():
     assert PT.channel(flat)["tipo"] == "lateral"
 
 
-def test_senal_canal():
-    assert PT.channel_signal({"tipo": "alcista", "posicion": 0.1}) > 0.5  # cerca del soporte: comprar
-    assert PT.channel_signal({"tipo": "alcista", "posicion": -0.2}) < 0  # ruptura bajista
-    assert PT.channel_signal({"tipo": "bajista", "posicion": 0.9}) < -0.5
-    assert PT.channel_signal({"tipo": "lateral", "posicion": 0.9}) < 0
-    assert PT.channel_signal(None) is None
-
-
 def test_hombro_cabeza_hombro_vigencia():
     base = [90] * 10 + _seg(90, 104, 96, 112, 96, 104)
     # pendiente de ruptura: el precio baja desde el hombro derecho pero sigue sobre la clavicular (96)

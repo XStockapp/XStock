@@ -167,30 +167,39 @@ es_cr = df["Ticker"].str.endswith(("-USD", "-USDT", "-EUR"))
 @st.cache_data(ttl=900, show_spinner=False)
 def _ranking_opciones(items: tuple) -> pd.DataFrame:
     """Atractivo para operar opciones: mejor contrato OPT1 (OTM, ≤ 1 mes) en la dirección del puntaje técnico."""
+    from concurrent.futures import ThreadPoolExecutor
     from core import options as OP
-    filas = []
-    for t, spot, score in items:
+    from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
+    ctx = get_script_run_ctx()
+
+    def uno(it):
+        add_script_run_ctx(None, ctx)
+        t, spot, score = it
         try:
             ch, _ = OP.chain(t, round(spot, 1), 31)
         except Exception:
-            continue
+            return None
         if ch.empty:
-            continue
+            return None
         walls, gex = OP.muros(ch), OP.gex_por_strike(ch, spot)
         lado = "CALL" if score >= 0 else "PUT"
         niv = OP.niveles(OP.evaluar_todos(ch, spot, lado, walls, gex), spot, "OTM", 31)
         o = niv.get(1) or niv.get(2)
         if not o:
-            continue
+            return None
         sm = OP.resumen(ch, spot)
         oi = float(ch["oi"].fillna(0).sum())
         # atractivo: valor esperado del mejor contrato, ponderado por la fuerza técnica y la liquidez de la cadena
         atr = o["ve"] * (0.5 + min(abs(score), 100) / 100) + 0.15 * o["pop"] + min(np.log10(oi + 1), 6)
-        filas.append({"Ticker": t, "Sesgo": "▲ CALL" if lado == "CALL" else "▼ PUT", "Atractivo": atr,
-                      "Contrato OPT1": f"{o['contrato']} · {o['vencimiento']}", "DTE": o["dte"], "Prima": o["prima"],
-                      "Valor esperado %": o["ve"], "Prob. éxito %": o["pop"], "IV ATM %": sm["iv_rank_or_avg_iv"],
-                      "PCR (OI)": sm["pcr_open_interest"], "GEX": sm["net_gamma_exposure_gex"], "Score técnico": score,
-                      "Int. abierto total": oi})
+        return {"Ticker": t, "Sesgo": "▲ CALL" if lado == "CALL" else "▼ PUT", "Atractivo": atr,
+                "Contrato OPT1": f"{o['contrato']} · {o['vencimiento']}", "DTE": o["dte"], "Prima": o["prima"],
+                "Valor esperado %": o["ve"], "Prob. éxito %": o["pop"], "IV ATM %": sm["iv_rank_or_avg_iv"],
+                "PCR (OI)": sm["pcr_open_interest"], "GEX": sm["net_gamma_exposure_gex"], "Score técnico": score,
+                "Int. abierto total": oi}
+
+    # las cadenas se descargan en paralelo (antes, una tras otra: ~25 descargas en serie)
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        filas = [f for f in ex.map(uno, items) if f]
     out = pd.DataFrame(filas)
     return out.sort_values("Atractivo", ascending=False).reset_index(drop=True) if not out.empty else out
 

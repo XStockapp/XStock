@@ -34,8 +34,6 @@ ACTIVOS_POR_PERFIL = {
     "crypto": ["ma", "bb", "vrvp", "vol", "rsi", "macd"],
 }
 MAX_SIN_ENFOQUE = 10  # con más indicadores activos, el menú USER entra en modo enfoque hasta guardar
-PALETA = ["#F23645", "#FF9800", "#FFEB3B", "#4CAF50", "#089981", "#00BCD4", "#2962FF", "#2196F3", "#7E57C2",
-          "#E91E63", "#787B86", "#B2B5BE", "#FBC02D", "#FFFFFF"]
 FICHA = [("que", "Para qué sirve"), ("perfil", "Perfil de trader"), ("ayuda", "En qué te ayuda"),
          ("combina", "Combínalo con"), ("tf", "Temporalidad más confiable"), ("uso", "Cómo usarlo"),
          ("esperar", "Qué esperar")]
@@ -243,7 +241,7 @@ def _ll(s, n):
 # ---------------------------------------------------------------- cálculo para el gráfico
 def overlay(df: pd.DataFrame, iid: str, p: dict, tf: str = "1D") -> list[dict]:
     """Elementos sobre el precio. Cada elemento: {"kind": line|step|band|cloud|marks, "plot": clave de estilo, …}"""
-    c, h, l = df["Close"], df["High"], df["Low"]
+    h, l = df["High"], df["Low"]
     if iid == "ma":
         src = src_of(df, p.get("src", "close"))
         return [{"kind": "line", "plot": f"m{i}", "y": ma(p.get(f"t{i}", "SMA"), src, p.get(f"l{i}"), df["Volume"]),

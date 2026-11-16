@@ -14,8 +14,6 @@ import copy
 import json
 
 MA_SLOTS = ["EMA9", "EMA21", "SMA50", "SMA200"]  # rápida, media, lenta, larga
-MA_ROLES = ["Rápida", "Media", "Lenta", "Larga"]
-MA_TYPES = ["EMA", "SMA", "WMA"]
 
 BASE_SETTINGS = {
     "mas": [
@@ -129,13 +127,6 @@ def ma_label(settings: dict | None, slot: str) -> str:
         return slot
     m = settings["mas"][MA_SLOTS.index(slot)]
     return f"{m['tipo']}{int(m['periodo'])}"
-
-
-def ma_color(settings: dict | None, slot: str) -> str:
-    base = {"EMA9": "#FFEB3B", "EMA21": "#FF9800", "SMA50": "#E91E63", "SMA200": "#B2B5BE"}
-    if not settings:
-        return base[slot]
-    return settings["mas"][MA_SLOTS.index(slot)].get("color") or base[slot]
 
 
 def engine_settings(settings: dict) -> dict:

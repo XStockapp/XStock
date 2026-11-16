@@ -123,11 +123,13 @@ def test_batch_and_weekly(monkeypatch):
 
 
 def test_data_layer_uses_alpaca_and_falls_back(monkeypatch):
+    data.history_tf.clear()
     install(monkeypatch, lambda u, p, h: Resp({"bars": {"AAPL": _daily_rows(400)}}))
     df = data.history_tf("AAPL", "1D")
     assert df.attrs["fuente"].startswith("Alpaca") and len(df) == 400
 
     alpaca.CACHE.clear()
+    data.history_tf.clear()  # history_tf tiene caché: se limpia para probar el respaldo
     install(monkeypatch, lambda u, p, h: Resp({"message": "boom"}, 500))
     called = {}
 
@@ -151,12 +153,6 @@ def test_no_keys_means_yahoo_for_stocks(monkeypatch):
     assert not data._use_alpaca("AAPL", "yahoo")
     assert data._use_alpaca("BTC-USD", "yahoo")  # cripto no necesita clave
     assert not data._use_alpaca("AAPL", "alphavantage")
-
-
-def test_latest_bar(monkeypatch):
-    install(monkeypatch, lambda u, p, h: Resp({"bars": {"AAPL": {"t": "2026-11-06T20:59:00Z", "o": 1, "h": 2, "l": 0.5, "c": 1.5, "v": 9}}}))
-    b = alpaca.latest_bar("AAPL")
-    assert b["Close"] == 1.5 and b["t"] == pd.Timestamp("2026-11-06 15:59")
 
 
 def test_scanner_batch_uses_alpaca_then_yahoo_for_missing(monkeypatch):

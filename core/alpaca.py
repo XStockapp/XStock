@@ -248,17 +248,3 @@ def batch_bars(tickers: list[str], tf: str = "1D", years: float | None = None) -
                 CACHE.put((t, tf, years), df, TTL.get(tf, 600))
     return out
 
-
-def latest_bar(ticker: str) -> dict | None:
-    """Última barra de 1 minuto en tiempo real (IEX para acciones). Base del gráfico en vivo."""
-    if is_crypto(ticker):
-        sym = crypto_symbol(ticker)
-        js = _get("/v1beta3/crypto/us/latest/bars", {"symbols": sym})
-    else:
-        sym = stock_symbol(ticker)
-        js = _get("/v2/stocks/bars/latest", {"symbols": sym, "feed": "iex"})
-    b = (js.get("bars") or {}).get(sym)
-    if not b:
-        return None
-    t = pd.Timestamp(b["t"]).tz_convert(NY).tz_localize(None)
-    return {"t": t, "Open": b["o"], "High": b["h"], "Low": b["l"], "Close": b["c"], "Volume": b["v"]}

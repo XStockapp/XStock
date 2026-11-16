@@ -79,7 +79,7 @@ def combinar(analisis: dict[str, dict], horizonte_dias: float, tf_operativa: str
         score += w[t] * sc
         s = 1 if sc >= 15 else -1 if sc <= -15 else 0
         num += w[t] * s
-        den += w[t] * abs(s)
+        den += w[t]  # las neutrales cuentan en el total: alineación = peso que apunta al mismo lado
         filas.append({"tf": t, "rol": ROLES[min(i, 2)], "peso": w[t], "puntaje": sc,
                       "escenario": con.get("escenario_base") or ("Alcista" if s > 0 else "Bajista" if s < 0 else "Neutral"),
                       "adx": adx.get("adx"), "regimen": adx.get("regimen")})

@@ -54,6 +54,17 @@ def true_range_robusto(df: pd.DataFrame, k: float = 3.0, ventana: int = 50) -> p
     return tr.where(tope.isna() | (tr <= tope), tope)
 
 
+class _SinCopia(dict):
+    """Ajustes del motor guardados en df.attrs. pandas copia (deepcopy) los attrs en CADA operación (tail, iloc,
+    columnas…); con el dict de ajustes eso era ~45 % del tiempo del análisis. Son de solo lectura: se comparten."""
+
+    def __deepcopy__(self, memo):
+        return self
+
+    def __copy__(self):
+        return self
+
+
 def atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
     return wilder(true_range_robusto(df), n)
 
@@ -117,13 +128,18 @@ def ichimoku(df: pd.DataFrame):
 def pivot_levels(df: pd.DataFrame, window: int = 5, lookback: int = 250, tol: float = 0.015):
     """Detecta máximos/mínimos locales (fractales) y los agrupa en niveles."""
     d = df.tail(lookback)
-    highs, lows = d["High"].values, d["Low"].values
+    highs, lows = d["High"].to_numpy(float), d["Low"].to_numpy(float)
     pts = []
-    for i in range(window, len(d) - window):
-        if highs[i] == highs[i - window : i + window + 1].max():
-            pts.append(highs[i])
-        if lows[i] == lows[i - window : i + window + 1].min():
-            pts.append(lows[i])
+    if len(d) > 2 * window:  # fractales vectorizados (antes, un bucle de Python por vela)
+        from numpy.lib.stride_tricks import sliding_window_view as _sw
+        mx = _sw(highs, 2 * window + 1).max(axis=1)
+        mn = _sw(lows, 2 * window + 1).min(axis=1)
+        idx = np.arange(window, len(d) - window)
+        for i, es_h, es_l in zip(idx, highs[idx] == mx, lows[idx] == mn):
+            if es_h:
+                pts.append(highs[i])
+            if es_l:
+                pts.append(lows[i])
     pts.sort()
     clusters: list[list[float]] = []
     for p in pts:
@@ -157,7 +173,11 @@ def fibonacci(df: pd.DataFrame, lookback: int = 126):
 # --------------------------------------------------------------------------
 def wma(s: pd.Series, n: int) -> pd.Series:
     w = np.arange(1, n + 1, dtype=float)
-    return s.rolling(n, min_periods=n).apply(lambda x: float(np.dot(x, w) / w.sum()), raw=True)
+    x = s.to_numpy(float)
+    out = np.full(len(x), np.nan)
+    if len(x) >= n:  # convolución en lugar de rolling.apply (una llamada de Python por vela)
+        out[n - 1:] = np.convolve(x, w[::-1], mode="valid") / w.sum()
+    return pd.Series(out, index=s.index)
 
 
 def _ma(s: pd.Series, tipo: str, n: int) -> pd.Series:
@@ -171,26 +191,28 @@ def compute_all(df: pd.DataFrame, settings: dict | None = None) -> pd.DataFrame:
     Las medias se guardan en las ranuras EMA9 / EMA21 / SMA50 / SMA200 (rápida, media, lenta, larga)."""
     from .profiles import BASE_SETTINGS, MA_SLOTS
     st_ = settings or BASE_SETTINGS
-    df = df.copy()
     c = df["Close"]
-    df["SMA20"] = sma(c, 20)
+    # columnas en un dict y un solo concat: insertar ~30 columnas una por una fragmentaba el DataFrame
+    o: dict = {"SMA20": sma(c, 20)}
     for slot, m in zip(MA_SLOTS, st_["mas"]):
-        df[slot] = _ma(c, m.get("tipo", "EMA"), m.get("periodo", 20))
-    df["RSI"] = rsi(c, int(st_["rsi"]["periodo"]))
-    df["MACD"], df["MACD_signal"], df["MACD_hist"] = macd(c, int(st_["macd"]["rapida"]), int(st_["macd"]["lenta"]),
-                                                           int(st_["macd"]["senal"]))
-    df["ATR"] = atr(df)
-    df["ADX"], df["+DI"], df["-DI"] = adx(df, int(st_["adx"]["periodo"]))
-    df["ADX_KEY"] = float((st_.get("adx") or {}).get("umbral", ADX_KEY))
-    df["BB_up"], df["BB_mid"], df["BB_low"] = bollinger(c, int(st_["bollinger"]["periodo"]), float(st_["bollinger"]["desv"]))
-    df["STOCH_K"], df["STOCH_D"] = stochastic(df)
-    df["OBV"] = obv(df)
-    df["OBV_EMA"] = ema(df["OBV"], 20)
-    df["MFI"] = mfi(df)
-    df["VWAP20"] = rolling_vwap(df)
-    df["VOL_SMA20"] = sma(df["Volume"], 20)
-    df["TENKAN"], df["KIJUN"], df["SPAN_A"], df["SPAN_B"] = ichimoku(df)
-    df.attrs["settings"] = st_
+        o[slot] = _ma(c, m.get("tipo", "EMA"), m.get("periodo", 20))
+    o["RSI"] = rsi(c, int(st_["rsi"]["periodo"]))
+    o["MACD"], o["MACD_signal"], o["MACD_hist"] = macd(c, int(st_["macd"]["rapida"]), int(st_["macd"]["lenta"]),
+                                                       int(st_["macd"]["senal"]))
+    o["ATR"] = atr(df)
+    o["ADX"], o["+DI"], o["-DI"] = adx(df, int(st_["adx"]["periodo"]))
+    o["ADX_KEY"] = pd.Series(float((st_.get("adx") or {}).get("umbral", ADX_KEY)), index=df.index)
+    o["BB_up"], o["BB_mid"], o["BB_low"] = bollinger(c, int(st_["bollinger"]["periodo"]), float(st_["bollinger"]["desv"]))
+    o["STOCH_K"], o["STOCH_D"] = stochastic(df)
+    o["OBV"] = obv(df)
+    o["OBV_EMA"] = ema(o["OBV"], 20)
+    o["MFI"] = mfi(df)
+    o["VWAP20"] = rolling_vwap(df)
+    o["VOL_SMA20"] = sma(df["Volume"], 20)
+    o["TENKAN"], o["KIJUN"], o["SPAN_A"], o["SPAN_B"] = ichimoku(df)
+    base = df.drop(columns=[k for k in o if k in df.columns])
+    df = pd.concat([base, pd.DataFrame(o, index=df.index)], axis=1)
+    df.attrs["settings"] = _SinCopia(st_)
     return df
 
 
@@ -276,54 +298,68 @@ def channel_signal_series(ch: pd.DataFrame) -> pd.Series:
     return pd.Series(out, index=ch.index).where(p.notna())
 
 
-def _pm(cond) -> pd.Series:
-    return pd.Series(np.where(cond, 1.0, -1.0), index=cond.index)
-
-
 def signal_matrix(df: pd.DataFrame) -> pd.DataFrame:
-    c = df["Close"]
-    S = pd.DataFrame(index=df.index)
-    S["Tendencia SMA50/200"] = ((_pm(c > df["SMA200"]) + 0.5 * _pm(df["SMA50"] > df["SMA200"])) / 1.5).where(df["SMA200"].notna())
-    S["Tendencia SMA50/EMA21"] = (0.6 * _pm(c > df["SMA50"]) + 0.4 * _pm(df["EMA21"] > df["SMA50"])).where(df["SMA50"].notna())
-    S["Cruce EMA9/EMA21"] = _pm(df["EMA9"] > df["EMA21"]).where(df["EMA21"].notna())
-    S["MACD (12,26,9)"] = (0.5 * _pm(df["MACD"] > df["MACD_signal"]) + 0.3 * _pm(df["MACD"] > 0)
-                           + 0.2 * _pm(df["MACD_hist"] > df["MACD_hist"].shift())).where(df["MACD_signal"].notna())
-    r = df["RSI"]
-    S["RSI (14)"] = np.select([r >= 70, r <= 30], [-0.6, 0.6], ((r - 50) / 20).clip(-1, 1))
-    key = df["ADX_KEY"] if "ADX_KEY" in df else ADX_KEY
-    S["ADX/DMI (14)"] = (_pm(df["+DI"] > df["-DI"]) * ((df["ADX"] - (key - 8)) / 16).clip(0, 1)).where(df["ADX"].notna())
-    pb = (c - df["BB_low"]) / (df["BB_up"] - df["BB_low"]).replace(0, np.nan)
-    S["Bollinger %B"] = np.select([pb < 0.05, pb > 0.95], [0.5, -0.5], ((pb - 0.5) * 0.8).clip(-1, 1))
-    k, d = df["STOCH_K"], df["STOCH_D"]
-    S["Estocástico (14,3,3)"] = np.select([(k < 20) & (k > d), (k > 80) & (k < d)], [0.8, -0.8], 0.3 * _pm(k > d))
-    vr = df["Volume"] / df["VOL_SMA20"].replace(0, np.nan)
-    up_day = c > c.shift()
-    vol = 0.6 * _pm(df["OBV"] > df["OBV_EMA"]) + np.where(vr > 1.5, np.where(up_day, 0.4, -0.4), 0.0)
-    S["Volumen / OBV"] = vol.clip(-1, 1)
-    m = df["MFI"]
-    S["Money Flow Index"] = np.select([m > 80, m < 20], [-0.6, 0.6], ((m - 50) / 30).clip(-1, 1))
-    S["VWAP 20 días"] = (0.7 * _pm(c > df["VWAP20"])).where(df["VWAP20"].notna())
-    top = df[["SPAN_A", "SPAN_B"]].max(axis=1)
-    bot = df[["SPAN_A", "SPAN_B"]].min(axis=1)
-    cloud = np.select([c > top, c < bot], [1.0, -1.0], 0.0)
-    S["Ichimoku"] = (0.7 * cloud + 0.3 * _pm(df["TENKAN"] > df["KIJUN"])).where(df["SPAN_B"].notna())
-    S["Canal / rango"] = channel_signal_series(channel_frame(df))
-    # NaN en indicadores ⇒ NaN en señal
-    for col in ("RSI (14)", "Bollinger %B", "Estocástico (14,3,3)", "Money Flow Index"):
-        base = {"RSI (14)": r, "Bollinger %B": pb, "Estocástico (14,3,3)": k, "Money Flow Index": m}[col]
-        S[col] = S[col].where(base.notna())
-    # filtro de régimen del ADX (condiciona la validez del resto de métricas)
-    tend = (df["ADX"] >= key)
-    for col in _TENDENCIA:
-        S[col] = S[col] * np.where(tend, 1.0, 0.5)
-    for col in _OSCILADORES:
-        S[col] = S[col] * np.where(tend, 0.7, 1.0)
-    return S
+    """Señal de cada indicador (−1..+1) vela a vela. Misma matemática que antes, en NumPy: ~5× más rápida (el
+    escáner la calcula para cada acción del universo)."""
+    g = lambda k: df[k].to_numpy(float)  # noqa: E731
+    c = g("Close")
+    nan = np.nan
+
+    def pm(cond):
+        return np.where(cond, 1.0, -1.0)
+
+    def where(x, ok):
+        return np.where(ok, x, nan)
+
+    with np.errstate(invalid="ignore", divide="ignore"):
+        sma50, sma200, ema9, ema21 = g("SMA50"), g("SMA200"), g("EMA9"), g("EMA21")
+        macd, macds, hist = g("MACD"), g("MACD_signal"), g("MACD_hist")
+        hist_prev = np.r_[nan, hist[:-1]]
+        r, adx, pdi, mdi = g("RSI"), g("ADX"), g("+DI"), g("-DI")
+        key = g("ADX_KEY") if "ADX_KEY" in df else np.full(len(c), float(ADX_KEY))
+        bbu, bbl = g("BB_up"), g("BB_low")
+        rng = bbu - bbl
+        pb = (c - bbl) / np.where(rng == 0, nan, rng)
+        k, d = g("STOCH_K"), g("STOCH_D")
+        vs = g("VOL_SMA20")
+        vr = g("Volume") / np.where(vs == 0, nan, vs)
+        up_day = c > np.r_[nan, c[:-1]]
+        m = g("MFI")
+        sa, sb = g("SPAN_A"), g("SPAN_B")
+        top, bot = np.fmax(sa, sb), np.fmin(sa, sb)
+        S = {
+            "Tendencia SMA50/200": where((pm(c > sma200) + 0.5 * pm(sma50 > sma200)) / 1.5, ~np.isnan(sma200)),
+            "Tendencia SMA50/EMA21": where(0.6 * pm(c > sma50) + 0.4 * pm(ema21 > sma50), ~np.isnan(sma50)),
+            "Cruce EMA9/EMA21": where(pm(ema9 > ema21), ~np.isnan(ema21)),
+            "MACD (12,26,9)": where(0.5 * pm(macd > macds) + 0.3 * pm(macd > 0) + 0.2 * pm(hist > hist_prev),
+                                    ~np.isnan(macds)),
+            "RSI (14)": np.select([r >= 70, r <= 30], [-0.6, 0.6], np.clip((r - 50) / 20, -1, 1)),
+            "ADX/DMI (14)": where(pm(pdi > mdi) * np.clip((adx - (key - 8)) / 16, 0, 1), ~np.isnan(adx)),
+            "Bollinger %B": np.select([pb < 0.05, pb > 0.95], [0.5, -0.5], np.clip((pb - 0.5) * 0.8, -1, 1)),
+            "Estocástico (14,3,3)": np.select([(k < 20) & (k > d), (k > 80) & (k < d)], [0.8, -0.8], 0.3 * pm(k > d)),
+            "Volumen / OBV": np.clip(0.6 * pm(g("OBV") > g("OBV_EMA")) + np.where(vr > 1.5, np.where(up_day, 0.4, -0.4), 0.0),
+                                     -1, 1),
+            "Money Flow Index": np.select([m > 80, m < 20], [-0.6, 0.6], np.clip((m - 50) / 30, -1, 1)),
+            "VWAP 20 días": where(0.7 * pm(c > g("VWAP20")), ~np.isnan(g("VWAP20"))),
+            "Ichimoku": where(0.7 * np.select([c > top, c < bot], [1.0, -1.0], 0.0) + 0.3 * pm(g("TENKAN") > g("KIJUN")),
+                              ~np.isnan(sb)),
+            "Canal / rango": channel_signal_series(channel_frame(df)).to_numpy(float),
+        }
+        # NaN en indicadores ⇒ NaN en señal
+        for col, base in (("RSI (14)", r), ("Bollinger %B", pb), ("Estocástico (14,3,3)", k), ("Money Flow Index", m)):
+            S[col] = where(S[col], ~np.isnan(base))
+        # filtro de régimen del ADX (condiciona la validez del resto de métricas)
+        tend = adx >= key
+        for col in _TENDENCIA:
+            S[col] = S[col] * np.where(tend, 1.0, 0.5)
+        for col in _OSCILADORES:
+            S[col] = S[col] * np.where(tend, 0.7, 1.0)
+    return pd.DataFrame(S, index=df.index)
 
 
-def score_series(df: pd.DataFrame) -> pd.Series:
-    """Puntaje técnico -100..+100 para cada barra (requiere compute_all)."""
-    S = signal_matrix(df)
+def score_series(df: pd.DataFrame, S: pd.DataFrame | None = None) -> pd.Series:
+    """Puntaje técnico -100..+100 para cada barra (requiere compute_all). `S`: matriz de señales ya calculada."""
+    S = signal_matrix(df) if S is None else S
     w = pd.Series(WEIGHTS)
     num = (S * w).sum(axis=1, min_count=1)
     den = S.notna().mul(w).sum(axis=1)
@@ -342,9 +378,10 @@ def _txt_canal(df: pd.DataFrame) -> str:
     return f"{nom} · precio {zona} ({p * 100:.0f}% del ancho)"
 
 
-def explain_last(df: pd.DataFrame) -> dict:
-    """Detalle legible de las señales de la última barra."""
-    S = signal_matrix(df).iloc[-1]
+def explain_last(df: pd.DataFrame, S_full: pd.DataFrame | None = None, score: pd.Series | None = None) -> dict:
+    """Detalle legible de las señales de la última barra. Acepta la matriz de señales y el puntaje ya calculados."""
+    S_full = signal_matrix(df) if S_full is None else S_full
+    S = S_full.iloc[-1]
     r, p = df.iloc[-1], df.iloc[-2]
     px = r["Close"]
     txt = {
@@ -371,7 +408,7 @@ def explain_last(df: pd.DataFrame) -> dict:
     for k_, v in S.items():
         if pd.notna(v):
             rows.append({"Indicador": k_, "Señal": float(v), "Peso": WEIGHTS[k_], "Lectura": txt.get(k_, "")})
-    sc = score_series(df).iloc[-1]
+    sc = (score if score is not None else score_series(df, S_full)).iloc[-1]
     return {"score": float(sc) if pd.notna(sc) else 0.0, "señales": rows}
 
 

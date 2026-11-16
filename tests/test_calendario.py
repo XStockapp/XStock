@@ -16,7 +16,7 @@ def test_cierres_y_sesiones():
     assert not CAL.es_habil(date(2026, 11, 26))
     # del lunes 23-nov al viernes 27-nov: 4 sesiones (jueves feriado)
     assert CAL.sesiones(date(2026, 11, 20), date(2026, 11, 27)) == 4
-    assert CAL.feriados_entre(date(2026, 11, 20), date(2026, 12, 31)) == [(date(2026, 11, 26), "Acción de Gracias"),
+    assert list(CAL.feriados_entre(date(2026, 11, 20), date(2026, 12, 31))) == [(date(2026, 11, 26), "Acción de Gracias"),
                                                                          (date(2026, 12, 25), "Navidad")]
 
 

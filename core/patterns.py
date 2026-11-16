@@ -85,29 +85,6 @@ def _toques(v: np.ndarray, line: np.ndarray, tol: float, kind: str) -> int:
     return n
 
 
-def channel_signal(ch: dict | None) -> float | None:
-    """Señal de −1 a +1 según el tipo de canal y la posición del precio (cómo opera un profesional):
-    canal alcista: comprar cerca del soporte; bajista: vender cerca de la resistencia; lateral: reversión a la
-    media (comprar soporte, vender resistencia); rupturas del canal: señal en la dirección de la ruptura."""
-    if not ch or ch["tipo"] == "indefinido":
-        return None
-    p = ch["posicion"]
-    if ch["tipo"] == "alcista":
-        if p < -0.05:
-            return -0.6  # ruptura bajista del canal alcista
-        return float(np.clip(0.3 + (0.5 - p) * 1.0, -0.1, 0.8))
-    if ch["tipo"] == "bajista":
-        if p > 1.05:
-            return 0.6  # ruptura alcista del canal bajista
-        return float(np.clip(-0.3 - (p - 0.5) * 1.0, -0.8, 0.1))
-    # lateral
-    if p > 1.05:
-        return 0.5
-    if p < -0.05:
-        return -0.5
-    return float(np.clip((0.5 - p) * 1.2, -0.6, 0.6))
-
-
 def lectura_canal(ch: dict | None, money=lambda v: f"${v:,.2f}") -> dict:
     """Texto didáctico y reglas de operación para el canal vigente."""
     if not ch or ch["tipo"] == "indefinido":

@@ -245,6 +245,7 @@ def _synthetic_tf(ticker: str, tf: str, n: int = 600) -> pd.DataFrame:
     return df
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def history_tf(ticker: str, tf: str = "1D", provider: str = "yahoo", av_key: str = "") -> pd.DataFrame:
     """Historial OHLCV en la temporalidad pedida. Mínimo 10m: nunca se ofrecen velas de 1m/5m/15m (10m con Yahoo se arma desde 5m)."""
     from .timeframes import TIMEFRAMES, is_crypto, validate

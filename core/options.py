@@ -355,35 +355,6 @@ def resumen(df: pd.DataFrame, spot: float) -> dict:
     }
 
 
-def candidatos(df: pd.DataFrame, spot: float, sesgo: str, n: int = 4, walls: dict | None = None,
-               gex: pd.Series | None = None) -> list[dict]:
-    """Contratos líquidos para el sesgo: delta 0.30–0.60, 14–45 días (o el mayor disponible), spread ≤ 15 %,
-    ordenados por valor esperado (ver `evaluar`) o, sin muros, por cercanía a delta 0.45 y liquidez."""
-    tp = "call" if sesgo == "alcista" else "put"
-    d = df[(df["type"] == tp) & (df["bid"] > 0) & (df["ask"] > 0)].copy()
-    if d.empty:
-        return []
-    d = d[d["dte"] >= min(14, d["dte"].max())]
-    d["spread"] = (d["ask"] - d["bid"]) / d["mid"]
-    d["ad"] = d["delta"].abs()
-    d = d[(d["ad"] >= 0.30) & (d["ad"] <= 0.60) & (d["spread"] <= 0.15)]
-    if d.empty:
-        return []
-    liq = np.log1p(d["oi"].fillna(0) + d["volume"])
-    d["score"] = -abs(d["ad"] - 0.45) * 4 + liq / max(liq.max(), 1) - d["spread"] * 2 - abs(d["dte"] - 30) / 60
-    if walls is not None:
-        d["ve"] = [(evaluar(r, spot, df, walls, gex) or {}).get("ve", -1e9) for _, r in d.iterrows()]
-        d = d.sort_values("ve", ascending=False).head(n)
-    else:
-        d = d.sort_values("score", ascending=False).head(n)
-    return [{"target_expiration_tab": etiqueta_venc(r["exp"]), "exp": r["exp"].isoformat(), "dte": int(r["dte"]),
-             "option_type": tp.upper(), "strike": float(r["strike"]), "bid": float(r["bid"]), "ask": float(r["ask"]),
-             "delta": round(float(r["delta"]), 3), "iv": round(float(r["iv"]) * 100, 1) if pd.notna(r["iv"]) else None,
-             "open_interest": None if pd.isna(r["oi"]) else int(r["oi"]), "volume": int(r["volume"]),
-             "spread_pct": round(float(r["spread"]) * 100, 1),
-             **({"valor_esperado_pct": round(float(r["ve"]), 1)} if "ve" in d else {})} for _, r in d.iterrows()]
-
-
 def confluencias(walls: dict, vp: dict | None, spot: float, tol: float = 0.01) -> list[dict]:
     """Muros de opciones que coinciden (±1 %) con nodos del VRVP (POC / VAH / VAL)."""
     out = []
@@ -397,26 +368,6 @@ def confluencias(walls: dict, vp: dict | None, spot: float, tol: float = 0.01) -
                     out.append({"strike": w["strike"], "tipo": tipo, "nodo_vrvp": nom, "nivel_vrvp": round(lv, 2),
                                 "efecto": "freno" if (key == "call_walls") == (w["strike"] > spot) else "aceleración al romper"})
     return out
-
-
-def destacar(cands: dict, escenario: str, adx: dict, walls: dict, conf: list, spot: float) -> dict | None:
-    """Contrato destacado por reglas: sigue al escenario cuantitativo (70 %); el flujo de opciones lo valida (30 %)."""
-    if escenario not in ("Alcista", "Bajista"):
-        return None
-    lst = cands.get("alcista" if escenario == "Alcista" else "bajista") or []
-    if not lst:
-        return None
-    c = dict(lst[0])
-    muro = (walls.get("call_walls") or [{}])[0].get("strike") if escenario == "Alcista" else \
-        (walls.get("put_walls") or [{}])[0].get("strike")
-    partes = [f"Escenario {escenario.lower()} del motor cuantitativo",
-              f"ADX {adx.get('adx', '—')} {'sobre' if adx.get('regimen') == 'tendencia' else 'bajo'} el nivel clave 23"]
-    if muro:
-        partes.append(f"{'muro de calls' if escenario == 'Alcista' else 'muro de puts'} en {muro:g} como objetivo / freno")
-    if conf:
-        partes.append("confluencia " + ", ".join(f"{x['tipo'].lower()} {x['strike']:g} = {x['nodo_vrvp']}" for x in conf[:2]))
-    c.update({"action_trigger": "pulse_glow_animation", "rationale": "; ".join(partes) + "."})
-    return c
 
 
 # ------------------------------------------------------------------ simulador de decisión
@@ -466,6 +417,20 @@ def obstaculos(spot, objetivo_px, tipo, walls, niveles=None, extra=None) -> list
     return [p for p in ws if objetivo_px + 1e-9 < p < spot]
 
 
+_EM_CACHE: dict = {}
+
+
+def _em_venc(df: pd.DataFrame, exp, spot: float):
+    """Movimiento esperado de un vencimiento, calculado una vez por cadena (antes: una vez por contrato, ~60 % del
+    tiempo de evaluar_todos)."""
+    k = (id(df), len(df), exp, round(float(spot), 4))
+    if k not in _EM_CACHE:
+        if len(_EM_CACHE) > 256:
+            _EM_CACHE.clear()
+        _EM_CACHE[k] = expected_move(df[df["exp"] == exp], spot)
+    return _EM_CACHE[k]
+
+
 def evaluar(r: pd.Series, spot: float, df: pd.DataFrame, walls: dict, gex: pd.Series | None = None,
             niveles: list | None = None, mtf: dict | None = None) -> dict | None:
     """Métricas de rentabilidad y riesgo de un contrato.
@@ -481,7 +446,7 @@ def evaluar(r: pd.Series, spot: float, df: pd.DataFrame, walls: dict, gex: pd.Se
     dte = max(int(r["dte"]), 1)
     h = max(1.0, min(dte / 2, 10))
     resto = max(dte - h, 0.25) / 365
-    em = expected_move(df[df["exp"] == r["exp"]], spot)
+    em = _em_venc(df, r["exp"], spot)
     if mtf:  # pesos multi-temporalidad para el vencimiento de ESTE contrato
         niveles = mtf.get("niveles") or niveles
     t_px = objetivo(spot, tipo, em, walls, niveles, (mtf or {}).get("objetivo"))
@@ -541,22 +506,6 @@ def _liquido(d: pd.DataFrame) -> pd.DataFrame:
     return d[(d["bid"] > 0) & (d["ask"] > 0) & ((d["oi"].fillna(0) > 0) | (d["volume"] > 0))]
 
 
-def mejor_strike(df, spot, exp, tipo: str, walls, gex=None) -> dict | None:
-    """Escenario A (fecha manual, strike auto): el strike de mayor valor esperado en ese vencimiento."""
-    d = _liquido(df[(df["exp"] == exp) & (df["type"] == tipo.lower())])
-    evs = [e for _, r in d.iterrows() if (e := evaluar(r, spot, df, walls, gex)) and e["delta"] is not None
-           and 0.15 <= abs(e["delta"]) <= 0.75]
-    return max(evs, key=lambda e: e["ve"]) if evs else None
-
-
-def mejor_vencimiento(df, spot, strike, tipo: str, walls, gex=None) -> dict | None:
-    """Escenario B (strike manual, fecha auto): el vencimiento de mayor valor esperado para ese strike
-    (equilibrio entre el desgaste por theta, la IV y el movimiento esperado de cada fecha)."""
-    d = _liquido(df[(df["strike"] == strike) & (df["type"] == tipo.lower()) & (df["dte"] >= 2)])
-    evs = [e for _, r in d.iterrows() if (e := evaluar(r, spot, df, walls, gex))]
-    return max(evs, key=lambda e: e["ve"]) if evs else None
-
-
 def contrato(df, exp, strike, tipo: str) -> pd.Series | None:
     d = df[(df["exp"] == exp) & (df["strike"] == strike) & (df["type"] == tipo.lower())]
     return None if d.empty else d.iloc[0]
@@ -587,7 +536,8 @@ def riesgos(e: dict, sesgo: str, adx: dict, gex_total: float, flip: float | None
         out.append("El strike está por encima del muro de calls: el precio debe romper una resistencia institucional.")
     if e.get("obstaculos"):
         out.append("Antes del objetivo el precio debe atravesar " + ", ".join(f"{p:,.2f}" for p in e["obstaculos"][:3])
-                   + " (pegado al precio, no cuenta como objetivo): cada nivel puede frenar el avance.")
+                   + f": están a menos de ¼ del movimiento esperado (±{(e.get('mov_esperado') or 0):,.2f}), por eso no se toman como "
+                   "objetivo, pero cada uno puede frenar el avance.")
     if e.get("objetivo") is not None and ((e["tipo"] == "CALL" and e["strike"] >= e["objetivo"])
                                           or (e["tipo"] == "PUT" and e["strike"] <= e["objetivo"])):
         out.append(f"El strike ({e['strike']:,.2f}) está más allá del objetivo realista ({e['objetivo']:,.2f}): aunque el "
@@ -619,22 +569,6 @@ def riesgos(e: dict, sesgo: str, adx: dict, gex_total: float, flip: float | None
 
 
 # ------------------------------------------------------------------ P&L por trayectoria (time-to-target)
-def pnl_trayectoria(strike: float, tipo: str, iv: float, prima: float, dte: int, spot: float, t_px: float,
-                    dias: float) -> dict:
-    """P&L de 1 contrato si el subyacente llega a `t_px` en `dias` (revaluación Black-Scholes con la IV actual).
-    Descompone el resultado en efecto precio (≈ Δ × ΔS) y quema de theta (≈ Θ × días)."""
-    call = tipo.upper() == "CALL"
-    dias = max(0.0, min(float(dias), float(dte)))
-    resto = max(dte - dias, 0.0) / 365
-    v_obj = bs_price(t_px, strike, resto, iv, call)
-    v_spot_hoy = bs_price(spot, strike, dte / 365, iv, call)
-    v_spot_t = bs_price(spot, strike, resto, iv, call)
-    g = bs_greeks(spot, strike, dte / 365, iv, call)
-    return {"valor_objetivo": v_obj, "utilidad_usd": (v_obj - prima) * MULT,
-            "retorno_pct": (v_obj / prima - 1) * 100 if prima > 0 else None,
-            "quema_theta_usd": (v_spot_hoy - v_spot_t) * MULT,
-            "aprox_delta_usd": g["delta"] * (t_px - spot) * MULT,
-            "aprox_theta_usd": g["theta"] * dias * MULT}
 
 
 

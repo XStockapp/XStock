@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import re
 
-import pandas as pd
 
 # Universos basados en el screener de Finviz: (señal, filtros)
 LIQ = {"Average Volume": "Over 500K", "Price": "Over $5", "Country": "USA"}
@@ -29,13 +28,6 @@ def screener_df(signal: str = "", filters: dict | None = None, limit: int = 2000
     ov = Overview()
     ov.set_filter(signal=signal, filters_dict=filters or {})
     return ov.screener_view(order="Market Cap.", ascend=False, limit=limit, verbose=0, sleep_sec=1)
-
-
-def screener(signal: str = "", filters: dict | None = None, limit: int = 2000) -> list[str]:
-    df = screener_df(signal, filters, limit)
-    if df is None or df.empty:
-        return []
-    return [str(t).replace(".", "-") for t in df["Ticker"].dropna()]
 
 
 def universe_meta(name: str):
@@ -79,13 +71,6 @@ def _num(v):
     return x * _MULT.get(suf, 1)
 
 
-def snapshot(ticker: str) -> dict:
-    """Ficha completa de Finviz (valores originales en texto)."""
-    from finvizfinance.quote import finvizfinance as FV
-    q = FV(ticker.replace("-", "."))
-    return q.ticker_fundament(raw=True)
-
-
 def _div_yield(v):
     m = re.search(r"\(([\d.]+)%\)", str(v or ""))
     return float(m.group(1)) / 100 if m else None
@@ -125,19 +110,6 @@ def extras(f: dict) -> dict:
             continue
         out[k] = v if kind == "txt" else _num(v)
     return out
-
-
-def ratings(ticker: str, n: int = 8) -> list[dict]:
-    """Últimos cambios de rating de analistas (upgrades/downgrades)."""
-    try:
-        from finvizfinance.quote import finvizfinance as FV
-        df = FV(ticker.replace("-", ".")).ticker_outer_ratings()
-        if df is None or df.empty:
-            return []
-        df = df.head(n)
-        return [{k: (str(v.date()) if hasattr(v, "date") else v) for k, v in r.items()} for r in df.to_dict("records")]
-    except Exception:
-        return []
 
 
 def news(ticker: str, n: int = 8) -> list[dict]:

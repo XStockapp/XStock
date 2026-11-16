@@ -3,7 +3,7 @@ import streamlit as st
 
 from core import crypto, data, market, store, tables
 from core.scanner import scan
-from core.ui import (BG, BORDER, DISCLAIMER, GREEN, RED, AMBER, MUTED, NEUTRAL, SIGNAL_COLORS, bias_bar, kpi,
+from core.ui import (BG, BORDER, DISCLAIMER, GREEN, RED, AMBER, MUTED, NEUTRAL, SIGNAL_COLORS, bias_bar,
                      is_mobile, kpi_row, opportunity_treemap, plot_config, prob_css, rs_css, signal_css, signed_css)
 
 cfg = st.session_state.cfg

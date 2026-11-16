@@ -96,6 +96,7 @@ def cierre_anticipado(d: date) -> str | None:
     return cierres_anticipados(d.year).get(d)
 
 
+@lru_cache(maxsize=4096)
 def sesiones(desde: date, hasta: date) -> int:
     """Sesiones hábiles en (desde, hasta]: las que quedan para que el precio se mueva hasta `hasta`."""
     n, d = 0, desde
@@ -106,11 +107,12 @@ def sesiones(desde: date, hasta: date) -> int:
     return n
 
 
-def feriados_entre(desde: date, hasta: date) -> list[tuple[date, str]]:
+@lru_cache(maxsize=4096)
+def feriados_entre(desde: date, hasta: date) -> tuple[tuple[date, str], ...]:
     out = []
     for y in range(desde.year, hasta.year + 1):
         out += [(d, n) for d, n in feriados(y).items() if desde < d <= hasta and d.weekday() < 5]
-    return sorted(out)
+    return tuple(sorted(out))
 
 
 def proximos(desde: date, n: int = 3) -> list[tuple[date, str]]:

@@ -6,7 +6,6 @@ Distribución:
   [option chain] [mapa GEX]
 """
 import html
-import json
 
 import numpy as np
 import pandas as pd
@@ -15,7 +14,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from core import ai, calendario as CAL, data, db, mtf as MTF, options as OP, pnl_widget as PW, profiles, store
-from core.analysis import full_analysis
+from core.analysis import analisis_usuario
 from core.timeframes import is_crypto
 from core.ui import AMBER, DISCLAIMER, GREEN, MUTED, RED
 
@@ -27,9 +26,6 @@ BG, PANEL, BORDER, TXT = "#0D1117", "#161B22", "#30363D", "#E6EDF3"
 MONO = "'JetBrains Mono','Fira Code',monospace"
 
 
-@st.cache_data(ttl=900, show_spinner=False)
-def _run(ticker, tp, sl, acct, risk, av, prov, tf, settings_json):
-    return full_analysis(ticker, tp, sl, None, acct, risk, av or None, prov, tf, json.loads(settings_json))
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -58,7 +54,7 @@ st.markdown(f"""<style>
 .ox-box h4{{margin:0 0 6px;font-size:11px;color:#8B949E;text-transform:uppercase;letter-spacing:.05em;font-weight:600}}
 .ox-dt{{display:grid;grid-template-columns:1fr;gap:0}}
 .ox-dt div{{display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #21262D;padding:3px 0;font-size:12px}}
-.ox-dt span{{color:#8B949E;white-space:nowrap}} .ox-dt b{{font-family:{MONO};font-variant-numeric:tabular-nums;font-weight:600;color:{TXT};text-align:right;white-space:nowrap}}
+.ox-dt span{{color:#8B949E;min-width:0;flex:1 1 auto}} .ox-dt b{{font-family:{MONO};font-variant-numeric:tabular-nums;font-weight:600;color:{TXT};text-align:right;min-width:0;overflow-wrap:anywhere}}
 .ox-st{{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}}
 .ox-st .k{{font-family:{MONO};font-size:24px;font-weight:700}}
 .ox-st .v{{font-size:11px;padding:2px 8px;border-radius:4px;background:#21262D;color:{TXT};font-family:{MONO}}}
@@ -71,6 +67,9 @@ st.markdown(f"""<style>
 .ox-red{{color:{RED};font-size:12px;line-height:1.45}}
 .ox-exp{{font-size:12.5px;line-height:1.6;color:{TXT}}}
 .ox-exp b{{font-family:{MONO};font-variant-numeric:tabular-nums}}
+.ox-invl{{display:flex;justify-content:space-between;align-items:baseline;gap:6px;font-size:14px;color:#E6EDF3;margin:2px 0 4px}}
+.ox-invl span{{white-space:nowrap}}
+.ox-invl b{{font-family:{MONO};font-size:11px;white-space:nowrap;font-weight:600;color:#8B949E;font-variant-numeric:tabular-nums}}
 .ox-lbl{{font-size:11px;color:#8B949E;text-transform:uppercase;letter-spacing:.05em;margin:2px 0 4px}}
 .ox-mbar{{height:6px;background:#21262D;border-radius:3px;overflow:hidden;margin:2px 0 6px}}
 .ox-mbar div{{height:100%;background:{GREEN};border-radius:3px}}
@@ -85,13 +84,31 @@ st.markdown(f"""<style>
 ss.setdefault("opt_tf", "1h")
 ss.setdefault("opt_rng", "1M")
 ss.setdefault("opt_money", "OTM")
-BAL = float(cfg.get("capital") or 0)
-ss.setdefault("opt_inv", float(round(max(BAL * 0.3, 100) / 5) * 5) if BAL else 200.0)
+@st.cache_data(ttl=600, show_spinner=False)
+def _precios_pf(tickers: tuple) -> dict:
+    return data.batch_history(list(tickers), "1y")
+
+
+# balance = valor de las posiciones abiertas del portafolio simulado + la inversión que se está evaluando
+try:
+    from core import portfolio as PF
+    _ops_pf = PF.ops()
+    _px_pf = _precios_pf(tuple(sorted({o["ticker"] for o in _ops_pf}))) if _ops_pf else {}
+    PORT = PF.valor_abierto(_px_pf)
+except Exception:
+    PORT = 0.0
+_CAP = float(cfg.get("capital") or 0)
+ss.setdefault("opt_inv", float(round(max(_CAP * 0.3, 100) / 5) * 5) if _CAP else 200.0)
 if ss.get("opt_inv_set") is not None:  # «Ajustar a $XX» desde la alerta de capital
     ss["opt_inv"] = float(ss.pop("opt_inv_set"))
 
-top_a, top_b, top_c = st.columns([1.05, 1.6, 1.6], gap="small")
+# columna izquierda continua (cotización + entradas, sin hueco bajo la cotización); a la derecha, MARKET/OPTIONS
+# arriba y el análisis debajo
 left, right = st.columns([1.05, 3.2], gap="small")
+with left:
+    top_a = st.container()
+with right:
+    top_b, top_c = st.columns(2, gap="small")
 
 with left:
     with st.container(border=True, key="ox_cfg"):
@@ -126,9 +143,7 @@ if is_crypto(ticker):
 SETTINGS = ss.get("technical_settings") or profiles.BASE_SETTINGS
 try:
     with st.spinner(f"Analizando {ticker}…"):
-        A = _run(ticker, cfg["tp_atr"], cfg["sl_atr"], cfg["capital"], cfg["riesgo_pct"], cfg["alphavantage_key"],
-                 "alphavantage" if cfg.get("proveedor", "").startswith("Alpha Vantage") else "yahoo",
-                 TF, json.dumps(profiles.engine_settings(SETTINGS), sort_keys=True))
+        A = analisis_usuario(ticker, TF, cfg, profiles.engine_settings(SETTINGS))
         CH, INFO = OP.chain(ticker, round(float(A["df"]["Close"].iloc[-1]), 1), OP.RANGOS[RNG])
 except Exception as e:
     st.error(f"No se pudo analizar {ticker}: {e}")
@@ -159,6 +174,7 @@ GEXS = OP.gex_por_strike(CH, spot)
 CONF = OP.confluencias(WALLS, VP, spot)
 VENT = OP.RANGOS[RNG]
 INV = float(ss.get("opt_inv") or 0)
+BAL = PORT + INV
 rsi = float(r_["RSI"])
 
 # ---- multi-temporalidad: la temporalidad elegida + dos mayores; los pesos dependen del vencimiento
@@ -167,9 +183,7 @@ with st.spinner("Analizando temporalidades mayores…"):
     for _t in MTF.triada(TF):
         if _t not in AN:
             try:
-                AN[_t] = _run(ticker, cfg["tp_atr"], cfg["sl_atr"], cfg["capital"], cfg["riesgo_pct"], cfg["alphavantage_key"],
-                              "alphavantage" if cfg.get("proveedor", "").startswith("Alpha Vantage") else "yahoo",
-                              _t, json.dumps(profiles.engine_settings(SETTINGS), sort_keys=True))
+                AN[_t] = analisis_usuario(ticker, _t, cfg, profiles.engine_settings(SETTINGS))
             except Exception:
                 pass
 ss.setdefault("opt_sel", 1)
@@ -207,14 +221,18 @@ MT = MTF.combinar(AN, max(SEL["dte"], 0.5), TF) if (SEL and len(AN) > 1) else MT
 with inv_ph.container():
     pct_inv = INV / BAL * 100 if BAL else 0
     st.markdown(f"<div class='ox-lbl'>Balance</div><div class='ox-mbar'><div style='width:100%'></div></div>"
-                f"<div style='font-family:{MONO};font-size:14px;margin:-2px 0 6px'>{_m(BAL)}</div>", unsafe_allow_html=True)
+                f"<div style='font-family:{MONO};font-size:14px;margin:-2px 0 0'>{_m(BAL)}</div>"
+                f"<div class='muted small' style='margin:0 0 6px'>Portafolio {_m(PORT)} + inversión {_m(INV)}</div>",
+                unsafe_allow_html=True)
     if AJ:
         st.markdown("<style>.st-key-opt_inv input{animation:oxinv 1s ease-in-out infinite}"
                     f"@keyframes oxinv{{0%,100%{{box-shadow:inset 0 0 0 1px {AMBER}55}}50%{{box-shadow:inset 0 0 0 2px {AMBER};"
                     "background:rgba(210,153,34,.15)}}</style>", unsafe_allow_html=True)
-    st.number_input("Inversión (USD)", 0.0, max(BAL, 1e7), step=5.0, format="%.2f", key="opt_inv")
-    st.markdown(f"<div class='ox-mbar'><div style='width:{min(pct_inv, 100):.0f}%;background:{ACC}'></div></div>"
-                f"<div class='muted small' style='margin-top:-4px'>{pct_inv:.0f}% del balance</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='ox-invl'><span>Inversión (USD)</span><b>{pct_inv:.0f}% del bal.</b></div>",
+                unsafe_allow_html=True)
+    st.number_input("Inversión (USD)", 0.0, 1e8, step=5.0, format="%.2f", key="opt_inv", label_visibility="collapsed")
+    st.markdown(f"<div class='ox-mbar'><div style='width:{min(pct_inv, 100):.0f}%;background:{ACC}'></div></div>",
+                unsafe_allow_html=True)
 
 # ================================================================== cabecera (fila superior)
 chg = ult - prev
@@ -230,6 +248,8 @@ with top_a:
 MK = float(np.clip(((MT['puntaje'] if MT else COMB) + 100) / 2, 0, 100))
 mk_lbl, mk_col = (("STRONG BUY", GREEN) if MK >= 70 else ("BUY", GREEN) if MK >= 57 else ("NEUTRAL", MUTED)
                   if MK > 43 else ("SELL", RED) if MK > 30 else ("STRONG SELL", RED))
+if MT and MT["estado"] in ("Mixto", "Lateral") and mk_lbl != "NEUTRAL":  # sin acuerdo entre temporalidades no hay señal limpia
+    mk_lbl, mk_col = MT["estado"].upper(), MUTED
 PC = OP.porcentaje_calls(CH)
 op_lbl = SEL["tipo"] if SEL else "ESPERAR"
 op_col = GREEN if op_lbl == "CALL" else RED if op_lbl == "PUT" else MUTED
@@ -379,8 +399,6 @@ payload = {
                                                                     "delta", "pop", "ve", "objetivo")})
                   for t, v in NIV.items()},
     "inversion_usd": INV, "info": INFO, "multi_temporalidad": MTF.resumen_ia(MT) if MT else None,
-    "candidatos": [{"target_expiration_tab": v["vencimiento"], "option_type": v["tipo"], "strike": v["strike"]}
-                   for v in NIV.values() if v],
 }
 akey = f"opt_ai_{ticker}_{TF}"
 RAI = ss.get(akey)
@@ -393,8 +411,11 @@ def _explicacion(o: dict) -> str:
     wtxt = ", ".join(f"{w['strike']:g}" for w in w_fav) or "—"
     conf = "; ".join(f"{c['tipo'].lower()} {c['strike']:g} coincide con el {c['nodo_vrvp']} del VRVP" for c in CONF[:2])
     em = SM.get("expected_move_usd")
-    t = (f"<b>1 · Motor cuantitativo (70 %).</b> Escenario <b>{sesgo_txt}</b> en {TF}: puntaje combinado "
-         f"<b>{COMB:+.0f}</b>, ADX <b>{ADX.get('adx', '—')}</b> ({'tendencia' if ADX.get('regimen') == 'tendencia' else 'rango'} "
+    _tec = float((A.get("tech") or {}).get("score", COMB))
+    _fs = (A.get("fscore") or {}).get("score")
+    t = (f"<b>1 · Motor cuantitativo (70 %).</b> Escenario <b>{sesgo_txt}</b> en {TF}: puntaje técnico "
+         f"<b>{_tec:+.0f}</b>" + (f" (fundamental {_fs:+.0f}, se pondera aparte según el horizonte)" if _fs is not None else "")
+         + f", ADX <b>{ADX.get('adx', '—')}</b> ({'tendencia' if ADX.get('regimen') == 'tendencia' else 'rango'} "
          f"respecto al nivel 23), RSI <b>{rsi:.1f}</b>, MACD {'positivo' if r_['MACD_hist'] > 0 else 'negativo'} y "
          f"precio {'sobre' if spot > (VP.get('poc') or spot) else 'bajo'} el POC del VRVP (<b>{_m(VP.get('poc'))}</b>). "
          f"<br><b>2 · Flujo de opciones (30 %).</b> GEX {SM['net_gamma_exposure_gex'].lower()} "
@@ -402,8 +423,8 @@ def _explicacion(o: dict) -> str:
          f"PCR {SM['pcr_open_interest'] or SM['pcr_volumen'] or '—'}; flujo neto {OP._fmt_m(FLUJO)}; "
          f"muros a favor en <b>{wtxt}</b>" + (f"; {conf}" if conf else "") + "."
          f"<br><b>3 · Selección del contrato.</b> Se evaluaron {len(EVS)} contratos {o['tipo']} líquidos con money "
-         f"{MONEY}. El objetivo es <b>{_m(o['objetivo'])}</b> (primer muro a favor acotado por el movimiento esperado"
-         + (f" ±{_m(em)}" if em else "") + f"). El <b>{o['contrato']} · {o['vencimiento']}</b> maximiza el valor esperado "
+         f"{MONEY}. El objetivo es <b>{_m(o['objetivo'])}</b> (primer muro o nivel fuerte a favor, acotado por el movimiento esperado"
+         + (f" del vencimiento ±{_m(em)}" if em else "") + f"). El <b>{o['contrato']} · {o['vencimiento']}</b> maximiza el valor esperado "
          f"(<b>{o['ve']:+.1f}%</b>): {o['p_toque']:.0f}% de probabilidad de tocar el objetivo en {o['horizonte_dias']:.0f} "
          f"días, {o['roi_objetivo']:+.0f}% si lo toca y {o['roi_sin_movimiento']:+.0f}% si el precio no se mueve. "
          f"Probabilidad de terminar con ganancia al vencimiento: <b>{o['pop']:.0f}%</b>.")
@@ -411,8 +432,8 @@ def _explicacion(o: dict) -> str:
         pw_txt = " / ".join(f"{f['tf']} {f['peso'] * 100:.0f}%" for f in MT["filas"])
         L_ = MT["limites"]
         t += (f"<br><b>4 · Multi-temporalidad.</b> Con {o['dte']} días al vencimiento los pesos son {pw_txt} "
-              f"(a menor plazo mandan las temporalidades menores; a mayor plazo, las mayores). Puntaje combinado "
-              f"<b>{MT['puntaje']:+.0f}</b>, alineación <b>{MT['alineacion'] * 100:.0f}%</b>: <b>{MT['estado'].lower()}</b>. "
+              f"(a menor plazo mandan las temporalidades menores; a mayor plazo, las mayores). Puntaje técnico "
+              f"<b>{MT.get('puntaje_tecnico', MT['puntaje']):+.0f}</b>, con fundamental <b>{MT['puntaje']:+.0f}</b>, alineación <b>{MT['alineacion'] * 100:.0f}%</b>: <b>{MT['estado'].lower()}</b>. "
               f"Objetivo {MTF.etiqueta(L_['objetivo'])}, invalidación {MTF.etiqueta(L_['invalidacion'])}, "
               f"segundo nivel {MTF.etiqueta(L_['segundo_nivel'])}.")
         if MT["estado"] in ("Rebote contra la tendencia mayor", "Operativa en contra"):
@@ -479,8 +500,11 @@ with right:
                 if kind == "main":
                     o = SEL
                     if RAI and RAI.get("diagnostico"):
+                        _adv = "".join(f"<li>{E(str(a_))}</li>" for a_ in (RAI.get("advertencias") or [])[:4])
                         st.markdown(f"<div class='ox-box'><h4>Lectura de la IA · {E(RAI.get('_modelo', ''))}</h4>"
-                                    f"<div class='ox-exp'>{E(RAI['diagnostico'])}</div></div>", unsafe_allow_html=True)
+                                    f"<div class='ox-exp'>{E(RAI['diagnostico'])}</div>"
+                                    + (f"<ul style='margin:6px 0 0 16px;padding:0;font-size:12px'>{_adv}</ul>" if _adv else "")
+                                    + "</div>", unsafe_allow_html=True)
                     st.markdown(f"<div class='ox-box'><h4>Cómo se hizo el análisis · {E(o['contrato'])} · "
                                 f"{E(o['vencimiento'])}</h4><div class='ox-exp'>{_explicacion(o)}</div></div>",
                                 unsafe_allow_html=True)
@@ -730,5 +754,5 @@ with st.expander("Ver Mapa GEX / Muros", expanded=False, icon=":material/bar_cha
 st.caption("Cálculos: valor esperado = P(toca objetivo) × rentabilidad en el objetivo + (1 − P) × resultado sin movimiento − "
            "medio spread (Black-Scholes, IV actual) · prob. de éxito = P(precio al vencimiento más allá del breakeven) · "
            "PCR = Σ puts / Σ calls · GEX = Γ × OI × 100 × S² × 0.01 · max pain = strike con menor pago intrínseco. "
-           "MARKET = puntaje combinado del análisis técnico (0–100) · OPTIONS = % del volumen en calls.")
+           "MARKET = puntaje multi-temporalidad (técnico + fundamental según el horizonte, 0–100; MIXTO si las temporalidades no coinciden) · OPTIONS = % del volumen en calls.")
 st.markdown(DISCLAIMER, unsafe_allow_html=True)

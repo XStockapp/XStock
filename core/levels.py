@@ -19,8 +19,6 @@ from .profiles import ma_label
 from .technical import fibonacci, pivot_levels
 from .timeframes import marco, marco_corto
 
-MARCO_TEMPORAL = marco("1D")
-MARCO_CORTO = marco_corto("1D")
 MODOS = {"market": "Entrada a mercado", "limit": "Entrada proyectada (Limit)"}
 
 
