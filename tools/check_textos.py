@@ -41,13 +41,24 @@ JS = r"""(minPx) => {
     }
     return (o.right > o.left && o.bottom > o.top) ? o : null;
   };
-  // capas fijas (pie del panel de indicadores): tapan lo que pasa por debajo, no es un choque de textos
-  const layer = e => e.closest('[data-testid=stLayoutWrapper]:has(> .st-key-usr_ind_footer)');
+  // capas fijas: un elemento con position sticky/fixed (cabecera de una tabla, pie del panel de indicadores) tapa
+  // a propósito lo que pasa por debajo al desplazarse. Se comparan los textos dentro de cada capa, no entre capas.
+  const layer = e => {
+    for (let a = e; a && a !== document.body; a = a.parentElement) {
+      const p = getComputedStyle(a).position;
+      if (p === 'sticky' || p === 'fixed') return a;
+    }
+    return e.closest('[data-testid=stLayoutWrapper]:has(> .st-key-usr_ind_footer)');
+  };
+  // ventana modal abierta: la página de atrás queda tapada y no se puede usar; solo se revisa la ventana
+  const modal = [...document.querySelectorAll('[data-testid=stDialog] [role=dialog], [role=dialog][aria-modal=true]')]
+    .find(d => d.getBoundingClientRect().width > 0) || null;
+  const enAlcance = e => !modal || modal.contains(e);
   const leaves = [];
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   while (walker.nextNode()) {
     const t = walker.currentNode; const txt = t.textContent.trim();
-    if (!txt || !t.parentElement || !vis(t.parentElement)) continue;
+    if (!txt || !t.parentElement || !vis(t.parentElement) || !enAlcance(t.parentElement)) continue;
     const el = t.parentElement;
     if (el.closest('[data-testid=stIconMaterial], svg, script, style, .js-plotly-plot, [aria-hidden=true]')) continue;
     const rg = document.createRange(); rg.selectNodeContents(t);
@@ -58,7 +69,7 @@ JS = r"""(minPx) => {
   const cv = document.createElement('canvas').getContext('2d');
   const inputs = [];
   for (const inp of document.querySelectorAll('input[type=text], input[type=number], input:not([type]), textarea')) {
-    if (!vis(inp) || !inp.value) continue;
+    if (!vis(inp) || !inp.value || !enAlcance(inp)) continue;
     const ics = getComputedStyle(inp); cv.font = ics.font;
     const avail = inp.clientWidth - parseFloat(ics.paddingLeft) - parseFloat(ics.paddingRight);
     if (cv.measureText(inp.value).width > avail + 1) inputs.push(`campo recortado: "${inp.value.slice(0, 30)}"`);
@@ -97,6 +108,10 @@ JS = r"""(minPx) => {
 
 
 def check(pg, where):
+    try:  # aparta el ratón: un tooltip abierto por el último clic no es parte del diseño
+        (pg.page if hasattr(pg, "page") else pg).mouse.move(1, 1)
+    except Exception:
+        pass
     pg.wait_for_timeout(700)
     probs = pg.evaluate(JS, MIN_PX)
     for p_ in probs:
