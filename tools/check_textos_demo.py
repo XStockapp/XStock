@@ -67,7 +67,7 @@ def analisis(pg, w):
 
 def escaner(pg, w):
     n = 0
-    pg.goto(U + "/scanner"); pg.wait_for_timeout(6000)
+    pg.goto(U + "/"); pg.wait_for_timeout(6000)  # el escáner es la página principal
     pg.get_by_role("button", name="Escanear mercado").click(); pg.wait_for_timeout(45000)
     n += C.check(pg, f"{w} escáner")
     pop = pg.get_by_role("button", name="Patrón vigente")
