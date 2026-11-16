@@ -71,8 +71,9 @@ st.markdown(f"""<style>
 .ox-red{{color:{RED};font-size:12px;line-height:1.45}}
 .ox-exp{{font-size:12.5px;line-height:1.6;color:{TXT}}}
 .ox-exp b{{font-family:{MONO};font-variant-numeric:tabular-nums}}
-.ox-invl{{display:flex;justify-content:space-between;align-items:baseline;font-size:14px;color:#E6EDF3;margin:2px 0 4px}}
-.ox-invl b{{font-family:{MONO};font-size:12px;font-weight:600;color:#8B949E;font-variant-numeric:tabular-nums}}
+.ox-invl{{display:flex;justify-content:space-between;align-items:baseline;gap:6px;font-size:14px;color:#E6EDF3;margin:2px 0 4px}}
+.ox-invl span{{white-space:nowrap}}
+.ox-invl b{{font-family:{MONO};font-size:11px;white-space:nowrap;font-weight:600;color:#8B949E;font-variant-numeric:tabular-nums}}
 .ox-lbl{{font-size:11px;color:#8B949E;text-transform:uppercase;letter-spacing:.05em;margin:2px 0 4px}}
 .ox-mbar{{height:6px;background:#21262D;border-radius:3px;overflow:hidden;margin:2px 0 6px}}
 .ox-mbar div{{height:100%;background:{GREEN};border-radius:3px}}
@@ -235,7 +236,7 @@ with inv_ph.container():
         st.markdown("<style>.st-key-opt_inv input{animation:oxinv 1s ease-in-out infinite}"
                     f"@keyframes oxinv{{0%,100%{{box-shadow:inset 0 0 0 1px {AMBER}55}}50%{{box-shadow:inset 0 0 0 2px {AMBER};"
                     "background:rgba(210,153,34,.15)}}</style>", unsafe_allow_html=True)
-    st.markdown(f"<div class='ox-invl'><span>Inversión (USD)</span><b>{pct_inv:.0f}% del balance</b></div>",
+    st.markdown(f"<div class='ox-invl'><span>Inversión (USD)</span><b>{pct_inv:.0f}% del bal.</b></div>",
                 unsafe_allow_html=True)
     st.number_input("Inversión (USD)", 0.0, 1e8, step=5.0, format="%.2f", key="opt_inv", label_visibility="collapsed")
     st.markdown(f"<div class='ox-mbar'><div style='width:{min(pct_inv, 100):.0f}%;background:{ACC}'></div></div>",
