@@ -414,7 +414,6 @@ else:
              + ["Señal", "Prob. ganancia", "Valor esperado (R)"]
              + _met + ["Entrada", "Stop", "Objetivo 1"] + _tec)
 vt = vt[[c for c in order if c in vt.columns and not (IS_CR and c == "Pre/After")]]
-st.markdown(f"##### Ranking de {'compras' if is_long else 'ventas en corto'} · selecciona filas para enviarlas a tu watchlist o analizarlas")
 if "Spark" not in res.columns:
     st.caption("Vuelve a pulsar **Escanear mercado** para ver el rendimiento por periodo y los mini gráficos.")
 sgn = 1 if is_long else -1
