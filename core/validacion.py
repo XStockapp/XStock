@@ -108,7 +108,14 @@ def tabla_mtf(ticker: str, tf: str, provider: str = "yahoo", av_key: str = "", s
         m = m.reset_index().rename(columns={"index": "t"})
         m["t"] = pd.to_datetime(m["t"])
         base = pd.merge_asof(base.sort_values("t"), m.sort_values("t"), on="t", direction="backward")
-    return base.set_index("t").dropna()
+    base = base.set_index("t").dropna()
+    try:  # velas de evento (diario): para separar en el backtest las operaciones que las cruzan
+        from .eventos import mascara_dias
+        dias = mascara_dias(data.history_tf(ticker, "1D", provider, av_key))
+        base["evento"] = [(t_ - pd.Timedelta(minutes=1)).date() in dias for t_ in base.index]
+    except Exception:
+        base["evento"] = False
+    return base
 
 
 # ------------------------------------------------------------------ evaluación

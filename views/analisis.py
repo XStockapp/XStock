@@ -65,19 +65,16 @@ def col_score(v, g=15, b=-15):
 
 # ---------------------------------------------------------------- barra superior (estilo terminal)
 def _mercado(crypto: bool) -> tuple[str, str]:
-    """Estado del mercado de EE. UU. por la hora de Nueva York (sin feriados)."""
+    """Estado del mercado de EE. UU. por la hora de Nueva York, con feriados y cierres anticipados de la bolsa."""
     if crypto:
         return "CRIPTO 24/7", GREEN
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
-    now = datetime.now(ZoneInfo("America/New_York"))
-    mins = now.hour * 60 + now.minute
-    if now.weekday() < 5 and 570 <= mins < 960:
-        return "MERCADO ABIERTO", GREEN
-    if now.weekday() < 5 and 240 <= mins < 570:
-        return "PREMERCADO", AMBER
-    if now.weekday() < 5 and 960 <= mins < 1200:
-        return "POSTMERCADO", AMBER
+    est, nota = data.estado_mercado()
+    if est == "FERIADO":
+        return f"FERIADO · {nota.upper()}", AMBER
+    if est == "ABIERTO":
+        return "MERCADO ABIERTO" + (" · CIERRE 13:00" if nota else ""), GREEN
+    if est in ("PREMERCADO", "POSTMERCADO"):
+        return est, AMBER
     return "MERCADO CERRADO", MUTED
 
 
@@ -155,6 +152,20 @@ try:
         ESTR["mtf"] = MTF.lineas_grafico(MT, [_pl.get("entrada"), _pl.get("stop"), _pl.get("objetivo_1"), _pl.get("objetivo_2")])
 except Exception:
     MT = None
+# ---- velas de evento (resultados, noticias, shocks de sector) y resultados próximos
+from core import eventos as EV  # noqa: E402
+EVS, EV_AV, EV_PROX = [], [], None
+if not is_crypto(ticker):
+    try:
+        _dd = d if TF == "1D" else ((_an.get("1D") or {}).get("df") if MT else None)
+        if _dd is None:
+            _dd = data.history_tf(ticker, "1D")
+        EVS = EV.analizar(ticker, _dd, str(m.get("Sector") or ""), str(m.get("Industria") or ""), dias=260)
+        EV_PROX = EV.proximos_resultados(ticker)
+        EV_AV = EV.avisos(EVS, _dd, EV_PROX)
+        ESTR["eventos"] = EV.marcadores(EVS, d)
+    except Exception:
+        EVS, EV_AV = [], []
 try:
     EXT = data.extended_quote(ticker)
 except Exception:
@@ -330,6 +341,10 @@ def _informe():
                                          if k_ == "apoyos" else v) for k_, v in (A.get("metodo") or {}).items()})
         if MT:
             payload["multi_temporalidad"] = MTF.resumen_ia(MT)
+        if EVS or EV_PROX:
+            payload["eventos"] = {"velas_de_evento": [{k_: v for k_, v in e.items() if k_ != "titular"}
+                                                      | {"titular": (e.get("titular") or {}).get("titulo")} for e in EVS[:6]],
+                                  "proximos_resultados": EV_PROX.isoformat() if EV_PROX else None, "avisos": EV_AV}
         if go:
             try:
                 with st.spinner("Generando el informe del analista…"):
@@ -639,6 +654,19 @@ with right:
         _cb = _CON.get("confianza_global")
         _sp = 1 if str(plan.get("direccion", "")).startswith("COMPRA") else -1
         st.markdown(MTF.tarjeta_html(MT, _cb, MTF.confianza_ajustada(_cb, _sp, MT)), unsafe_allow_html=True)
+    if EVS or EV_AV:
+        _ev_rows = "".join(
+            f"<tr><td class='num'>{e['fecha'][8:10]}/{e['fecha'][5:7]}/{e['fecha'][2:4]}</td>"
+            f"<td class='num' style='color:{GREEN if e['ret'] > 0 else RED}'>{e['ret'] * 100:+.1f}%</td>"
+            f"<td>{E(e['causa'])}" + (f"<div class='muted small'>{E(e['titular']['titulo'][:110])}</div>" if e.get("titular") else "")
+            + "</td></tr>" for e in EVS[:5])
+        st.markdown("<div class='mp'><div class='mp-h'>Velas de evento</div>"
+                    + "".join(f"<div class='x-evw'>⚠ {E(a)}</div>" for a in EV_AV)
+                    + (f"<table class='x-mtf'><tr><th>Fecha</th><th>Mov.</th><th>Causa probable</th></tr>{_ev_rows}</table>"
+                       if _ev_rows else "")
+                    + "<div class='muted small'>Movimientos anómalos del último año (|z| ≥ 4 frente a su volatilidad "
+                      "normal, gap ≥ 2 ATR o volumen ≥ 3×). El ATR recorta estas velas para que no inflen stops y "
+                      "objetivos.</div></div>", unsafe_allow_html=True)
     with st.expander(f"Score multivariable · {comb:+.0f}", expanded=False):
         st.markdown(
             "<div class='mp' style='border:none;padding:0;background:transparent'>"

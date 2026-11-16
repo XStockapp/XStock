@@ -40,12 +40,13 @@ def simular(T: pd.DataFrame, tfs: list[str], hd: float, h: int, p: dict, tp: flo
     """Operaciones no solapadas entre las velas [desde, hasta). Resultado en R (múltiplos del riesgo)."""
     S = T[tfs].to_numpy(float)
     c, hi, lo, atr = (T[k].to_numpy(float) for k in ("close", "high", "low", "atr"))
+    evt = T["evento"].to_numpy(bool) if "evento" in T else np.zeros(len(c), bool)
     w = pesos_param(hd, tfs, p["sigma"], p["escala"])
     sc = S @ w
     n = len(c)
     hasta = n - 1 if hasta is None else min(hasta, n - 1)
     rr = tp / sl
-    res, dir_ok = [], []
+    res, dir_ok, con_ev = [], [], []
     i = desde
     while i < hasta:
         s = sc[i]
@@ -73,9 +74,10 @@ def simular(T: pd.DataFrame, tfs: list[str], hd: float, h: int, p: dict, tp: flo
             r = d * (c[fin] - e) / (sl * atr[i])
         res.append(r)
         dir_ok.append(np.sign(c[min(n - 1, i + h)] - e) == d)
+        con_ev.append(bool(evt[i:salida + 1].any()))
         i = salida + 1
     res = np.array(res)
-    return {"ops": len(res), "r": res, "dir_ok": np.array(dir_ok, dtype=bool)}
+    return {"ops": len(res), "r": res, "dir_ok": np.array(dir_ok, dtype=bool), "evento": np.array(con_ev, dtype=bool)}
 
 
 def resumen(res: np.ndarray, dir_ok: np.ndarray) -> dict:
@@ -114,16 +116,24 @@ def ejecutar(tickers, tf: str = "1h", horizontes_dias=(1, 3, 7), tp: float = 3.0
         h = max(1, int(round(hd * bpd * 7 / 5)))
 
         def correr(p, fase):
-            rs, ds, por = [], [], {}
+            rs, ds, es, por = [], [], [], {}
             for tk, T in tablas.items():
                 cut = int(len(T) * corte)
                 a, b = (0, cut) if fase == "train" else (cut, len(T) - h)
                 r = simular(T, tfs, hd, h, p, tp, sl, a, b)
                 rs.append(r["r"])
                 ds.append(r["dir_ok"])
+                es.append(r["evento"])
                 por[tk] = resumen(r["r"], r["dir_ok"])
-            return resumen(np.concatenate(rs) if rs else np.array([]),
-                           np.concatenate(ds) if ds else np.array([], dtype=bool)), por
+            R = np.concatenate(rs) if rs else np.array([])
+            D = np.concatenate(ds) if ds else np.array([], dtype=bool)
+            V = np.concatenate(es) if es else np.array([], dtype=bool)
+            out = resumen(R, D)
+            # las operaciones que cruzan una vela de evento (resultados, noticia) se reportan aparte:
+            # su resultado depende del evento, no de la fórmula
+            out["sin_eventos"] = resumen(R[~V], D[~V])
+            out["con_eventos"] = resumen(R[V], D[V])
+            return out, por
 
         mejor, mejor_p, ranking = None, None, []
         for p in combos:
@@ -131,10 +141,12 @@ def ejecutar(tickers, tf: str = "1h", horizontes_dias=(1, 3, 7), tp: float = 3.0
             if progreso:
                 progreso(k_ / total)
             tr, _ = correr(p, "train")
-            # criterio: esperanza en R con mínimo de operaciones; desempate por profit factor
-            if tr["ops"] < 20 or not np.isfinite(tr["esperanza_r"]):
+            # criterio: esperanza en R de las operaciones SIN eventos (lo que la fórmula controla),
+            # con mínimo de operaciones; se castiga la incertidumbre
+            base = tr["sin_eventos"] if tr["sin_eventos"]["ops"] >= 20 else tr
+            if base["ops"] < 20 or not np.isfinite(base["esperanza_r"]):
                 continue
-            puntaje = tr["esperanza_r"] - 0.5 * (tr["esperanza_r"] - tr["ic_lo"])  # castiga la incertidumbre
+            puntaje = base["esperanza_r"] - 0.5 * (base["esperanza_r"] - base["ic_lo"])
             ranking.append((puntaje, p, tr))
             if mejor is None or puntaje > mejor:
                 mejor, mejor_p = puntaje, p

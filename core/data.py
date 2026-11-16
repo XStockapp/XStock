@@ -496,15 +496,38 @@ def av_news(ticker: str, key: str, n: int = 8) -> list[dict]:
 # Premercado y postmercado
 # --------------------------------------------------------------------------
 def session_ny(now=None) -> str:
-    """Sesión del mercado de EE. UU. por la hora de Nueva York: 'pre' (4:00–9:30), 'regular' (9:30–16:00),
-    'post' (16:00–20:00) o 'cerrado' (noches y fines de semana; no considera feriados)."""
+    """Sesión del mercado de EE. UU. por la hora de Nueva York: 'pre' (4:00–9:30), 'regular' (9:30–16:00, o hasta
+    las 13:00 en días de cierre anticipado), 'post' (hasta las 20:00, o las 17:00 en cierre anticipado) o 'cerrado'
+    (noches, fines de semana y feriados de la bolsa)."""
     from datetime import datetime
     from zoneinfo import ZoneInfo
+    from . import calendario as CAL
     now = now or datetime.now(ZoneInfo("America/New_York"))
-    if now.weekday() >= 5:
+    if not CAL.es_habil(now.date()):
         return "cerrado"
+    cierre = 780 if CAL.cierre_anticipado(now.date()) else 960
     m = now.hour * 60 + now.minute
-    return "pre" if 240 <= m < 570 else "regular" if m < 960 and m >= 570 else "post" if 960 <= m < 1200 else "cerrado"
+    if 240 <= m < 570:
+        return "pre"
+    if 570 <= m < cierre:
+        return "regular"
+    if cierre <= m < cierre + 240:
+        return "post"
+    return "cerrado"
+
+
+def estado_mercado(now=None) -> tuple[str, str]:
+    """(texto, nota) para las barras de estado: ABIERTO / PREMERCADO / POSTMERCADO / CERRADO / FERIADO."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from . import calendario as CAL
+    now = now or datetime.now(ZoneInfo("America/New_York"))
+    fer = CAL.es_feriado(now.date())
+    if fer and now.weekday() < 5:
+        return "FERIADO", fer
+    ses = session_ny(now)
+    nota = CAL.cierre_anticipado(now.date()) or ""
+    return {"regular": "ABIERTO", "pre": "PREMERCADO", "post": "POSTMERCADO"}.get(ses, "CERRADO"), nota
 
 
 @st.cache_data(ttl=60, show_spinner=False)
