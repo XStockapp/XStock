@@ -13,7 +13,7 @@ import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
 
-from core import ai, calendario as CAL, data, db, mtf as MTF, options as OP, pnl_widget as PW, profiles, store
+from core import ai, calendario as CAL, data, db, mtf as MTF, options as OP, perfil_opciones as PO, pnl_widget as PW, profiles, store
 from core.analysis import analisis_usuario
 from core.timeframes import is_crypto
 from core.ui import AMBER, DISCLAIMER, GREEN, MUTED, RED
@@ -67,7 +67,7 @@ st.markdown(f"""<style>
 .ox-red{{color:{RED};font-size:12px;line-height:1.45}}
 .ox-exp{{font-size:12.5px;line-height:1.6;color:{TXT}}}
 .ox-exp b{{font-family:{MONO};font-variant-numeric:tabular-nums}}
-.ox-invl{{display:flex;justify-content:space-between;align-items:baseline;gap:6px;font-size:14px;color:#E6EDF3;margin:2px 0 4px}}
+.ox-chips{{display:flex;flex-wrap:wrap;gap:4px;margin:2px 0 6px}}\n.ox-chip{{font-size:11px;padding:2px 7px;border-radius:6px;background:#0D1117;border:1px solid #30363D;color:#C9D1D9}}\n.ox-invl{{display:flex;justify-content:space-between;align-items:baseline;gap:6px;font-size:14px;color:#E6EDF3;margin:2px 0 4px}}
 .ox-invl span{{white-space:nowrap}}
 .ox-invl b{{font-family:{MONO};font-size:11px;white-space:nowrap;font-weight:600;color:#8B949E;font-variant-numeric:tabular-nums}}
 .ox-lbl{{font-size:11px;color:#8B949E;text-transform:uppercase;letter-spacing:.05em;margin:2px 0 4px}}
@@ -83,7 +83,7 @@ st.markdown(f"""<style>
 # ================================================================== entradas (columna izquierda)
 ss.setdefault("opt_tf", "1h")
 ss.setdefault("opt_rng", "1M")
-ss.setdefault("opt_money", "OTM")
+ss.setdefault("opt_modo", "Mi perfil")
 @st.cache_data(ttl=600, show_spinner=False)
 def _precios_pf(tickers: tuple) -> dict:
     return data.batch_history(list(tickers), "1y")
@@ -118,9 +118,7 @@ with left:
         st.segmented_control("Rango visible (vencimientos)", list(OP.RANGOS), key="opt_rng",
                              help="Hasta qué fecha de vencimiento se buscan las opciones: 2 semanas, 1, 3 o 6 meses")
         inv_ph = st.empty()  # balance + inversión (se rellena tras el análisis para poder destellar)
-        st.segmented_control("Money", ["ITM", "OTM", "ATM"], key="opt_money",
-                             help="ITM = dentro del dinero (más caro, más probable) · OTM = fuera del dinero (barato, "
-                                  "apalancado) · ATM = en el dinero")
+        perf_ph = st.empty()  # tipo de análisis + perfil táctico (se rellena cuando se conoce la acción)
         st.button("Analizar Opción", type="primary", icon=":material/bolt:", width="stretch", key="ox_go")
 
 ticker = tk_in or "SPY"
@@ -135,12 +133,57 @@ try:
 except Exception:
     EV_REC = []
 ss.ticker = ticker
-TF, RNG, MONEY = ss.get("opt_tf") or "1h", ss.get("opt_rng") or "1M", ss.get("opt_money") or "OTM"
+TF, RNG = ss.get("opt_tf") or "1h", ss.get("opt_rng") or "1M"
 if is_crypto(ticker):
     st.info("Las opciones solo están disponibles para acciones y ETF de EE. UU.")
     st.stop()
 
 SETTINGS = ss.get("technical_settings") or profiles.BASE_SETTINGS
+SETS = profiles.merge_settings(ss.get("technical_settings"))
+
+
+def _guardar_perfil(p: dict, todas: bool):
+    profiles.save_user_view(settings=PO.guardar(profiles.merge_settings(ss.get("technical_settings")), ticker, p, todas))
+
+
+_DESC_CL = {"ITM": "dentro del dinero: más caro, se mueve casi como la acción",
+            "ATM": "en el dinero: equilibrio entre costo y velocidad",
+            "OTM": "fuera del dinero: barato y apalancado, sensible a la theta"}
+
+
+@st.dialog("Primer análisis de opciones", width="medium")
+def _dlg_primer(tk: str):
+    st.markdown(f"**¿Con qué contratos trabajas en {tk}?** Elige una, dos o las tres. Es obligatorio: el motor solo "
+                "buscará en las clases que actives, por encima de cualquier otro criterio (también en el modo Default).")
+    cl = st.pills("Clases de contrato", list(PO.CLASES), selection_mode="multi", key="pp_clases")
+    st.markdown("".join(f"<div class='muted small'><b>{k}</b> · {v}</div>" for k, v in _DESC_CL.items()),
+                unsafe_allow_html=True)
+    alc = st.segmented_control("Guardar esta elección para", [f"Solo {tk}", "Todas mis acciones"],
+                               default=f"Solo {tk}", key="pp_alc") or f"Solo {tk}"
+    if cl == ["OTM"]:
+        st.caption("Con solo OTM, el estilo «cierro antes, por ganancia» es el que mejor encaja; si eliges esperar al "
+                   "vencimiento, la app te avisará de la baja probabilidad.")
+    b1, b2 = st.columns(2)
+    p = PO.normalizar({**PO.DEFAULT, "clases": cl or []})
+    if b1.button("Ajustar mi perfil táctico", disabled=not cl, width="stretch"):
+        _guardar_perfil(p, alc.startswith("Todas"))
+        ss["ox_editar"] = True
+        st.rerun()
+    if b2.button("Analizar con valores por defecto", type="primary", disabled=not cl, width="stretch"):
+        _guardar_perfil(p, alc.startswith("Todas"))
+        st.rerun()
+    if not cl:
+        st.caption("Activa al menos una clase para continuar.")
+
+
+PERFIL, ALCANCE = PO.leer(SETS, ticker)
+if PERFIL is None:
+    _dlg_primer(ticker)
+    st.info(f"Elige con qué contratos trabajas para analizar las opciones de {ticker}.")
+    st.stop()
+MODO_PERFIL = (ss.get("opt_modo") or "Mi perfil") == "Mi perfil"
+MONEY = PERFIL["clases"]
+MONEY_TXT = " + ".join(MONEY)
 try:
     with st.spinner(f"Analizando {ticker}…"):
         A = analisis_usuario(ticker, TF, cfg, profiles.engine_settings(SETTINGS))
@@ -209,7 +252,164 @@ def _mtf_dte(dte: int):
 
 EVS = OP.evaluar_todos(CH, spot, LADO, WALLS, GEXS, NIVM, _mtf_dte)
 EVS_OP = OP.evaluar_todos(CH, spot, OPUESTO, WALLS, GEXS, NIVM, _mtf_dte)
-NIV = OP.niveles(EVS, spot, MONEY, VENT, INV)
+EVS_RAW = EVS
+if MODO_PERFIL:
+    EVS = PO.anotar(EVS, spot, PERFIL, RES_PROX)
+    _FILTRO = lambda e: e.get("tac_estado") == "ok"  # noqa: E731
+    _CLAVE = PO.orden if PERFIL["estilo"] == "tactico" else (lambda e: -(e.get("tac") or {}).get("P", 0))  # noqa: E731
+else:  # Default: el motor estándar (valor esperado), pero siempre dentro de las clases del perfil
+    EVS = PO.marcar_clases(EVS, spot)
+    _FILTRO = _CLAVE = None
+EVS_OP = PO.marcar_clases(EVS_OP, spot)
+NIV = OP.niveles(EVS, spot, MONEY, VENT, INV, _FILTRO, _CLAVE)
+
+
+_VER_COL = {"VIABLE": GREEN, "EXIGENTE": AMBER, "ESPERAR": MUTED}
+
+
+def _badge(ver: str, size: int = 11) -> str:
+    vc = _VER_COL.get(ver, MUTED)
+    return (f'<span style="font-family:{MONO};font-size:{size}px;font-weight:700;color:{vc};border:1px solid {vc}88;'
+            f'background:{vc}1A;border-radius:6px;padding:2px 8px;white-space:nowrap">{ver}</span>')
+
+
+def _tac_html(o: dict, cabecera: bool = True) -> str:
+    """Fila de métricas del perfil táctico en la tarjeta OPT, con el veredicto."""
+    t = o["tac"]
+    ver = PO.veredicto(t, PERFIL)
+    cab = (f"<div style='display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px'>"
+           f"<span class='ox-lbl' style='margin:0'>Tu perfil · {E(' · '.join(PO.resumen(PERFIL)))}</span>"
+           f"{_badge(ver)}</div>") if cabecera else ""
+    if t.get("modo") == "vencimiento":
+        return cab + (f"<div class='ox-g3'><div><span>Terminar con ganancia</span><b>{t['P']:.0f}%</b></div>"
+                      f"<div><span>Breakeven</span><b>${t['be']:,.2f}</b></div>"
+                      f"<div><span>Movimiento</span><b>{t['z']:.2f}σ</b></div></div>")
+    rc = t.get("ruido_corte")
+    ma_txt = "—" if t.get("meta_antes") is None else f"{t['meta_antes']:.0f}%"
+    col_r = RED if (rc or 0) >= 50 else AMBER if (rc or 0) >= 35 else "#E6EDF3"
+    return cab + (
+        f"<div class='ox-g3'><div><span>Meta +{PERFIL['meta']}% en</span><b>${t['s_meta']:,.2f}</b>"
+        f"<i class='muted small' style='display:block;font-style:normal'>{t['mov_meta']:+.1f}% · {t['z']:.2f}σ</i></div>"
+        f"<div><span>Tocar la meta ({PERFIL['dias']} ses.)</span><b>{t['P']:.0f}%</b></div>"
+        f"<div><span>Meta antes que el corte</span><b>{ma_txt}</b></div>"
+        f"<div><span>Te saca el ruido</span><b style='color:{col_r}'>{'—' if rc is None else f'{rc:.0f}%'}</b>"
+        + (f"<i class='muted small' style='display:block;font-style:normal'>corte ${t['s_corte']:,.2f}</i>" if t.get("s_corte") else "") + "</div>"
+        f"<div><span>Quieto {PERFIL['dias']} ses.</span><b style='color:{RED if t['quieto'] <= -15 else '#E6EDF3'}'>"
+        f"{t['quieto']:+.0f}%</b></div>"
+        f"<div><span>Resiste estancamiento</span><b>{'—' if not t.get('resiste') else str(t['resiste']) + ' d'}</b></div></div>")
+
+
+# ---- editor del perfil táctico (ventana con guía y cálculo en vivo sobre la cadena actual)
+_META_OPS = {"+20 %": 20, "+30 %": 30, "+50 %": 50, "+100 %": 100}
+_CORTE_OPS = {"−25 %": 25, "−35 %": 35, "−50 %": 50, "Sin corte": 0}
+_EST_OPS = {"Cierro antes, por ganancia": "tactico", "Espero al vencimiento": "vencimiento"}
+_AP_OPS = {v["txt"]: k for k, v in PO.APETITO.items()}
+_RES_OPS = {"Evitar": "evitar", "Permitir con alerta": "permitir"}
+
+
+def _abrir_editor():
+    inv = lambda d, v: next(k for k, x in d.items() if x == v)  # noqa: E731
+    ss["pe_clases"] = list(PERFIL["clases"])
+    ss["pe_alc"] = "Todas mis acciones" if ALCANCE == "todas" else f"Solo {ticker}"
+    ss["pe_est"] = inv(_EST_OPS, PERFIL["estilo"])
+    ss["pe_meta"] = inv(_META_OPS, PERFIL["meta"]) if PERFIL["meta"] in _META_OPS.values() else "+50 %"
+    ss["pe_corte"] = inv(_CORTE_OPS, PERFIL["corte"]) if PERFIL["corte"] in _CORTE_OPS.values() else "−35 %"
+    ss["pe_dias"] = int(PERFIL["dias"])
+    ss["pe_ap"] = PO.APETITO[PERFIL["apetito"]]["txt"]
+    ss["pe_res"] = inv(_RES_OPS, PERFIL["resultados"])
+    _dlg_editor()
+
+
+@st.dialog("Perfil táctico de opciones", width="large")
+def _dlg_editor():
+    c1, c2 = st.columns([1.05, 1], gap="medium")
+    with c1:
+        cl = st.pills("1 · Con qué contratos trabajas (regla maestra)", list(PO.CLASES), selection_mode="multi",
+                      key="pe_clases")
+        alc = st.segmented_control("Guardar para", [f"Solo {ticker}", "Todas mis acciones"], key="pe_alc") or f"Solo {ticker}"
+        est = _EST_OPS[st.segmented_control("2 · Cómo cierras tus operaciones", list(_EST_OPS), key="pe_est")
+                       or "Cierro antes, por ganancia"]
+        tac = est == "tactico"
+        meta = _META_OPS[st.segmented_control("3 · Ganancia con la que cierras (sobre la prima)", list(_META_OPS),
+                                              key="pe_meta", disabled=not tac) or "+50 %"]
+        corte = _CORTE_OPS[st.segmented_control("4 · Pérdida máxima que aceptas (sobre la prima)", list(_CORTE_OPS),
+                                                key="pe_corte", disabled=not tac) or "−35 %"]
+        dias = int(st.number_input("5 · Días que sueles sostener la posición (sesiones)", 1, 15, step=1, key="pe_dias",
+                                   disabled=not tac))
+        ap = _AP_OPS[st.segmented_control("6 · ¿Qué tan probable debe ser tu meta?", list(_AP_OPS), key="pe_ap")
+                     or "Equilibrado"]
+        res = _RES_OPS[st.segmented_control("7 · Resultados trimestrales", list(_RES_OPS), key="pe_res") or "Evitar"]
+    tmp = PO.normalizar({"clases": cl or [], "estilo": est, "meta": meta, "corte": corte, "dias": dias,
+                         "apetito": ap, "resultados": res})
+    with c2:
+        if not cl:
+            st.warning("Activa al menos una clase: el motor necesita un universo de contratos.")
+            return
+        an = PO.anotar(EVS_RAW, spot, tmp, RES_PROX, max_sim=25)
+        fil = lambda e: e.get("tac_estado") == "ok"  # noqa: E731
+        cla = PO.orden if tac else (lambda e: -(e.get("tac") or {}).get("P", 0))
+        niv = OP.niveles(an, spot, tmp["clases"], VENT, None, fil, cla)
+        best = niv.get(1) or niv.get(2) or niv.get(3)
+        ver = PO.veredicto(best["tac"] if best else None, tmp)
+        st.markdown(f"<div style='display:flex;justify-content:space-between;align-items:center'>"
+                    f"<span class='ox-lbl' style='margin:0'>Viabilidad con {E(ticker)} hoy · {LADO}</span>"
+                    f"{_badge(ver, 12)}</div>", unsafe_allow_html=True)
+        msgs = [f"Universo: solo {' + '.join(tmp['clases'])}. Ningún otro ajuste, ni el modo Default, recomienda otra clase."]
+        if best:
+            t = best["tac"]
+            st.markdown(f"<div class='muted small'>Contrato elegido: <b style='color:#E6EDF3'>{E(best['contrato'])} · "
+                        f"{E(best['vencimiento'])} · {E(best['clase'])}</b></div>"
+                        + _tac_html_tmp(best, tmp), unsafe_allow_html=True)
+            msgs += PO.avisos(t, tmp, best, spot)
+        else:
+            mo = {}
+            for e in an:
+                mo[e.get("tac_estado")] = mo.get(e.get("tac_estado"), 0) + 1
+            msgs.append(f"Ningún contrato {' + '.join(tmp['clases'])} cumple hoy estas reglas "
+                        f"({mo.get('bloqueado', 0)} bloqueados por meta improbable, {mo.get('apetito', 0)} bajo tu apetito, "
+                        f"{mo.get('resultados', 0)} cruzan resultados): el resultado sería ESPERAR.")
+        for m_ in msgs:
+            st.markdown(f"<div class='ox-exp' style='font-size:12px;margin:4px 0'>{E(m_)}</div>", unsafe_allow_html=True)
+        st.caption(f"Límites fijos: se bloquea una meta que exija más de {PO.SIGMA_BLOQUEO}σ o tenga menos de "
+                   f"{PO.P_BLOQUEO:.0f} % de probabilidad · spread ≤ 25 % · vencimiento ≥ {PO.dte_minimo(tmp)} días "
+                   "recomendado. Probabilidades con la IV de cada prima y sin ventaja direccional.")
+        en_uni = [e for e in an if e.get("tac")]
+        bloqueado = bool(en_uni) and all(e["tac_estado"] in ("bloqueado", "resultados") for e in en_uni)
+        b1, b2 = st.columns(2)
+        if b1.button("Restablecer", width="stretch"):
+            for k_ in ("pe_est", "pe_meta", "pe_corte", "pe_dias", "pe_ap", "pe_res"):
+                ss.pop(k_, None)
+            st.rerun(scope="fragment")
+        if b2.button("No se puede guardar: meta fuera de rango" if bloqueado else "Guardar perfil", type="primary",
+                     disabled=bloqueado, width="stretch"):
+            _guardar_perfil(tmp, alc.startswith("Todas"))
+            st.rerun()
+
+
+def _tac_html_tmp(o, p):
+    global PERFIL
+    guard = PERFIL
+    try:
+        PERFIL = p
+        return _tac_html(o, cabecera=False)
+    finally:
+        PERFIL = guard
+
+
+# bloque del perfil en la columna izquierda
+with perf_ph.container():
+    st.segmented_control("Tipo de análisis", ["Mi perfil", "Default"], key="opt_modo",
+                         help="Mi perfil: meta, corte y días de tu perfil táctico. Default: el motor estándar (valor "
+                              "esperado), siempre dentro de tus clases de contrato.")
+    _chips = "".join(f"<span class='ox-chip'>{E(c)}</span>" for c in PO.resumen(PERFIL))
+    st.markdown(f"<div class='ox-lbl'>Perfil táctico · {'todas tus acciones' if ALCANCE == 'todas' else E(ticker)}</div>"
+                f"<div class='ox-chips'>{_chips}</div>"
+                + ("" if MODO_PERFIL else "<div class='muted small'>Modo Default: sin meta, corte ni días del perfil; "
+                   f"solo contratos {E(MONEY_TXT)}.</div>"), unsafe_allow_html=True)
+    if st.button("Editar perfil", key="ox_edit", width="stretch", icon=":material/tune:"):
+        ss["ox_editar"] = True
+if ss.pop("ox_editar", False):
+    _abrir_editor()
 if not NIV.get(ss["opt_sel"]):
     ss["opt_sel"] = next((t for t in (1, 2, 3) if NIV.get(t)), 1)
 SEL = NIV.get(ss["opt_sel"])
@@ -301,8 +501,20 @@ with top_c:
         O = NIV.get(tv)
         nom, dsc, _ = OP.TIERS[tv]
         if not O:
-            st.markdown(f"<div class='muted small'>{nom}: sin contratos líquidos con {dsc} y money {MONEY}.</div>",
-                        unsafe_allow_html=True)
+            if MODO_PERFIL:
+                _mo = PO.motivos(EVS, MONEY, VENT, tv, spot)
+                _det = ", ".join(f"{n} {t}" for t, n in (("fuera de tus clases", _mo.get("fuera", 0)),
+                                                        ("bloqueados por meta improbable", _mo.get("bloqueado", 0)),
+                                                        ("bajo tu apetito", _mo.get("apetito", 0)),
+                                                        ("cruzan resultados", _mo.get("resultados", 0))) if n)
+                st.markdown(f"<div class='ox-st'><span class='k' style='color:{MUTED}'>ESPERAR</span>"
+                            f"<span class='muted small'>{nom} · {dsc}</span></div>"
+                            f"<div class='muted small'>Ningún contrato {E(MONEY_TXT)} cumple hoy tu perfil"
+                            + (f" ({E(_det)})" if _det else "") + ". No se recomienda otra clase.</div>",
+                            unsafe_allow_html=True)
+            else:
+                st.markdown(f"<div class='muted small'>{nom}: sin contratos líquidos {E(MONEY_TXT)} con {dsc}.</div>",
+                            unsafe_allow_html=True)
         else:
             colr = GREEN if O["tipo"] == "CALL" else RED
             cont = (f"{O['contratos']} contrato(s) · ${O['contratos'] * O['costo']:,.0f}" if O.get("contratos")
@@ -316,8 +528,10 @@ with top_c:
                 f"<div><span>R/R</span><b>1:{O['rr']:.1f}</b></div><div><span>Breakeven</span><b>${O['breakeven']:,.2f}</b></div>"
                 f"<div><span>Delta</span><b>{O['delta']:+.2f}</b></div><div><span>Theta</span><b>{O['theta'] or 0:+.2f}</b></div>"
                 f"<div><span>Prob. éxito</span><b style='color:{colr}'>{O['pop']:.0f}%</b></div>"
-                f"<div><span>Valor esperado</span><b>{O['ve']:+.1f}%</b></div></div>"
-                f"<div class='ox-just'><b>Justificación:</b> objetivo ${O['objetivo']:,.2f} (muro / movimiento esperado) en "
+                f"<div><span>Valor esperado</span><b>{O['ve']:+.1f}%</b></div>"
+                f"<div><span>Clase</span><b>{E(O.get('clase', '—'))}</b></div></div>"
+                + (_tac_html(O) if MODO_PERFIL and O.get("tac") else "")
+                + f"<div class='ox-just'><b>Justificación:</b> objetivo ${O['objetivo']:,.2f} (muro / movimiento esperado) en "
                 f"≤ {O['horizonte_dias']:.0f} días; si lo alcanza {O['roi_objetivo']:+.0f}%, si el precio no se mueve "
                 f"{O['roi_sin_movimiento']:+.0f}%." + (f" <span class='muted'>{cont}</span>" if cont else "") + "</div>",
                 unsafe_allow_html=True)
@@ -423,7 +637,7 @@ def _explicacion(o: dict) -> str:
          f"PCR {SM['pcr_open_interest'] or SM['pcr_volumen'] or '—'}; flujo neto {OP._fmt_m(FLUJO)}; "
          f"muros a favor en <b>{wtxt}</b>" + (f"; {conf}" if conf else "") + "."
          f"<br><b>3 · Selección del contrato.</b> Se evaluaron {len(EVS)} contratos {o['tipo']} líquidos con money "
-         f"{MONEY}. El objetivo es <b>{_m(o['objetivo'])}</b> (primer muro o nivel fuerte a favor, acotado por el movimiento esperado"
+         f"{MONEY_TXT}. El objetivo es <b>{_m(o['objetivo'])}</b> (primer muro o nivel fuerte a favor, acotado por el movimiento esperado"
          + (f" del vencimiento ±{_m(em)}" if em else "") + f"). El <b>{o['contrato']} · {o['vencimiento']}</b> maximiza el valor esperado "
          f"(<b>{o['ve']:+.1f}%</b>): {o['p_toque']:.0f}% de probabilidad de tocar el objetivo en {o['horizonte_dias']:.0f} "
          f"días, {o['roi_objetivo']:+.0f}% si lo toca y {o['roi_sin_movimiento']:+.0f}% si el precio no se mueve. "
@@ -445,7 +659,8 @@ def _explicacion(o: dict) -> str:
 
 
 def _riesgos_html(o):
-    rs = EV_REC + OP.riesgos(o, ESC, ADX, SM.get("gex_total") or 0, SM.get("gamma_flip_level"), spot, RES_PROX)
+    rs = ((PO.avisos(o["tac"], PERFIL, o, spot) if MODO_PERFIL and o.get("tac") else []) + EV_REC
+          + OP.riesgos(o, ESC, ADX, SM.get("gex_total") or 0, SM.get("gamma_flip_level"), spot, RES_PROX))
     return ("<div class='ox-box'><h4>Riesgos y cuidados</h4><ul style='margin:0 0 0 16px;padding:0;font-size:12px'>"
             + "".join(f"<li>{E(x)}</li>" for x in rs) + "</ul></div>") if rs else ""
 
