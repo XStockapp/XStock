@@ -410,7 +410,7 @@ def _explicacion(o: dict) -> str:
     w_fav = (WALLS["call_walls"] if o["tipo"] == "CALL" else WALLS["put_walls"])
     wtxt = ", ".join(f"{w['strike']:g}" for w in w_fav) or "—"
     conf = "; ".join(f"{c['tipo'].lower()} {c['strike']:g} coincide con el {c['nodo_vrvp']} del VRVP" for c in CONF[:2])
-    em = SM.get("expected_move_usd")
+    em = o.get("mov_esperado") or SM.get("expected_move_usd")  # el del vencimiento del contrato
     _tec = float((A.get("tech") or {}).get("score", COMB))
     _fs = (A.get("fscore") or {}).get("score")
     t = (f"<b>1 · Motor cuantitativo (70 %).</b> Escenario <b>{sesgo_txt}</b> en {TF}: puntaje técnico "
