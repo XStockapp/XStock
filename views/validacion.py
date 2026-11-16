@@ -6,7 +6,7 @@ import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
 
-from core import profiles, validacion as V
+from core import backtest_cortes as BC, profiles, validacion as V
 from core.ui import AMBER, GREEN, MUTED, RED
 
 cfg = st.session_state.cfg
@@ -26,7 +26,7 @@ st.markdown(f"""<style>
 .vl-t td{{padding:5px 8px;border-bottom:1px solid #21262D;color:#E6EDF3;text-align:right;
   font-family:{MONO};font-variant-numeric:tabular-nums;white-space:nowrap}}
 .vl-t td.l{{font-family:Inter,system-ui,sans-serif}}
-.vl-box{{background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;
+.vl-box{{overflow-x:auto;background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;
   line-height:1.55;color:#E6EDF3}}
 .vl-box h4{{margin:0 0 6px;font-size:11px;color:#8B949E;text-transform:uppercase;letter-spacing:.05em;font-weight:600}}
 .vl-v{{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px}}
@@ -37,6 +37,122 @@ st.markdown("<div class='muted small'>Prueba fuera de muestra (walk-forward) del
             "combinar temporalidades. Usa solo velas cerradas de las temporalidades mayores; los modelos se ajustan con el "
             "pasado y se evalúan en el tramo siguiente. Los intervalos usan N efectivo = N / horizonte (muestras solapadas).</div>",
             unsafe_allow_html=True)
+
+MODO = st.segmented_control("Prueba", ["Backtest por cortes", "Estadística walk-forward"], default="Backtest por cortes",
+                            key="vl_modo") or "Backtest por cortes"
+SETTINGS = st.session_state.get("technical_settings") or profiles.BASE_SETTINGS
+PROV = "alphavantage" if cfg.get("proveedor", "").startswith("Alpha Vantage") else "yahoo"
+
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def _cortes(tickers: tuple, tf: str, hz: tuple, tp: float, sl: float, prov: str, av: str, settings_json: str):
+    return BC.ejecutar(list(tickers), tf, hz, tp, sl, prov, av, json.loads(settings_json))
+
+
+def _p(v, d=1):
+    return "—" if v is None or not np.isfinite(v) else f"{v * 100:.{d}f}%"
+
+
+def _pf(v):
+    return "—" if v is None or not np.isfinite(v) else f"{v:.2f}"
+
+
+def _r(v):
+    return "—" if v is None or not np.isfinite(v) else f"{v:+.2f} R"
+
+
+if MODO == "Backtest por cortes":
+    st.markdown("<div class='muted small'>En cada vela del pasado se corta la serie como si fuera la última, se calcula la "
+                "señal multi-temporalidad con lo que se sabía en ese momento y se mide qué hizo el precio después: si tocó "
+                "primero el objetivo o el stop dentro del horizonte. Los parámetros de la fórmula se eligen en el primer 60 % "
+                "de la historia y se juzgan en el 40 % final, que el ajuste no vio.</div>", unsafe_allow_html=True)
+    b1, b2, b3, b4 = st.columns([2.6, 1.1, 2, 1.1], vertical_alignment="bottom")
+    tks_b = b1.text_input("Activos", "SPY, AMD, TSLA, AMZN", key="bc_tks")
+    tf_b = b2.segmented_control("Operativa", ["1h", "4h", "1D"], default="1h", key="bc_tf") or "1h"
+    hz_b = b3.multiselect("Horizontes (días)", [1, 3, 7, 14, 30, 60],
+                          default=list({"1h": (1, 3, 7), "4h": (3, 7, 14), "1D": (7, 14, 30)}[tf_b]), key=f"bc_hz_{tf_b}")
+    go_b = b4.button("Ejecutar backtest", type="primary", width="stretch", key="bc_go")
+    lst_b = tuple(dict.fromkeys(t.strip().upper() for t in tks_b.split(",") if t.strip()))
+    kb = (lst_b, tf_b, tuple(sorted(hz_b)))
+    if go_b:
+        st.session_state["bc_key"] = kb
+    if st.session_state.get("bc_key") != kb:
+        st.info(f"Objetivo {cfg['tp_atr']:g} × ATR y stop {cfg['sl_atr']:g} × ATR (los de tu configuración). Pulsa "
+                "**Ejecutar backtest**. Prueba 54 combinaciones de la fórmula por horizonte; tarda 1–3 minutos la primera vez.")
+        st.stop()
+    try:
+        with st.spinner("Cortando la serie vela a vela y simulando…"):
+            RB = _cortes(lst_b, tf_b, tuple(sorted(hz_b)), float(cfg["tp_atr"]), float(cfg["sl_atr"]), PROV,
+                         cfg.get("alphavantage_key") or "", json.dumps(profiles.engine_settings(SETTINGS), sort_keys=True))
+    except Exception as e:
+        st.error(f"No se pudo ejecutar: {e}")
+        st.stop()
+    if RB["errores"]:
+        st.caption("Sin datos: " + ", ".join(RB["errores"]))
+    per = RB["periodo"]
+    st.markdown("<div class='muted small'>Temporalidades " + " · ".join(RB["tfs"]) + " · objetivo "
+                f"{RB['tp']:g}×ATR / stop {RB['sl']:g}×ATR (R:R {RB['tp'] / RB['sl']:.1f}) · "
+                + " · ".join(f"{k}: entrenamiento {a}→{b}, prueba {b}→{c}" for k, (a, b, c) in per.items()) + "</div>",
+                unsafe_allow_html=True)
+
+    def _fmt_p(pr):
+        return f"σ {pr['sigma']:g} · escala {pr['escala']:g} · umbral {pr['umbral']} · {pr['filtro']}"
+
+    filas_b, recs = [], []
+    for f in RB["horizontes"]:
+        for nom, blk in (("Fórmula actual", f["actual"]), ("Fórmula ajustada", f.get("ajustado"))):
+            if not blk:
+                continue
+            te, tr = blk["test"], blk["train"]
+            filas_b.append(
+                f"<tr><td class='l'>{f['horizonte_dias']} d</td><td class='l'>{nom}<div class='muted small'>{E(_fmt_p(blk['param']))}"
+                f"</div></td><td>{tr['ops']}</td><td>{_r(tr['esperanza_r'])}</td><td>{te['ops']}</td>"
+                f"<td>{_p(te['ganadoras'])}</td><td>{_p(te['acierto_dir'])}</td>"
+                f"<td style='color:{GREEN if te['esperanza_r'] > 0 else RED}'>{_r(te['esperanza_r'])} "
+                f"<span class='muted'>[{_r(te['ic_lo'])}, {_r(te['ic_hi'])}]</span></td>"
+                f"<td>{_pf(te['profit_factor'])}</td>"
+                f"<td>{te['r_total']:+.1f} R</td></tr>")
+        a, b = f["actual"]["test"], (f.get("ajustado") or {}).get("test")
+        if b and b["ops"] >= 15 and np.isfinite(b["esperanza_r"]) and b["esperanza_r"] > a["esperanza_r"] + 0.05 \
+                and b["ic_lo"] > a["ic_lo"]:
+            recs.append((f["horizonte_dias"], "ajustar", f["ajustado"]["param"], a, b))
+        else:
+            recs.append((f["horizonte_dias"], "mantener", f["actual"]["param"], a, b))
+    st.markdown("<div class='vl-box'><h4>Resultado de los cortes · entrenamiento vs prueba</h4><table class='vl-t'><tr>"
+                "<th>Horizonte</th><th>Fórmula</th><th>Ops. entr.</th><th>Esperanza entr.</th><th>Ops. prueba</th>"
+                "<th>Ganadoras</th><th>Acierto dirección</th><th>Esperanza prueba [IC 95 %]</th><th>Profit factor</th>"
+                "<th>R total</th></tr>" + "".join(filas_b) + "</table><div class='muted small'>R = múltiplos del riesgo "
+                "(1 R = distancia al stop). Esperanza = ganancia media por operación en R. Una operación que no toca ni "
+                "objetivo ni stop se cierra al final del horizonte a precio de mercado. Si objetivo y stop caen en la misma "
+                "vela se cuenta el stop.</div></div>", unsafe_allow_html=True)
+    txt = []
+    for hd, acc, pr, a, b in recs:
+        if acc == "ajustar":
+            txt.append(f"<li><b>{hd} d:</b> ajustar a {E(_fmt_p(pr))}: en prueba la esperanza pasa de {_r(a['esperanza_r'])} "
+                       f"a {_r(b['esperanza_r'])}.</li>")
+        else:
+            txt.append(f"<li><b>{hd} d:</b> mantener la fórmula actual; ninguna combinación la superó de forma consistente "
+                       "fuera de la muestra de ajuste.</li>")
+    st.markdown("<div class='vl-box'><h4>Recomendación</h4><ul style='margin:0 0 0 16px;padding:0'>" + "".join(txt)
+                + "</ul><div class='muted small' style='margin-top:6px'>Solo se recomienda un cambio si mejora la esperanza "
+                "en el tramo de prueba en al menos 0.05 R y también su peor caso (extremo bajo del intervalo).</div></div>",
+                unsafe_allow_html=True)
+    with st.expander("Detalle por activo y mejores combinaciones en entrenamiento", expanded=False):
+        for f in RB["horizontes"]:
+            st.markdown(f"**{f['horizonte_dias']} días**")
+            pa = f["actual"]["por_activo"]
+            pb = (f.get("ajustado") or {}).get("por_activo") or {}
+            st.markdown("<table class='vl-t'><tr><th>Activo</th><th>Actual · ops</th><th>Actual · esperanza</th>"
+                        "<th>Ajustada · ops</th><th>Ajustada · esperanza</th></tr>"
+                        + "".join(f"<tr><td class='l'>{k}</td><td>{v['ops']}</td><td>{_r(v['esperanza_r'])}</td>"
+                                  f"<td>{(pb.get(k) or {}).get('ops', '—')}</td><td>{_r((pb.get(k) or {}).get('esperanza_r'))}</td></tr>"
+                                  for k, v in pa.items()) + "</table>", unsafe_allow_html=True)
+            if f.get("top"):
+                st.markdown("<table class='vl-t'><tr><th>Top entrenamiento</th><th>Ops.</th><th>Esperanza</th></tr>"
+                            + "".join(f"<tr><td class='l'>{E(_fmt_p(t['param']))}</td><td>{t['train']['ops']}</td>"
+                                      f"<td>{_r(t['train']['esperanza_r'])}</td></tr>" for t in f["top"]) + "</table>",
+                            unsafe_allow_html=True)
+    st.stop()
 
 DEF = {"1h": (1, 3, 7, 14), "4h": (3, 7, 14, 30), "1D": (7, 14, 30, 60)}
 c1, c2, c3, c4 = st.columns([2.6, 1.1, 2, 1.1], vertical_alignment="bottom")
@@ -54,7 +170,6 @@ if st.session_state.get("vl_key") != key:
             "minuto la primera vez; el resultado queda guardado 6 horas.")
     st.stop()
 
-SETTINGS = st.session_state.get("technical_settings") or profiles.BASE_SETTINGS
 try:
     with st.spinner("Ejecutando la validación walk-forward…"):
         R = _evaluar(lista, tf, tuple(sorted(hz)),

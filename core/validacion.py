@@ -86,7 +86,7 @@ def puntajes(ticker: str, tf: str, provider: str = "yahoo", av_key: str = "", se
     raw = data.history_tf(ticker, tf, provider, av_key)
     d = compute_all(raw, settings)
     s = score_series(d)
-    out = pd.DataFrame({"close": d["Close"], "score": s})
+    out = pd.DataFrame({"close": d["Close"], "high": d["High"], "low": d["Low"], "atr": d["ATR"], "score": s})
     idx = out.index
     if getattr(idx, "tz", None) is not None:
         idx = idx.tz_convert("America/New_York").tz_localize(None)
