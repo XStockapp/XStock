@@ -58,6 +58,9 @@ def _niveles_tf(A: dict, rango: int) -> list[dict]:
     return out
 
 
+PESO_FUND_MAX, HORIZONTE_FUND = 0.4, 180  # el fundamental llega a su peso máximo a 6 meses
+
+
 def combinar(analisis: dict[str, dict], horizonte_dias: float, tf_operativa: str) -> dict:
     """analisis: {tf: resultado de full_analysis} de la tríada. Devuelve puntaje, alineación y niveles fuertes."""
     tfs = [t for t in triada(tf_operativa) if t in analisis]
@@ -68,7 +71,9 @@ def combinar(analisis: dict[str, dict], horizonte_dias: float, tf_operativa: str
     filas, score, num, den = [], 0.0, 0.0, 0.0
     for i, t in enumerate(tfs):
         A = analisis[t]
-        sc = float(A.get("combinado") or 0)
+        # puntaje TÉCNICO de cada temporalidad: el fundamental es el mismo en todas y, sumado en cada una,
+        # fabricaba una alineación falsa (las tres heredaban el mismo sesgo). Entra una sola vez, abajo.
+        sc = float((A.get("tech") or {}).get("score", A.get("combinado") or 0))
         con = ((A.get("metodo") or {}).get("consolidado") or {})
         adx = ((A.get("metodo") or {}).get("adx") or {})
         score += w[t] * sc
@@ -78,6 +83,11 @@ def combinar(analisis: dict[str, dict], horizonte_dias: float, tf_operativa: str
         filas.append({"tf": t, "rol": ROLES[min(i, 2)], "peso": w[t], "puntaje": sc,
                       "escenario": con.get("escenario_base") or ("Alcista" if s > 0 else "Bajista" if s < 0 else "Neutral"),
                       "adx": adx.get("adx"), "regimen": adx.get("regimen")})
+    # fundamental: una sola vez, con peso según el horizonte (casi nada en días, hasta 40 % a 6 meses o más)
+    fs = (A0.get("fscore") or {}).get("score")
+    w_f = PESO_FUND_MAX * min(1.0, horizonte_dias / HORIZONTE_FUND) if fs is not None else 0.0
+    tecnico = score
+    score = (1 - w_f) * tecnico + w_f * float(fs or 0)
     alineacion = abs(num) / den if den else 0.0  # 1 = las temporalidades con sesgo apuntan al mismo lado
     sentido = 1 if score >= 0 else -1
     # conflicto: peso de las temporalidades que van en contra del puntaje combinado
@@ -96,6 +106,7 @@ def combinar(analisis: dict[str, dict], horizonte_dias: float, tf_operativa: str
         estado = "Mixto"
     niveles = fuertes(analisis, tfs, spot, atr, w)
     return {"tfs": tfs, "pesos": w, "horizonte_dias": horizonte_dias, "filas": filas, "puntaje": score,
+            "puntaje_tecnico": tecnico, "fundamental": {"puntaje": fs, "peso": w_f},
             "alineacion": alineacion, "estado": estado, "peso_en_contra": peso_contra, "niveles": niveles,
             "limites": limites(niveles, spot, sentido, w, tfs), "spot": spot, "atr": atr}
 
@@ -164,12 +175,16 @@ def resumen_ia(R: dict) -> dict:
     """Bloque compacto para el JSON que recibe la IA."""
     L = R["limites"]
     return {"horizonte_dias": R["horizonte_dias"], "estado": R["estado"], "puntaje": round(R["puntaje"], 1),
+            "puntaje_tecnico": round(R.get("puntaje_tecnico", R["puntaje"]), 1),
+            "fundamental": {k: (round(v, 2) if isinstance(v, float) else v) for k, v in (R.get("fundamental") or {}).items()},
             "alineacion": round(R["alineacion"], 2),
             "temporalidades": [{"tf": f["tf"], "rol": f["rol"], "peso": round(f["peso"], 2), "puntaje": round(f["puntaje"], 1),
                                 "escenario": f["escenario"], "adx": f["adx"]} for f in R["filas"]],
             "objetivo": etiqueta(L["objetivo"]), "invalidacion": etiqueta(L["invalidacion"]),
             "segundo_nivel": etiqueta(L["segundo_nivel"]), "entrada": etiqueta(L["entrada"]),
-            "regla": "pesos según el horizonte: corto → temporalidades menores; largo → mayores (las menores solo para la entrada)"}
+            "regla": "pesos según el horizonte: corto → temporalidades menores; largo → mayores (las menores solo para la "
+                     "entrada). Cada temporalidad aporta solo su puntaje técnico; el fundamental entra una vez, con peso "
+                     "creciente con el horizonte (máx. 40 % a 6 meses)"}
 
 
 def lineas_grafico(R: dict, evitar: list[float] | None = None) -> list[dict]:
@@ -195,6 +210,12 @@ def tarjeta_html(R: dict, conf_base: float | None = None, conf_aj: float | None 
         f"<td class='n' style='color:{G if f['puntaje'] >= 15 else Rr if f['puntaje'] <= -15 else N}'>"
         f"{'▲' if f['puntaje'] >= 15 else '▼' if f['puntaje'] <= -15 else '◆'} {f['puntaje']:+.0f}</td>"
         f"<td class='n'>{'—' if f['adx'] is None else f['adx']}</td></tr>" for f in R["filas"])
+    FU = R.get("fundamental") or {}
+    if FU.get("puntaje") is not None:
+        fp = float(FU["puntaje"])
+        filas += (f"<tr><td>Fund.</td><td>Valor y calidad</td><td class='n'>{FU['peso'] * 100:.0f}%</td>"
+                  f"<td class='n' style='color:{G if fp >= 15 else Rr if fp <= -15 else N}'>"
+                  f"{'▲' if fp >= 15 else '▼' if fp <= -15 else '◆'} {fp:+.0f}</td><td class='n'>—</td></tr>")
     L = R["limites"]
     lim = "".join(
         f"<div class='x-dl2'><span>{E(t)}</span><b class='num'>{E(etiqueta(L.get(k)))}</b></div>"
@@ -204,7 +225,8 @@ def tarjeta_html(R: dict, conf_base: float | None = None, conf_aj: float | None 
             f"{conf_base:.0f}% → {conf_aj:.0f}%</b></div>" if conf_base is not None and conf_aj is not None else "")
     return (f"<div class='x-plan'><div class='x-ph'><span>Multi-temporalidad</span>"
             f"<span class='x-badge' style='color:{col};border-color:{col}66;background:{col}14'>{E(R['estado'])}</span></div>"
-            f"<div class='mp-s'>Horizonte {R['horizonte_dias']:g} días · pesos según el horizonte · puntaje "
+            f"<div class='mp-s'>Horizonte {R['horizonte_dias']:g} días · pesos según el horizonte · puntaje técnico "
+            f"<b class='num'>{R.get('puntaje_tecnico', R['puntaje']):+.0f}</b> · con fundamental "
             f"<b class='num'>{R['puntaje']:+.0f}</b> · alineación <b class='num'>{R['alineacion'] * 100:.0f}%</b></div>"
             f"<table class='x-mtf'><tr><th>TF</th><th>Rol</th><th>Peso</th><th>Puntaje</th><th>ADX</th></tr>{filas}</table>"
             f"{lim}{conf}</div>")

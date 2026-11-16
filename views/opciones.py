@@ -107,11 +107,16 @@ with left:
         st.button("Analizar Opción", type="primary", icon=":material/bolt:", width="stretch", key="ox_go")
 
 ticker = tk_in or "SPY"
-try:  # próxima publicación de resultados (riesgo de gap e IV crush)
+try:  # próxima publicación de resultados (riesgo de gap e IV crush) y vela de evento reciente
     from core import eventos as EV
     RES_PROX = EV.proximos_resultados(ticker, CAL.hoy_ny())
 except Exception:
     RES_PROX = None
+try:
+    _dd_ev = data.history_tf(ticker, "1D")
+    EV_REC = EV.avisos(EV.analizar(ticker, _dd_ev, dias=10), _dd_ev, None)
+except Exception:
+    EV_REC = []
 ss.ticker = ticker
 TF, RNG, MONEY = ss.get("opt_tf") or "1h", ss.get("opt_rng") or "1M", ss.get("opt_money") or "OTM"
 if is_crypto(ticker):
@@ -253,7 +258,7 @@ with top_b:
         ("VAH / VAL", f"{_m(VP.get('vah'), '')} / {_m(VP.get('val'), '')}"),
         ("Flujo neto opciones", f"{OP._fmt_m(FLUJO)} {'calls' if FLUJO >= 0 else 'puts'}"),
         ("PCR vol. / OI", f"{SM['pcr_volumen'] or '—'} / {SM['pcr_open_interest'] or '—'}"),
-        ("IV ATM", "—" if SM["iv_rank_or_avg_iv"] is None else f"{SM['iv_rank_or_avg_iv']:.1f}%"),
+        (f"IV ATM ({SM.get('iv_atm_dte', 30)}d)", "—" if SM["iv_rank_or_avg_iv"] is None else f"{SM['iv_rank_or_avg_iv']:.1f}%"),
         ("GEX / gamma flip", f"{SM['net_gamma_exposure_gex'].split(' ')[0]} / {_m(SM.get('gamma_flip_level'), '')}"),
         ("Max pain", _m(SM.get("max_pain"))),
         ("P/E forward", "—" if not MX.get("P/E forward") else f"{MX['P/E forward']:.1f}"),
@@ -419,7 +424,7 @@ def _explicacion(o: dict) -> str:
 
 
 def _riesgos_html(o):
-    rs = OP.riesgos(o, ESC, ADX, SM.get("gex_total") or 0, SM.get("gamma_flip_level"), spot, RES_PROX)
+    rs = EV_REC + OP.riesgos(o, ESC, ADX, SM.get("gex_total") or 0, SM.get("gamma_flip_level"), spot, RES_PROX)
     return ("<div class='ox-box'><h4>Riesgos y cuidados</h4><ul style='margin:0 0 0 16px;padding:0;font-size:12px'>"
             + "".join(f"<li>{E(x)}</li>" for x in rs) + "</ul></div>") if rs else ""
 
@@ -481,6 +486,9 @@ with right:
                                 unsafe_allow_html=True)
                     if MT:
                         st.markdown(MTF.tarjeta_html(MT), unsafe_allow_html=True)
+                        if (ss.get("profile") or {}).get("role") == "admin":
+                            st.page_link("views/validacion.py", label="Calibrar la fórmula multi-temporalidad (admin)",
+                                         icon=":material/query_stats:")
                     if AJ:
                         alt_ = AJ["alcanzable"]
                         st.markdown(

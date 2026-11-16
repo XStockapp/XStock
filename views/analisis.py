@@ -654,6 +654,9 @@ with right:
         _cb = _CON.get("confianza_global")
         _sp = 1 if str(plan.get("direccion", "")).startswith("COMPRA") else -1
         st.markdown(MTF.tarjeta_html(MT, _cb, MTF.confianza_ajustada(_cb, _sp, MT)), unsafe_allow_html=True)
+        if _is_admin:
+            st.page_link("views/validacion.py", label="Calibrar la fórmula multi-temporalidad (admin)",
+                         icon=":material/query_stats:")
     if EVS or EV_AV:
         _ev_rows = "".join(
             f"<tr><td class='num'>{e['fecha'][8:10]}/{e['fecha'][5:7]}/{e['fecha'][2:4]}</td>"
