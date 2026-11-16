@@ -728,7 +728,9 @@ if(h){{w.scrollTop=Math.max(0,h.offsetTop-w.clientHeight/2);}}</script></body></
 components.html(CHAIN_HTML, height=572, scrolling=False)
 st.caption("Fondo verde tenue = dentro del dinero. La fila que destella es el contrato seleccionado (OPT"
            f"{ss['opt_sel']}); en ámbar, los otros niveles y el análisis manual. PUT HEDGE / C-WALL = muros de mayor interés "
-           "abierto. Datos: Alpaca (" + INFO["feed"] + ") · " + INFO["timestamp_utc"])
+           "abierto. Datos: Alpaca (" + INFO["feed"] + ") · " + INFO["timestamp_utc"]
+           + ". IV y griegas recalculadas desde la prima (precio medio)"
+           + (f", subyacente implícito por paridad put-call {INFO['spot_paridad']:,.2f}" if INFO.get("spot_paridad") else "") + ".")
 
 with st.expander("Ver Mapa GEX / Muros", expanded=False, icon=":material/bar_chart:"):
     gx = GEXS

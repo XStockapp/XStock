@@ -62,6 +62,48 @@ def bs_greeks(s, k, t, iv, call: bool, r=TASA) -> dict:
     return {"delta": delta, "gamma": gamma, "theta": theta, "vega": vega}
 
 
+def _spot_paridad(d: pd.DataFrame, spot: float) -> float | None:
+    """Subyacente implícito en las primas por paridad put-call (C − P = S − K·e^(−rT)), mediana de los strikes cercanos
+    al dinero. Corrige un precio del subyacente desfasado frente a las cotizaciones de las opciones."""
+    c = d[d["type"] == "call"].set_index("strike")["mid"]
+    p = d[d["type"] == "put"].set_index("strike")["mid"]
+    ks = [k for k in c.index.intersection(p.index) if abs(k / spot - 1) <= 0.05 and c[k] > 0 and p[k] > 0]
+    if len(ks) < 2:
+        return None
+    t = max(float(d["dte"].iloc[0]), 0.25) / 365
+    est = float(np.median([c[k] - p[k] + k * math.exp(-TASA * t) for k in ks]))
+    return est if abs(est / spot - 1) <= 0.03 else None  # fuera de ±3 %: dato dudoso, se usa el spot
+
+
+def recalcular_iv(df: pd.DataFrame, spot: float) -> pd.DataFrame:
+    """IV y griegas COHERENTES con las primas: la IV del feed de Alpaca (indicativo) no cuadra con sus propias primas
+    (p. ej. AMD 550C: feed 80 %, prima → 69.5 %; en los puts al revés), lo que sesgaba los cálculos de los CALL al
+    alza. Se invierte Black-Scholes sobre el precio medio con el subyacente de la paridad put-call de cada vencimiento;
+    la IV del feed queda en `iv_feed` y solo se usa si la prima no permite invertir."""
+    if df.empty:
+        return df
+    df = df.copy()
+    df["iv_feed"] = df["iv"]
+    spots = {}
+    for ex, d in df.groupby("exp"):
+        spots[ex] = _spot_paridad(d, spot) or spot
+    for i, r in df.iterrows():
+        s_ = spots[r["exp"]]
+        t = max(r["dte"], 0.25) / 365
+        call = r["type"] == "call"
+        iv = implied_vol(r["mid"], s_, r["strike"], t, call) if pd.notna(r["mid"]) else np.nan
+        if pd.isna(iv) or iv <= 0.01 or iv >= 4.9:
+            iv = r["iv_feed"]
+        if pd.isna(iv):
+            continue
+        df.at[i, "iv"] = iv
+        for kk, vv in bs_greeks(spot, r["strike"], t, iv, call).items():
+            df.at[i, kk] = vv
+    ex0 = sorted(spots)[0] if spots else None
+    df.attrs["spot_paridad"] = None if ex0 is None or spots[ex0] == spot else round(float(spots[ex0]), 2)
+    return df
+
+
 def implied_vol(price, s, k, t, call: bool, r=TASA):
     """IV por bisección (robusta). NaN si el precio no es coherente."""
     if not (price and price > 0 and t > 0):
@@ -223,18 +265,8 @@ def chain(ticker: str, spot: float, dias: int = DIAS_MAX) -> tuple[pd.DataFrame,
         df[c] = pd.to_numeric(df[c], errors="coerce")
     df["dte"] = [(e - hoy).days for e in df["exp"]]
     df["mid"] = np.where((df["bid"] > 0) & (df["ask"] > 0), (df["bid"] + df["ask"]) / 2, df["last"])
-    # completar IV y griegas faltantes con Black-Scholes
-    for i in df.index[df["iv"].isna() | df["gamma"].isna() | df["delta"].isna()]:
-        r = df.loc[i]
-        t = max(r["dte"], 0.25) / 365
-        iv = r["iv"] if pd.notna(r["iv"]) else implied_vol(r["mid"], spot, r["strike"], t, r["type"] == "call")
-        if pd.isna(iv):
-            continue
-        g = bs_greeks(spot, r["strike"], t, iv, r["type"] == "call")
-        df.loc[i, "iv"] = iv
-        for kk, vv in g.items():
-            if pd.isna(df.loc[i, kk]):
-                df.loc[i, kk] = vv
+    df = recalcular_iv(df, spot)
+    info["spot_paridad"] = df.attrs.get("spot_paridad")
     df["volume"] = df["volume"].fillna(0)
     return df, info
 
