@@ -6,8 +6,9 @@ Reglas (en este orden de prioridad):
 2. LÍMITES FIJOS (no editables): una meta que exija más de 1.5σ o tenga menos de 15 % de probabilidad se bloquea.
 3. APETITO: probabilidad mínima y σ máxima que el usuario acepta.
 
-La clase se decide por el strike frente al precio (no por el delta): ATM = strike a ±1.5 % del precio (o el más
-cercano si ninguno cae en esa franja); ITM / OTM a cada lado según el tipo.
+La clase se mide en σ de la propia acción: ATM = strike a menos de 1/8 de desviación típica del precio a plazo al
+vencimiento (|ln(K/F)| ≤ 0.125·σ√T, ≈ delta 0.45–0.55); ITM / OTM a cada lado según el tipo. Si un vencimiento no tiene
+ningún strike en esa franja, su strike más cercano cuenta como ATM. Así «OTM» significa lo mismo en SPY que en AMD.
 
 Modo táctico (cierro antes, por ganancia): para cada contrato se simula el camino del precio en los días de
 retención, con la theta de cada paso y la IV implícita en la prima, sin ventaja direccional (la dirección la da el
@@ -24,7 +25,7 @@ import math
 
 import numpy as np
 
-from .options import TASA, bs_price
+from .options import TASA, Z_ATM, bs_price, clase_contrato, moneyness_z
 
 CLASES = ("ITM", "ATM", "OTM")
 DEFAULT = {"clases": ["ITM", "ATM", "OTM"], "estilo": "tactico", "meta": 50, "corte": 35, "dias": 5,
@@ -33,7 +34,6 @@ APETITO = {"conservador": {"p": 45, "s": 0.8, "txt": "Muy probable"},
            "equilibrado": {"p": 35, "s": 1.0, "txt": "Equilibrado"},
            "agresivo": {"p": 25, "s": 1.3, "txt": "Acepto apuestas"}}
 SIGMA_BLOQUEO, P_BLOQUEO = 1.5, 15.0  # límites fijos
-BANDA_ATM = 0.015
 N_SIM, SUB = 1500, 6
 
 
@@ -99,23 +99,24 @@ def dte_minimo(p: dict) -> int:
 
 
 # ------------------------------------------------------------------ clase de un contrato
-def clase(strike: float, spot: float, tipo: str, strikes_atm: set | None = None) -> str:
-    """ITM / ATM / OTM por el strike frente al precio. `strikes_atm`: strikes considerados ATM (la franja de ±1.5 %
-    o, si está vacía, el más cercano), calculados una vez por cadena con `strikes_atm()`."""
-    if strikes_atm is not None and strike in strikes_atm:
-        return "ATM"
-    if strikes_atm is None and abs(strike / spot - 1) <= BANDA_ATM:
-        return "ATM"
-    call = str(tipo).upper().startswith("C")
-    return ("ITM" if strike < spot else "OTM") if call else ("ITM" if strike > spot else "OTM")
+def clase(e: dict, spot: float) -> str:
+    """ITM / ATM / OTM del contrato evaluado `e` (strike, tipo, iv en %, dte), medido en σ de la acción."""
+    return clase_contrato(e["strike"], spot, e["tipo"], max(e["iv"] / 100, 0.01), e["dte"])
 
 
-def strikes_atm(strikes, spot: float) -> set:
-    ks = sorted({float(k) for k in strikes})
-    if not ks:
-        return set()
-    band = {k for k in ks if abs(k / spot - 1) <= BANDA_ATM}
-    return band or {min(ks, key=lambda k: abs(k - spot))}
+def _clases(evs: list[dict], spot: float) -> list[str]:
+    """Clase de cada contrato; un vencimiento sin strike ATM toma como ATM al más cercano en σ."""
+    cl = [clase(e, spot) for e in evs]
+    por_venc: dict = {}
+    for i, e in enumerate(evs):
+        por_venc.setdefault((e.get("exp_iso"), e["tipo"]), []).append(i)
+    for idx in por_venc.values():
+        if not any(cl[i] == "ATM" for i in idx):
+            j = min(idx, key=lambda i: abs(moneyness_z(evs[i]["strike"], spot, max(evs[i]["iv"] / 100, 0.01),
+                                                         evs[i]["dte"])))
+            if abs(moneyness_z(evs[j]["strike"], spot, max(evs[j]["iv"] / 100, 0.01), evs[j]["dte"])) <= 2 * Z_ATM:
+                cl[j] = "ATM"
+    return cl
 
 
 # ------------------------------------------------------------------ evaluación táctica
@@ -245,8 +246,7 @@ def avisos(t: dict, p: dict, e: dict, spot: float) -> list[str]:
 
 def marcar_clases(evs: list[dict], spot: float) -> list[dict]:
     """Solo la clase de cada contrato (modo Default y lado contrario): sin métricas tácticas."""
-    ks = strikes_atm([e["strike"] for e in evs], spot)
-    return [{**e, "clase": clase(e["strike"], spot, e["tipo"], ks)} for e in evs]
+    return [{**e, "clase": c} for e, c in zip(evs, _clases(evs, spot))]
 
 
 def motivos(evs: list[dict], money, ventana: int, tier: int, spot: float) -> dict:
@@ -265,11 +265,10 @@ def anotar(evs: list[dict], spot: float, p: dict, res_prox=None, max_sim: int = 
     """Añade a cada contrato `tac` (métricas), `tac_estado` y `tac_motivo`. Excluye por clase y por resultados
     (si el perfil los evita). Simula solo los `max_sim` mejores por probabilidad de tocar la meta."""
     from datetime import date
-    ks = strikes_atm([e["strike"] for e in evs], spot)
     out = []
-    for e in evs:
+    for e, cl in zip(evs, _clases(evs, spot)):
         e = dict(e)
-        e["clase"] = clase(e["strike"], spot, e["tipo"], ks)
+        e["clase"] = cl
         if e["clase"] not in p["clases"]:
             e["tac_estado"], e["tac_motivo"] = "fuera", f"{e['clase']} fuera de tus clases"
         elif p["resultados"] == "evitar" and res_prox and e.get("exp_iso") and res_prox <= date.fromisoformat(e["exp_iso"]):

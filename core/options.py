@@ -18,7 +18,62 @@ import pandas as pd
 import streamlit as st
 
 DIAS_MAX = 45
-RANGO_STRIKE = 0.15
+RANGO_STRIKE = 0.15  # solo respaldo, sin volatilidad conocida: la franja real se mide en σ (rango_strikes)
+# Escala de la propia acción: cada umbral se mide en desviaciones típicas (σ) de SU movimiento, no en % fijos.
+# Un 2 % OTM en SPY (IV 15 %) está tan lejos como un 7.7 % OTM en AMD (IV 68 %).
+Z_ATM = 0.125            # ATM: |ln(K/F)| ≤ 1/8 σ√T  (≈ delta 0.45–0.55)
+SIGMAS_CADENA = 2.5      # la cadena trae strikes hasta ±2.5σ del plazo visible
+RIESGO_PRIMA = (35, 75)  # % que se mueve la prima en un día normal: < 35 moderado · 35–75 alto · > 75 extremo
+
+
+def vol_realizada(cierres, n: int = 20) -> float | None:
+    """Volatilidad anualizada de los últimos n cierres diarios (desv. típica de los retornos log × √252)."""
+    c = pd.Series(cierres, dtype=float).dropna()
+    if len(c) < n + 1:
+        return None
+    r = np.log(c / c.shift(1)).dropna().tail(n)
+    v = float(r.std() * math.sqrt(252))
+    return v if np.isfinite(v) and v > 0 else None
+
+
+def rango_strikes(vol: float | None, dias: int) -> float:
+    """Media franja de strikes a descargar (en fracción del precio): ±2.5σ del plazo, entre 5 % y 45 %."""
+    if not vol:
+        return RANGO_STRIKE
+    return float(min(max(SIGMAS_CADENA * vol * math.sqrt(max(dias, 7) / 365), 0.05), 0.45))
+
+
+def sigma_precio(spot: float, iv: float, dias: float) -> float:
+    """1σ en dólares para `dias` de calendario con la volatilidad `iv` (decimal)."""
+    return float(spot * iv * math.sqrt(max(dias, 0.25) / 365))
+
+
+def moneyness_z(strike: float, spot: float, iv: float, dte: float) -> float:
+    """Distancia del strike al precio a plazo, en σ del vencimiento: ln(K/F) / (σ√T)."""
+    T = max(dte, 0.25) / 365
+    F = spot * math.exp(TASA * T)
+    return float(math.log(strike / F) / (max(iv, 0.01) * math.sqrt(T)))
+
+
+def clase_contrato(strike: float, spot: float, tipo: str, iv: float, dte: float) -> str:
+    """ITM / ATM / OTM medido en σ de la acción (no en % fijo). iv en decimal."""
+    z = moneyness_z(strike, spot, iv, dte)
+    if abs(z) <= Z_ATM:
+        return "ATM"
+    call = str(tipo).upper().startswith("C")
+    return ("OTM" if z > 0 else "ITM") if call else ("OTM" if z < 0 else "ITM")
+
+
+def riesgo_prima(e: dict, spot: float, crush: bool = False) -> dict:
+    """Riesgo del contrato: cuánto se mueve la prima en un día normal (|Δ|·S·σ_día / prima, en %). Integra plazo,
+    distancia al strike y volatilidad. Sube un nivel si hay riesgo de desplome de la IV (resultados antes del
+    vencimiento o IV muy por encima de la volatilidad real)."""
+    iv = max(e["iv"] / 100, 0.01)
+    mov = abs(e.get("delta") or 0) * spot * iv / math.sqrt(252) / max(e["prima"], 1e-6) * 100
+    nivel = 0 if mov < RIESGO_PRIMA[0] else 1 if mov < RIESGO_PRIMA[1] else 2
+    if crush:
+        nivel = min(nivel + 1, 2)
+    return {"mov_dia": float(mov), "nivel": ("Moderado", "Alto", "Extremo")[nivel], "crush": bool(crush)}
 TASA = 0.04
 MULT = 100
 _OCC = re.compile(r"^([A-Z.]+)(\d{6})([CP])(\d{8})$")
@@ -148,7 +203,7 @@ def _demo_chain(ticker: str, spot: float, hoy: date, dias: int = DIAS_MAX) -> pd
     """Cadena sintética coherente (Black-Scholes con sonrisa de volatilidad) para el modo demo."""
     rng = np.random.default_rng(sum(map(ord, ticker)))
     paso = 0.5 if spot < 60 else 1 if spot < 150 else 2.5 if spot < 400 else 5
-    ks = np.arange(math.floor(spot * (1 - RANGO_STRIKE) / paso) * paso, spot * (1 + RANGO_STRIKE) + paso, paso)
+    ks = np.arange(math.floor(spot * 0.6 / paso) * paso, spot * 1.45 + paso, paso)
     base_iv = 0.22 + (sum(map(ord, ticker)) % 20) / 100
     filas = []
     muro_c = ks[np.argmin(abs(ks - spot * 1.04))]
@@ -208,15 +263,18 @@ def _open_interest(ticker: str, gte: date, lte: date, kmin: float, kmax: float) 
 
 
 @st.cache_data(ttl=180, show_spinner=False)
-def chain(ticker: str, spot: float, dias: int = DIAS_MAX) -> tuple[pd.DataFrame, dict]:
-    """Cadena filtrada (≤ 45 días, ±15 % del spot) con griegas, IV, volumen e interés abierto.
-    Devuelve (df, info) con info = {fuente, feed, oi_disponible, timestamp_utc}."""
+def chain(ticker: str, spot: float, dias: int = DIAS_MAX, vol: float | None = None) -> tuple[pd.DataFrame, dict]:
+    """Cadena filtrada (≤ `dias` días) con griegas, IV, volumen e interés abierto. La franja de strikes se mide en σ
+    de la acción (`vol`, volatilidad anual realizada): ±2.5σ del plazo; sin `vol`, ±15 %.
+    Devuelve (df, info) con info = {fuente, feed, oi_disponible, timestamp_utc, rango_strikes}."""
     from zoneinfo import ZoneInfo
     hoy = datetime.now(ZoneInfo("America/New_York")).date()
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    kmin, kmax = spot * (1 - RANGO_STRIKE), spot * (1 + RANGO_STRIKE)
+    _r = rango_strikes(vol, dias)
+    kmin, kmax = spot * math.exp(-_r), spot * math.exp(_r)
     if _demo():
         df = _demo_chain(ticker, spot, hoy, dias)
+        df = df[(df["strike"] >= kmin) & (df["strike"] <= kmax)]
         info = {"fuente": "demo (sintética)", "feed": "demo", "oi_disponible": True, "timestamp_utc": ts}
     else:
         from . import alpaca
@@ -267,6 +325,7 @@ def chain(ticker: str, spot: float, dias: int = DIAS_MAX) -> tuple[pd.DataFrame,
     df["mid"] = np.where((df["bid"] > 0) & (df["ask"] > 0), (df["bid"] + df["ask"]) / 2, df["last"])
     df = recalcular_iv(df, spot)
     info["spot_paridad"] = df.attrs.get("spot_paridad")
+    info["rango_strikes"] = round(_r * 100, 1)
     df["volume"] = df["volume"].fillna(0)
     return df, info
 
@@ -314,7 +373,7 @@ def gex_por_strike(df: pd.DataFrame, spot: float) -> pd.Series:
     return g.groupby(d["strike"]).sum().sort_index()
 
 
-def gamma_flip(df: pd.DataFrame, spot: float) -> float | None:
+def gamma_flip(df: pd.DataFrame, spot: float, iv_ref: float | None = None) -> float | None:
     """Precio del subyacente donde el GEX total cambia de signo (recalculando gamma con la IV de cada contrato)."""
     d = df.dropna(subset=["iv", "oi"])
     d = d[(d["oi"] > 0) & (d["iv"] > 0)]
@@ -323,7 +382,8 @@ def gamma_flip(df: pd.DataFrame, spot: float) -> float | None:
     ks, ivs, ois = d["strike"].to_numpy(float), d["iv"].to_numpy(float), d["oi"].to_numpy(float)
     ts = np.maximum(d["dte"].to_numpy(float), 0.25) / 365
     sg = np.where(d["type"].to_numpy() == "call", 1.0, -1.0)
-    grid = np.linspace(spot * 0.85, spot * 1.15, 121)
+    _h = min(max(2.5 * (iv_ref or 0.3) * math.sqrt(30 / 365), 0.04), 0.40)  # ±2.5σ a 30 días
+    grid = np.linspace(spot * math.exp(-_h), spot * math.exp(_h), 121)
     tot = []
     for s in grid:
         sq = ivs * np.sqrt(ts)
@@ -381,14 +441,19 @@ def resumen(df: pd.DataFrame, spot: float) -> dict:
         "expected_move_usd": None if (em := expected_move(dn, spot)) is None else round(em, 2),
         "max_pain": max_pain(dn),
         "net_gamma_exposure_gex": f"{'Positivo' if tot >= 0 else 'Negativo'} ({_fmt_m(tot)})",
-        "gex_total": tot, "gamma_flip_level": None if (gf := gamma_flip(df, spot)) is None else round(gf, 2),
+        "gex_total": tot,
+        "gamma_flip_level": None if (gf := gamma_flip(df, spot, None if pd.isna(iv_atm) else float(iv_atm))) is None
+        else round(gf, 2),
         "pcr_volumen": round(float(pv / cv), 2) if cv else None,
         "pcr_open_interest": round(float(po / co), 2) if co else None,
     }
 
 
-def confluencias(walls: dict, vp: dict | None, spot: float, tol: float = 0.01) -> list[dict]:
-    """Muros de opciones que coinciden (±1 %) con nodos del VRVP (POC / VAH / VAL)."""
+def confluencias(walls: dict, vp: dict | None, spot: float, tol: float = 0.01, iv_ref: float | None = None) -> list[dict]:
+    """Muros de opciones que coinciden con nodos del VRVP (POC / VAH / VAL). Con `iv_ref` la tolerancia es ¼ del
+    movimiento de un día normal de la acción (mín. 0.3 %); sin ella, ±1 %."""
+    if iv_ref:
+        tol = max(0.25 * iv_ref / math.sqrt(252), 0.003)
     out = []
     if not vp:
         return out
@@ -432,7 +497,7 @@ def objetivo(spot, tipo: str, em: float | None, walls: dict, niveles: list | Non
     para un CALL, un soporte para un PUT), ignorando solo los pegados al precio (< ¼ del movimiento esperado) y acotado
     por el movimiento esperado. No se salta resistencias intermedias: si el precio debe atravesarlas, el objetivo es
     la primera, no la última."""
-    em = em or spot * 0.03
+    em = em or spot * 0.03  # respaldo: evaluar() pasa 0.85·σ del horizonte cuando no hay movimiento esperado
     ws = _candidatos_obj(spot, tipo, walls, niveles, extra)
     if tipo == "CALL":
         ws = [p for p in ws if p >= spot + DIST_MIN_EM * em]
@@ -478,7 +543,7 @@ def evaluar(r: pd.Series, spot: float, df: pd.DataFrame, walls: dict, gex: pd.Se
     dte = max(int(r["dte"]), 1)
     h = max(1.0, min(dte / 2, 10))
     resto = max(dte - h, 0.25) / 365
-    em = _em_venc(df, r["exp"], spot)
+    em = _em_venc(df, r["exp"], spot) or 0.85 * sigma_precio(spot, float(r["iv"]), max(float(r["dte"]), 1))
     if mtf:  # pesos multi-temporalidad para el vencimiento de ESTE contrato
         niveles = mtf.get("niveles") or niveles
     t_px = objetivo(spot, tipo, em, walls, niveles, (mtf or {}).get("objetivo"))
@@ -544,7 +609,7 @@ def contrato(df, exp, strike, tipo: str) -> pd.Series | None:
 
 
 def riesgos(e: dict, sesgo: str, adx: dict, gex_total: float, flip: float | None, spot: float,
-            resultados: date | None = None) -> list[str]:
+            resultados: date | None = None, vol_real: float | None = None) -> list[str]:
     """Cuidados a tener en cuenta para un contrato evaluado. `resultados`: próxima publicación de resultados."""
     out = []
     if resultados and e.get("exp_iso") and resultados <= date.fromisoformat(e["exp_iso"]):
@@ -592,7 +657,16 @@ def riesgos(e: dict, sesgo: str, adx: dict, gex_total: float, flip: float | None
         out.append(f"El precio está del lado opuesto del gamma flip ({flip:,.2f}) para esta dirección.")
     if adx.get("regimen") == "rango":
         out.append("ADX bajo 23 (rango): sin tendencia, el tiempo juega en contra del comprador de opciones.")
-    if e["iv"] >= 60:
+    if vol_real:  # la IV se juzga frente a cómo se mueve ESTA acción, no contra un número fijo
+        ratio = e["iv"] / 100 / vol_real
+        if ratio >= 1.3:
+            out.append(f"IV cara: {e['iv']:.0f} % frente a {vol_real * 100:.0f} % de volatilidad real (20 sesiones). "
+                       "Pagas más movimiento del que la acción está haciendo; si la IV vuelve a su nivel, la prima "
+                       "pierde valor aunque aciertes la dirección.")
+        elif ratio <= 0.8:
+            out.append(f"IV barata: {e['iv']:.0f} % frente a {vol_real * 100:.0f} % de volatilidad real (20 sesiones): "
+                       "el mercado cobra menos movimiento del que la acción viene haciendo.")
+    elif e["iv"] >= 60:
         out.append(f"IV elevada ({e['iv']:.0f} %): primas caras; una caída de volatilidad resta valor aunque acierte la dirección.")
     if e["roi_sin_movimiento"] < -15:
         out.append(f"Si el precio no se mueve en {e['horizonte_dias']:.0f} días, la prima perdería "
@@ -607,23 +681,18 @@ def riesgos(e: dict, sesgo: str, adx: dict, gex_total: float, flip: float | None
 # ------------------------------------------------------------------ terminal de opciones: OPT1 / OPT2 / OPT3
 RANGOS = {"2S": 14, "1M": 31, "3M": 92, "6M": 183}
 MONEY = {"ITM": (0.55, 0.85), "ATM": (0.40, 0.60), "OTM": (0.15, 0.45)}
-TIERS = {1: ("Óptimo", "equilibrio entre strike y vencimiento", None),
-         2: ("Agresivo", "vencimiento de 4 a 10 días", (4, 10)),
-         3: ("Ultra riesgo", "vencimiento de 0 a 3 días", (0, 3))}
+TIERS = {1: ("Plazo largo", "vencimiento de más de 10 días", None),
+         2: ("Plazo medio", "vencimiento de 4 a 10 días", (4, 10)),
+         3: ("Plazo corto", "vencimiento de 0 a 3 días", (0, 3))}
 
 
 def _money_ok(e: dict, money, spot: float) -> bool:
     if isinstance(money, (list, tuple, set)):  # clases del perfil (regla maestra), ya anotadas en e["clase"]
         return e.get("clase") in money and e["delta"] is not None and 0.05 <= abs(e["delta"]) <= 0.95
-    lo, hi = MONEY.get(money, (0.15, 0.85))
-    if e["delta"] is None or not (lo <= abs(e["delta"]) <= hi):
+    if e["delta"] is None or not (0.05 <= abs(e["delta"]) <= 0.95):
         return False
-    k, call = e["strike"], e["tipo"] == "CALL"
-    if money == "OTM":
-        return k > spot if call else k < spot
-    if money == "ITM":
-        return k < spot if call else k > spot
-    return abs(k / spot - 1) <= 0.025
+    # ITM / ATM / OTM medido en σ de la acción (misma regla que el perfil táctico)
+    return clase_contrato(e["strike"], spot, e["tipo"], max(e["iv"] / 100, 0.01), e["dte"]) == money
 
 
 def evaluar_todos(df, spot, tipo: str, walls, gex=None, niveles=None, mtf_fn=None) -> list[dict]:
