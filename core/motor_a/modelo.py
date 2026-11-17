@@ -60,9 +60,10 @@ def _purga(fechas: pd.DatetimeIndex, inicio: pd.Timestamp, H: int) -> pd.Timesta
     return previas[-(H + 2)] if len(previas) > H + 2 else previas[0]
 
 
-def walk_forward(panel: pd.DataFrame, H: int = 10, primer_anio: int | None = None, log=print) -> dict:
+def walk_forward(panel: pd.DataFrame, H: int = 10, primer_anio: int | None = None, log=print,
+                 cols: list[str] | None = None) -> dict:
     P = panel.dropna(subset=["y"])
-    cols = columnas_variables(P)
+    cols = cols or columnas_variables(P)
     fechas = P.index.get_level_values("fecha")
     anios = sorted(set(fechas.year))
     primer_anio = primer_anio or anios[min(3, len(anios) - 1)]  # al menos 3 años de entrenamiento
@@ -132,6 +133,21 @@ def resumir(O: pd.DataFrame, pliegues: list[dict], H: int) -> dict:
                       "SEÑAL REAL, PERO NO SUPERA AL MOMENTUM SIMPLE" if senal else "SIN VENTAJA DEMOSTRADA")
     r["criterio"] = (f"Señal: AUC ≥ {UMBRALES['auc']}, Brier skill > 0, IC t ≥ {UMBRALES['ic_t']} y AUC > 0.5 en al "
                      "menos el 75 % de los años. Ventaja: además supera al momentum simple en AUC y en Brier.")
+    return r
+
+
+def resumir_subconjunto(O: pd.DataFrame, tickers: list[str], H: int) -> dict | None:
+    """Mismas métricas, solo para un grupo de acciones (p. ej. las del usuario), con las predicciones fuera de muestra
+    del modelo general."""
+    S = O[O.index.get_level_values("ticker").isin(set(tickers))]
+    if len(S) < 500:
+        return None
+    pl = []
+    for Y, g in S.groupby(S.index.get_level_values("fecha").year):
+        y = g["y"].to_numpy()
+        pl.append({"anio": int(Y), "auc": _auc(y, g["p"].to_numpy()), "auc_momentum": _auc(y, g["p_mom"].to_numpy())})
+    r = resumir(S, pl, H)
+    r["acciones"] = int(S.index.get_level_values("ticker").nunique())
     return r
 
 

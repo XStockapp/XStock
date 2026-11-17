@@ -20,19 +20,55 @@ CACHE_DIR = Path(os.environ.get("MOTOR_A_DIR", "datos/motor_a"))
 MIN_SESIONES = 300
 
 
+# Bloques de variables (para medir cuánto aporta cada uno fuera de muestra). Se acumulan en este orden.
+BLOQUES = {
+    "Precio y volumen": lambda c: not c.startswith(("tam_", "res_", "corp_", "fund_", "mac_", "fomc_")),
+    "+ Tamaño": lambda c: c.startswith("tam_"),
+    "+ Resultados y eventos corporativos": lambda c: c.startswith(("res_", "corp_")),
+    "+ Fundamentales": lambda c: c.startswith("fund_"),
+    "+ Reserva Federal y tasas": lambda c: c.startswith(("mac_", "fomc_")),
+}
+
+
 def columnas_variables(panel: pd.DataFrame) -> list[str]:
     return [c for c in panel.columns if c not in NO_VARIABLES]
 
 
-def construir(barras: dict[str, pd.DataFrame], spy: pd.DataFrame, H: int = H_DEF, k: float = K_DEF) -> pd.DataFrame:
-    """barras: {ticker: OHLCV diario}. Devuelve el panel apilado e indexado por (fecha, ticker)."""
+def columnas_por_bloque(panel: pd.DataFrame) -> list[tuple[str, list[str]]]:
+    """[(nombre, columnas acumuladas)] solo para bloques con datos."""
+    cols = columnas_variables(panel)
+    out, acum = [], []
+    for nombre, f in BLOQUES.items():
+        nuevas = [c for c in cols if f(c) and panel[c].notna().mean() > 0.05]
+        if not nuevas:
+            continue
+        acum = acum + nuevas
+        out.append((nombre, list(acum)))
+    return out
+
+
+def construir(barras: dict[str, pd.DataFrame], spy: pd.DataFrame, H: int = H_DEF, k: float = K_DEF,
+              sec_datos: dict | None = None, macro: pd.DataFrame | None = None) -> pd.DataFrame:
+    """barras: {ticker: OHLCV diario}. sec_datos: {ticker: (presentaciones, hechos)}. macro: variables por fecha.
+    Devuelve el panel apilado e indexado por (fecha, ticker)."""
+    from . import macro as MC, sec as SE
     M = VA.de_mercado(spy)
+    if macro is not None:
+        M = M.join(macro, how="left")
+    rs = np.log(spy["Close"] / spy["Close"].shift())
+    spy_rs = rs / rs.rolling(20).std()
     partes = []
     for t, df in barras.items():
         df = df.dropna(subset=["Close"])
         if len(df) < MIN_SESIONES:
             continue
         X = VA.relativas(VA.por_accion(df), M)
+        if sec_datos and t in sec_datos:
+            pres, facts = sec_datos[t]
+            X = X.join(SE.variables(df, X["sigma_d"], pres, facts))
+        if macro is not None:
+            r = np.log(df["Close"] / df["Close"].shift()) / X["sigma_d"]
+            X = X.join(MC.sensibilidad_fomc(r, spy_rs.reindex(df.index)))
         Y = ET.triple_barrera(df, X["sigma_d"], H, k)
         Z = X.join(Y)
         Z["ticker"] = t
@@ -58,7 +94,7 @@ def descargar(tickers: list[str], desde_anios: float = 11.0, log=print) -> dict[
     return out
 
 
-def universo(nombre: str = "Finviz · Todo el mercado líquido (cap > $2B)", maximo: int = 800, log=print) -> list[str]:
+def universo(nombre: str = "Finviz · Todo el mercado líquido (cap > $2B)", maximo: int = 500, log=print) -> list[str]:
     """Acciones líquidas actuales (ordenadas por capitalización). Si Finviz falla, S&P 500 + Nasdaq 100."""
     try:
         from .. import finviz
@@ -69,6 +105,18 @@ def universo(nombre: str = "Finviz · Todo el mercado líquido (cap > $2B)", max
         log(f"  Finviz no respondió ({str(e)[:60]}); uso S&P 500 + Nasdaq 100")
     from .. import data
     return data.get_universe("S&P 500 + Nasdaq 100")[:maximo]
+
+
+def mis_acciones(universo_: list[str], n: int = 100) -> list[str]:
+    """Acciones del usuario: las de las watchlists guardadas en la app; si no hay, las n más grandes del universo."""
+    try:
+        from .. import db
+        t = sorted({r["ticker"] for r in db.backend().select("watchlist") if r.get("ticker")})
+        if len(t) >= 10:
+            return t
+    except Exception:
+        pass
+    return universo_[:n]
 
 
 def guardar(panel: pd.DataFrame, nombre: str = "panel.parquet") -> Path:
