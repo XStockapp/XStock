@@ -16,10 +16,39 @@ EVS = [_e(520, 49.09, .730, delta=.60), _e(535, 39.94, .699, delta=.54), _e(550,
        _e(575, 23.19, .676, delta=.38, spread=7.2)]
 
 
-def test_clase_por_strike():
-    ks = PO.strikes_atm([e["strike"] for e in EVS], S)
-    assert [PO.clase(e["strike"], S, "CALL", ks) for e in EVS] == ["ITM", "ATM", "OTM", "OTM"]
-    assert PO.clase(520, S, "PUT", ks) == "OTM" and PO.clase(550, S, "PUT", ks) == "ITM"
+def test_clase_por_strike_en_sigma():
+    # AMD (IV ~70 %, 26 días): ±1/8σ ≈ ±2.6 % → 535 ATM, 550 (+3 %) ya OTM
+    assert [e["clase"] for e in PO.marcar_clases(EVS, S)] == ["ITM", "ATM", "OTM", "OTM"]
+    assert PO.clase({**EVS[0], "tipo": "PUT"}, S) == "OTM" and PO.clase({**EVS[2], "tipo": "PUT"}, S) == "ITM"
+
+
+def test_misma_distancia_en_sigma_misma_clase():
+    # 2 % OTM en SPY (IV 15 %) vs 2 % en AMD (IV 68 %): en SPY es OTM, en AMD sigue siendo ATM
+    assert OP.clase_contrato(612, 600, "CALL", 0.15, 26) == "OTM"
+    assert OP.clase_contrato(204, 200, "CALL", 0.68, 26) == "ATM"
+    # misma distancia en σ → misma z
+    z1 = OP.moneyness_z(600 * 1.02, 600, 0.15, 26)
+    z2 = OP.moneyness_z(200 * (1.02 ** (0.68 / 0.15)), 200, 0.68, 26)
+    assert abs(z1 - z2) < 0.1
+
+
+def test_rango_y_riesgo_prima():
+    assert OP.rango_strikes(None, 30) == OP.RANGO_STRIKE
+    assert OP.rango_strikes(0.15, 30) < OP.rango_strikes(0.70, 30) <= 0.45
+    e = {"iv": 60.0, "delta": 0.30, "prima": 1.0}
+    r = OP.riesgo_prima(e, 100, False)  # 0.30·100·0.6/√252 /1 = 113 % → extremo
+    assert r["nivel"] == "Extremo"
+    lento = {"iv": 20.0, "delta": 0.55, "prima": 8.0}
+    assert OP.riesgo_prima(lento, 100)["nivel"] == "Moderado"
+    assert OP.riesgo_prima(lento, 100, crush=True)["nivel"] == "Alto"
+
+
+def test_iv_relativa_a_vol_real():
+    e = {"iv": 45.0, "delta": .5, "prima": 2, "exp_iso": "2026-12-11", "strike": 100, "tipo": "CALL", "dte": 20,
+         "spread_pct": 3, "dentro_mov_esperado": True, "bajo_muro_puts": False, "sobre_muro_calls": False, "feriados": 0, "objetivo": 104, "obstaculos": [], "oi": 500, "theta_dia_pct": 1.0}
+    caro = OP.riesgos(e, "Alcista", {}, 0, None, 100, None, vol_real=0.30)
+    assert any("IV cara" in x for x in caro)
+    assert not any("IV" in x and "cara" in x for x in OP.riesgos(e, "Alcista", {}, 0, None, 100, None, vol_real=0.44))
 
 
 def test_regla_maestra_solo_otm():

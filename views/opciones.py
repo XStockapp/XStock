@@ -6,6 +6,7 @@ Distribución:
   [option chain] [mapa GEX]
 """
 import html
+from datetime import date
 
 import numpy as np
 import pandas as pd
@@ -32,6 +33,14 @@ MONO = "'JetBrains Mono','Fira Code',monospace"
 def _diario(ticker):
     h = data.history_tf(ticker, "1D")
     return float(h["Close"].iloc[-1]), float(h["Close"].iloc[-2])
+
+
+def _vol_real(ticker, d, tf):
+    """Volatilidad realizada anual (20 sesiones diarias): escala propia de la acción para todos los umbrales."""
+    try:
+        return OP.vol_realizada(data.history_tf(ticker, "1D")["Close"])
+    except Exception:
+        return OP.vol_realizada(d["Close"]) if tf == "1D" else None
 
 
 def _m(v, pre="$", dec=2):
@@ -187,7 +196,9 @@ MONEY_TXT = " + ".join(MONEY)
 try:
     with st.spinner(f"Analizando {ticker}…"):
         A = analisis_usuario(ticker, TF, cfg, profiles.engine_settings(SETTINGS))
-        CH, INFO = OP.chain(ticker, round(float(A["df"]["Close"].iloc[-1]), 1), OP.RANGOS[RNG])
+        RV = _vol_real(ticker, A["df"], TF)
+        CH, INFO = OP.chain(ticker, round(float(A["df"]["Close"].iloc[-1]), 1), OP.RANGOS[RNG],
+                            None if RV is None else round(RV, 3))
 except Exception as e:
     st.error(f"No se pudo analizar {ticker}: {e}")
     st.stop()
@@ -214,7 +225,9 @@ except Exception:
 SM = OP.resumen(CH, spot)
 WALLS = OP.muros(CH)
 GEXS = OP.gex_por_strike(CH, spot)
-CONF = OP.confluencias(WALLS, VP, spot)
+IV_ATM = (SM.get("iv_rank_or_avg_iv") or 0) / 100 or RV or 0.3  # σ anual de referencia
+SIG_D = spot * IV_ATM / np.sqrt(252)  # 1σ diario en USD
+CONF = OP.confluencias(WALLS, VP, spot, iv_ref=IV_ATM)
 VENT = OP.RANGOS[RNG]
 INV = float(ss.get("opt_inv") or 0)
 BAL = PORT + INV
@@ -265,6 +278,22 @@ NIV = OP.niveles(EVS, spot, MONEY, VENT, INV, _FILTRO, _CLAVE)
 
 
 _VER_COL = {"VIABLE": GREEN, "EXIGENTE": AMBER, "ESPERAR": MUTED}
+
+
+def _crush(o) -> bool:
+    """Riesgo de desplome de la IV: resultados antes del vencimiento o IV ≥ 1.3× la volatilidad real."""
+    res = bool(RES_PROX and o.get("exp_iso") and RES_PROX <= date.fromisoformat(o["exp_iso"]))
+    return res or bool(RV and o["iv"] / 100 / RV >= 1.3)
+
+
+def _riesgo_html(o) -> str:
+    r = OP.riesgo_prima(o, spot, _crush(o))
+    col = {"Moderado": GREEN, "Alto": AMBER, "Extremo": RED}[r["nivel"]]
+    tip = (f"En un día normal (1σ) la prima se mueve ±{r['mov_dia']:.0f} %"
+           + (" · sube un nivel por riesgo de caída de la IV" if r["crush"] else ""))
+    return (f"<span title=\"{E(tip)}\" style=\"margin-left:8px;padding:1px 6px;border:1px solid {col};color:{col};"
+            f"border-radius:3px;font-size:11px;font-family:'JetBrains Mono',monospace\">Riesgo {r['nivel']} · "
+            f"±{r['mov_dia']:.0f}%/día</span>")
 
 
 def _badge(ver: str, size: int = 11) -> str:
@@ -479,6 +508,9 @@ with top_b:
         ("Flujo neto opciones", f"{OP._fmt_m(FLUJO)} {'calls' if FLUJO >= 0 else 'puts'}"),
         ("PCR vol. / OI", f"{SM['pcr_volumen'] or '—'} / {SM['pcr_open_interest'] or '—'}"),
         (f"IV ATM ({SM.get('iv_atm_dte', 30)}d)", "—" if SM["iv_rank_or_avg_iv"] is None else f"{SM['iv_rank_or_avg_iv']:.1f}%"),
+        ("Vol. real 20s · IV/VR", "—" if not RV else f"{RV * 100:.1f}% · "
+         + ("—" if SM["iv_rank_or_avg_iv"] is None else f"{SM['iv_rank_or_avg_iv'] / 100 / RV:.2f}×")),
+        ("1σ diario", f"±${SIG_D:,.2f} ({SIG_D / spot * 100:.1f}%)"),
         ("GEX / gamma flip", f"{SM['net_gamma_exposure_gex'].split(' ')[0]} / {_m(SM.get('gamma_flip_level'), '')}"),
         ("Max pain", _m(SM.get("max_pain"))),
         ("P/E forward", "—" if not MX.get("P/E forward") else f"{MX['P/E forward']:.1f}"),
@@ -522,7 +554,7 @@ with top_c:
             st.markdown(
                 f"<div class='ox-st'><span class='k' style='color:{colr}'>${O['strike']:g} {O['tipo'][0]}</span>"
                 f"<span class='v'>{E(O['vencimiento'])} · {O['dte']} DTE · {O['sesiones_venc']} ses.</span>"
-                f"<span class='muted small'>{nom} · {dsc}</span></div>"
+                f"<span class='muted small'>{nom} · {dsc}</span>{_riesgo_html(O)}</div>"
                 f"<div class='ox-g3'><div><span>Prima</span><b>${O['prima']:,.2f}</b></div>"
                 f"<div><span>Costo total</span><b>${O['costo']:,.0f}</b></div>"
                 f"<div><span>R/R</span><b>1:{O['rr']:.1f}</b></div><div><span>Breakeven</span><b>${O['breakeven']:,.2f}</b></div>"
@@ -560,13 +592,15 @@ with left:
             ok_m = m_k > spot if m_tipo == "CALL" else m_k < spot
         elif m_money == "ITM":
             ok_m = m_k < spot if m_tipo == "CALL" else m_k > spot
-        else:
-            ok_m = abs(m_k / spot - 1) <= 0.025
+        else:  # ATM medido en σ de la acción (±1/8 σ del plazo)
+            ok_m = abs(OP.moneyness_z(m_k, spot, IV_ATM, max(m_d, 1))) <= OP.Z_ATM
         if not ok_m:
             regla = {("CALL", "OTM"): "mayor", ("CALL", "ITM"): "menor", ("PUT", "OTM"): "menor", ("PUT", "ITM"): "mayor"}
             msg = (f"Para {m_tipo}/{m_money}, el strike debe ser {regla[(m_tipo, m_money)]} al precio del subyacente "
                    f"({spot:,.2f} USD)." if m_money != "ATM" else
-                   f"Para ATM, el strike debe estar a ±2.5% del precio del subyacente ({spot:,.2f} USD).")
+                   f"Para ATM, el strike debe estar a ±1/8 σ del precio a plazo: hoy ±"
+                   f"{OP.Z_ATM * IV_ATM * np.sqrt(max(m_d, 1) / 365) * 100:.1f}% ({spot:,.2f} USD) con IV "
+                   f"{IV_ATM * 100:.0f}% y {max(m_d, 1)} días.")
             st.markdown(f"<div class='ox-red'><b>ALERTA:</b> {E(msg)}</div>", unsafe_allow_html=True)
         if st.button("Analizar Opción", icon=":material/bolt:", width="stretch", key="ox_man_go", disabled=not ok_m,
                      type="primary"):
@@ -586,10 +620,10 @@ if MT and MT["limites"].get("invalidacion"):
     stop_ = MT["limites"]["invalidacion"]["precio"]
 if LADO == "CALL":
     pw_ = [w["strike"] for w in WALLS["put_walls"] if w["strike"] < spot]
-    disparo = max([x for x in [stop_] + pw_ if x is not None and x < spot] or [spot * 0.97])
+    disparo = max([x for x in [stop_] + pw_ if x is not None and x < spot] or [spot - 1.5 * SIG_D])
 else:
     cw_ = [w["strike"] for w in WALLS["call_walls"] if w["strike"] > spot]
-    disparo = min([x for x in [stop_] + cw_ if x is not None and x > spot] or [spot * 1.03])
+    disparo = min([x for x in [stop_] + cw_ if x is not None and x > spot] or [spot + 1.5 * SIG_D])
 ALT = OP.contraria(EVS_OP, spot, MONEY, VENT, disparo, OPUESTO)
 ALT2 = None
 if EVS_OP and ALT:
@@ -660,7 +694,7 @@ def _explicacion(o: dict) -> str:
 
 def _riesgos_html(o):
     rs = ((PO.avisos(o["tac"], PERFIL, o, spot) if MODO_PERFIL and o.get("tac") else []) + EV_REC
-          + OP.riesgos(o, ESC, ADX, SM.get("gex_total") or 0, SM.get("gamma_flip_level"), spot, RES_PROX))
+          + OP.riesgos(o, ESC, ADX, SM.get("gex_total") or 0, SM.get("gamma_flip_level"), spot, RES_PROX, RV))
     return ("<div class='ox-box'><h4>Riesgos y cuidados</h4><ul style='margin:0 0 0 16px;padding:0;font-size:12px'>"
             + "".join(f"<li>{E(x)}</li>" for x in rs) + "</ul></div>") if rs else ""
 
@@ -673,7 +707,8 @@ def _graficos(principal: dict, extra=()):
         cs.append({"nombre": n, "tipo": c["tipo"], "strike": c["strike"], "iv": c["iv"] / 100, "prima": c["prima"],
                    "dte": max(c["dte"], 1), "color": col})
     ks_ = [c["strike"] for c in cs] + [principal["objetivo"], spot]
-    lo, hi = min(min(ks_), spot * 0.93), max(max(ks_), spot * 1.07)
+    _r = 2.5 * IV_ATM * np.sqrt(max(principal["dte"], 5) / 365)  # ±2.5σ del plazo del contrato
+    lo, hi = min(min(ks_), spot * np.exp(-_r)), max(max(ks_), spot * np.exp(_r))
     pad = (hi - lo) * 0.06
     niv = ([{"v": w["strike"], "t": f"C-wall {w['strike']:g}", "c": RED} for w in WALLS["call_walls"]]
            + [{"v": w["strike"], "t": f"P-wall {w['strike']:g}", "c": GREEN} for w in WALLS["put_walls"]])
@@ -843,7 +878,7 @@ paso_k = (ks[1] - ks[0]) if len(ks) > 1 else 1
 marcas = {}  # (tipo, strike) -> (etiqueta, clase)
 for t, v in NIV.items():
     if v and v["exp"] == sel_exp:
-        marcas[(v["tipo"], v["strike"])] = ({1: "RECOMENDADO · OPT1", 2: "AGRESIVO · OPT2", 3: "ULTRA RISK · OPT3"}[t],
+        marcas[(v["tipo"], v["strike"])] = ({1: "PLAZO LARGO · OPT1", 2: "PLAZO MEDIO · OPT2", 3: "PLAZO CORTO · OPT3"}[t],
                                              "hot" if t == ss["opt_sel"] else "t2")
 if MAN and MAN["exp"] == sel_exp:
     marcas.setdefault((MAN["tipo"], MAN["strike"]), ("MANUAL", "sim"))
