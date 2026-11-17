@@ -3,6 +3,8 @@
 # Secrets del repositorio necesarios:
 #   ALPACA_API_KEY, ALPACA_SECRET_KEY   → descarga de barras (plan Basic sirve)
 #   SUPABASE_URL, SUPABASE_SERVICE_KEY  → sube el modelo y el reporte a Supabase Storage (ya existen)
+#   SEC_USER_AGENT                      → «Nombre correo» que la SEC exige para sus datos (tamaño, resultados,
+#                                          adquisiciones, fundamentales). Sin él, esos bloques se omiten.
 name: Motor A
 
 on:
@@ -12,15 +14,18 @@ on:
     inputs:
       max:
         description: "Máximo de acciones del universo"
-        default: "800"
+        default: "500"
       H:
         description: "Horizonte en sesiones"
         default: "10"
+      mis:
+        description: "Tus acciones (coma). Vacío = las de las watchlists de la app"
+        default: ""
 
 jobs:
   entrenar:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 170
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -35,11 +40,12 @@ jobs:
           ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
         run: |
           if [ -z "$ALPACA_API_KEY" ] || [ -z "$ALPACA_SECRET_KEY" ]; then
             echo "Faltan los secrets ALPACA_API_KEY / ALPACA_SECRET_KEY del repositorio"; exit 1
           fi
-          python tools/entrenar_motor_a.py --max "${{ github.event.inputs.max || '800' }}" --H "${{ github.event.inputs.H || '10' }}"
+          python tools/entrenar_motor_a.py --max "${{ github.event.inputs.max || '500' }}" --H "${{ github.event.inputs.H || '10' }}" --mis "${{ github.event.inputs.mis }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -104,6 +104,31 @@ with c2:
                 + "".join(f"<tr><td class='l'>{E(i['variable'])}</td><td>{i['peso'] * 100:.1f}%</td></tr>" for i in imp[:10])
                 + "</table></div>", unsafe_allow_html=True)
 
+BL = REP.get("bloques") or []
+if BL:
+    st.markdown("<div class='ma-box'><h4>Qué aporta cada bloque (fuera de muestra)</h4><div class='muted small'>Se agregan "
+                "en orden; un bloque entra al modelo final solo si mejora a la vez el AUC y el Brier skill.</div>"
+                "<table class='ma-t'><tr><th>Bloque</th><th>Variables</th><th>AUC</th><th>Brier skill</th><th>IC t</th>"
+                "<th>Decisión</th></tr>" + "".join(
+                    f"<tr><td class='l'>{E(b['bloque'])}</td><td>{b['variables']}</td><td>{_f(b['auc'], '{:.4f}')}</td>"
+                    f"<td>{_f(b['bss'], '{:+.4f}')}</td><td>{_f(b['ic_t'], '{:.1f}')}</td>"
+                    f"<td style='color:{GREEN if b['entra'] else MUTED}'>{'Entra' if b['entra'] else 'No entra'}</td></tr>"
+                    for b in BL) + "</table></div>", unsafe_allow_html=True)
+MA = REP.get("mis_acciones")
+if MA:
+    mcol = GREEN if MA["veredicto"].startswith("VENTAJA") else AMBER if MA["veredicto"].startswith("SEÑAL") else RED
+    st.markdown(
+        f"<div class='ma-box'><h4>En tus acciones ({MA['acciones']})</h4>"
+        f"<span class='ma-v' style='color:{mcol};border-color:{mcol}'>{E(MA['veredicto'])}</span>"
+        f"<div class='ma-g' style='margin-top:8px'>"
+        f"<div><span>AUC modelo · momentum</span><b>{_f(MA['auc'])} · {_f(MA['auc_momentum'])}</b></div>"
+        f"<div><span>Brier skill</span><b>{_f(MA['bss'], '{:+.4f}')}</b></div>"
+        f"<div><span>IC (t)</span><b>{_f(MA['ic_medio'], '{:+.3f}')} ({_f(MA['ic_t'], '{:.1f}')})</b></div>"
+        f"<div><span>Acierto decil alto · bajo</span><b>{MA['decil_alto']['real'] * 100:.1f}% · "
+        f"{MA['decil_bajo']['real'] * 100:.1f}%</b></div></div>"
+        f"<div class='muted small'>{E(', '.join(REP.get('mis_acciones_lista', [])[:60]))}</div></div>",
+        unsafe_allow_html=True)
+
 filas = "".join(
     f"<tr><td class='l'>{d['anio']}</td><td>{d['n_test']:,}</td><td>{d['tasa_base'] * 100:.1f}%</td>"
     f"<td style='color:{GREEN if d['auc'] > max(0.5, d['auc_momentum']) else RED if d['auc'] < 0.5 else '#E6EDF3'}'>{_f(d['auc'])}</td>"
