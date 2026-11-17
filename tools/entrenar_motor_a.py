@@ -40,11 +40,12 @@ def main():
         mis = list(barras)[:10]
     else:
         tickers = DS.universo(maximo=a.max)
-        print(f"Universo: {len(tickers)} acciones")
-        barras = DS.descargar(tickers + ["SPY"])
+        mis = [t.strip().upper() for t in a.mis.split(",") if t.strip()] or DS.mis_acciones(tickers)
+        extra = [t for t in mis if t not in tickers]  # tus acciones se descargan siempre
+        print(f"Universo: {len(tickers)} acciones líquidas + {len(extra)} tuyas fuera de él")
+        barras = DS.descargar(tickers + extra + ["SPY"])
         spy = barras.pop("SPY")
         fuente = "Alpaca SIP diario ajustado"
-        mis = [t.strip().upper() for t in a.mis.split(",") if t.strip()] or DS.mis_acciones(tickers)
         if os.environ.get(SE.UA_ENV):
             print("SEC EDGAR (tamaño, resultados, adquisiciones, fundamentales)…")
             sec_datos = SE.descargar(list(barras))
