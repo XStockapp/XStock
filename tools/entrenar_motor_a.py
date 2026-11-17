@@ -27,7 +27,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--max", type=int, default=500, help="máximo de acciones del universo")
     ap.add_argument("--mis", default="", help="tus acciones separadas por coma (por defecto: watchlists de la app)")
-    ap.add_argument("--H", type=int, default=DS.H_DEF, help="horizonte en sesiones")
+    ap.add_argument("--experimentos", default="direccion:10",
+                    help="lista objetivo:H separada por coma, p. ej. direccion:3,direccion:20,movimiento:10")
     ap.add_argument("--k", type=float, default=DS.K_DEF, help="barreras a ±k·σ·√H")
     ap.add_argument("--sintetico", type=float, default=None, help="usar mercado sintético con esta señal")
     ap.add_argument("--sin-subir", action="store_true")
@@ -56,17 +57,30 @@ def main():
         if dgs2 is not None:
             fuente += " + FRED (tasa a 2 años)"
     macro = MC.variables(spy, dgs2)
-    print("Construyendo variables y etiquetas…")
-    panel = DS.construir(barras, spy, a.H, a.k, sec_datos, macro)
-    if a.sintetico is None:
-        DS.guardar(panel)
-    print(f"Panel: {len(panel):,} filas · {panel.index.get_level_values('ticker').nunique()} acciones")
+    resumen = []
+    for exp in [e.strip() for e in a.experimentos.split(",") if e.strip()]:
+        obj, H = exp.split(":")
+        R = experimento(barras, spy, sec_datos, macro, obj, int(H), a, fuente, mis, t0)
+        resumen.append((obj, int(H), R))
+    print("\n==================== RESUMEN ====================")
+    for obj, H, R in resumen:
+        print(f"{obj:<10} H={H:<3} AUC {R['auc']:.4f} (referencia {R['auc_momentum']:.4f}) · BSS {R['bss']:+.4f} · "
+              f"IC {R['ic_medio']:+.3f} (t={R['ic_t']:.1f}) · {R['veredicto']}")
+    return resumen
+
+
+def experimento(barras, spy, sec_datos, macro, obj, H, a, fuente, mis, t0):
+    ref, ref_nombre = MO.REFERENCIAS[obj]
+    print(f"\n========== {obj.upper()} · H = {H} sesiones · {DS.OBJETIVOS[obj]} ==========")
+    panel = DS.construir(barras, spy, H, a.k, sec_datos, macro, obj)
+    print(f"Panel: {len(panel):,} filas · {panel.index.get_level_values('ticker').nunique()} acciones · "
+          f"tasa real {panel['y'].mean():.1%}")
     # ---- medición por bloques: un bloque entra solo si mejora fuera de muestra
     bloques, aceptadas, wf, mejor = [], None, None, None
     for nombre, cols in DS.columnas_por_bloque(panel):
         prueba = cols if aceptadas is None else aceptadas + [c for c in cols if c not in aceptadas]
         print(f"Validación walk-forward · {nombre} ({len(prueba)} variables):")
-        w = MO.walk_forward(panel, a.H, cols=prueba)
+        w = MO.walk_forward(panel, H, cols=prueba, ref=ref)
         R0 = w["resumen"]
         entra = mejor is None or (R0["auc"] > mejor["auc"] + 0.001 and R0["bss"] >= mejor["bss"])
         bloques.append({"bloque": nombre, "variables": len(prueba), "auc": R0["auc"], "bss": R0["bss"],
@@ -76,30 +90,36 @@ def main():
         print(f"  → {'entra' if entra else 'NO entra (no mejora fuera de muestra)'}")
     R = wf["resumen"]
     arboles = int(sorted(d["arboles"] for d in wf["pliegues"])[len(wf["pliegues"]) // 2])
+    principal = (obj, H) == ("direccion", 10)
     final = MO.modelo_final(panel, wf["columnas"], arboles)
     fechas = panel.index.get_level_values("fecha")
     reporte = {
         "generado_utc": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"),
-        "fuente": fuente, "H": a.H, "k": a.k,
+        "fuente": fuente, "objetivo": obj, "pregunta": DS.OBJETIVOS[obj], "referencia": ref_nombre, "H": H, "k": a.k,
         "acciones": int(panel.index.get_level_values("ticker").nunique()), "filas": int(len(panel)),
         "desde": str(fechas.min().date()), "hasta": str(fechas.max().date()),
-        "variables": wf["columnas"], "arboles_final": arboles,
+        "variables": wf["columnas"], "arboles_final": arboles, "arboles_por_anio": [d["arboles"] for d in wf["pliegues"]],
         "resumen": R, "pliegues": wf["pliegues"], "bloques": bloques,
-        "mis_acciones": MO.resumir_subconjunto(wf["oos"], mis, a.H), "mis_acciones_lista": mis,
+        "mis_acciones": MO.resumir_subconjunto(wf["oos"], mis, H), "mis_acciones_lista": mis,
         "importancia": MO.importancia(final, wf["columnas"]),
         "calibracion": MO.calibrador(wf["oos"]),
         "segundos": round(time.time() - t0, 1),
         "limitaciones": ["Universo actual (sesgo de supervivencia): faltan acciones que salieron del mercado desde 2016.",
                          "Sin variables de opciones (historia insuficiente en Alpaca). Sin CPI ni empleo todavía.",
+                         "Movimiento: la referencia es la volatilidad realizada reciente, no la IV (no hay IV histórica "
+                         "gratuita desde 2016); superar a la volatilidad realizada no implica superar a la IV.",
                          "Los bloques se eligen con los mismos datos fuera de muestra con que se miden (5 decisiones): "
                          "pequeño sesgo optimista; por eso un bloque solo entra si mejora AUC y Brier a la vez.",
                          "Fundamentales: primera cifra publicada en la SEC, usable desde el día hábil siguiente.",
                          "Etiquetas con máximos/mínimos diarios: si ambas barreras se tocan el mismo día decide el cierre."],
     }
-    AR.guardar_local(reporte, final.model_to_string())
-    subido = False if (a.sin_subir or a.sintetico is not None) else AR.subir(reporte, final.model_to_string())
-    print(f"\nVeredicto: {R['veredicto']}  ·  AUC {R['auc']:.3f} (momentum {R['auc_momentum']:.3f}, azar 0.500)"
+    nombre = AR.nombre_reporte(obj, H)
+    modelo_txt = final.model_to_string() if principal else None
+    AR.guardar_local(reporte, modelo_txt, nombre)
+    subido = False if (a.sin_subir or a.sintetico is not None) else AR.subir(reporte, modelo_txt, nombre)
+    print(f"\nVeredicto: {R['veredicto']}  ·  AUC {R['auc']:.3f} ({ref_nombre} {R['auc_momentum']:.3f}, azar 0.500)"
           f"  ·  Brier skill {R['bss']:+.4f}  ·  IC {R['ic_medio']:+.3f} (t={R['ic_t']:.1f})")
+    print(f"Árboles por año: {reporte['arboles_por_anio']}")
     for b in bloques:
         print(f"  {b['bloque']:<38} AUC {b['auc']:.4f} · BSS {b['bss']:+.4f} · {'entra' if b['entra'] else 'no entra'}")
     if reporte["mis_acciones"]:
@@ -107,7 +127,9 @@ def main():
         print(f"Tus acciones ({m['acciones']}): AUC {m['auc']:.3f} · BSS {m['bss']:+.4f} · {m['veredicto']}")
     print(f"Decil alto: acierto {R['decil_alto']['real']:.1%} · decil bajo {R['decil_bajo']['real']:.1%}"
           f" · tasa real {R['tasa_real']:.1%}")
-    print("Reporte subido a Supabase Storage." if subido else f"Reporte guardado en {DS.CACHE_DIR}/.")
+    for i in reporte["importancia"][:6]:
+        print(f"    {i['variable']:<28}{i['peso'] * 100:5.1f}%")
+    print(f"{nombre} subido a Supabase Storage." if subido else f"{nombre} guardado en {DS.CACHE_DIR}/.")
     return R
 
 

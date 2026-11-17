@@ -47,10 +47,17 @@ def columnas_por_bloque(panel: pd.DataFrame) -> list[tuple[str, list[str]]]:
     return out
 
 
+OBJETIVOS = {
+    "direccion": "¿toca +kσ√H antes que −kσ√H?",
+    "movimiento": "¿se mueve al menos kσ√H (en cualquier dirección) dentro de H sesiones?",
+}
+
+
 def construir(barras: dict[str, pd.DataFrame], spy: pd.DataFrame, H: int = H_DEF, k: float = K_DEF,
-              sec_datos: dict | None = None, macro: pd.DataFrame | None = None) -> pd.DataFrame:
+              sec_datos: dict | None = None, macro: pd.DataFrame | None = None,
+              objetivo: str = "direccion") -> pd.DataFrame:
     """barras: {ticker: OHLCV diario}. sec_datos: {ticker: (presentaciones, hechos)}. macro: variables por fecha.
-    Devuelve el panel apilado e indexado por (fecha, ticker)."""
+    objetivo: "direccion" o "movimiento" (ver OBJETIVOS). Devuelve el panel indexado por (fecha, ticker)."""
     from . import macro as MC, sec as SE
     M = VA.de_mercado(spy)
     if macro is not None:
@@ -70,6 +77,9 @@ def construir(barras: dict[str, pd.DataFrame], spy: pd.DataFrame, H: int = H_DEF
             r = np.log(df["Close"] / df["Close"].shift()) / X["sigma_d"]
             X = X.join(MC.sensibilidad_fomc(r, spy_rs.reindex(df.index)))
         Y = ET.triple_barrera(df, X["sigma_d"], H, k)
+        if objetivo == "movimiento":
+            Y["y"] = (Y["barrera"] != 0).astype(float).where(Y["barrera"].notna())
+            Y["ret_h_sigma"] = Y["ret_h_sigma"].abs()  # para el IC: tamaño del movimiento, no su signo
         Z = X.join(Y)
         Z["ticker"] = t
         partes.append(Z)

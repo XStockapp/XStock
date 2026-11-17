@@ -29,20 +29,25 @@ def _sb():
     return url, h
 
 
-def guardar_local(reporte: dict, modelo_txt: str | None) -> None:
+def nombre_reporte(objetivo: str, H: int) -> str:
+    """El experimento principal (dirección a 10 sesiones) es «reporte.json»; los demás llevan sufijo."""
+    return "reporte.json" if (objetivo, H) == ("direccion", 10) else f"reporte_{objetivo}_H{H}.json"
+
+
+def guardar_local(reporte: dict, modelo_txt: str | None, nombre: str = "reporte.json") -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    (CACHE_DIR / "reporte.json").write_text(json.dumps(reporte, ensure_ascii=False, indent=1, default=float))
+    (CACHE_DIR / nombre).write_text(json.dumps(reporte, ensure_ascii=False, indent=1, default=float))
     if modelo_txt:
         (CACHE_DIR / "modelo.txt").write_text(modelo_txt)
 
 
-def subir(reporte: dict, modelo_txt: str | None) -> bool:
+def subir(reporte: dict, modelo_txt: str | None, nombre: str = "reporte.json") -> bool:
     url, h = _sb()
     if not url:
         return False
     requests.post(f"{url}/storage/v1/bucket", headers=h, json={"id": BUCKET, "name": BUCKET, "public": False},
                   timeout=30)  # ya existe → 400/409, no importa
-    datos = {"reporte.json": (json.dumps(reporte, ensure_ascii=False, default=float).encode(), "application/json")}
+    datos = {nombre: (json.dumps(reporte, ensure_ascii=False, default=float).encode(), "application/json")}
     if modelo_txt:
         datos["modelo.txt"] = (modelo_txt.encode(), "text/plain")
     ok = True
@@ -53,15 +58,32 @@ def subir(reporte: dict, modelo_txt: str | None) -> bool:
     return ok
 
 
-def leer_reporte() -> dict | None:
+def listar() -> list[str]:
+    """Nombres de los reportes disponibles (reporte.json primero)."""
+    nombres = set()
+    url, h = _sb()
+    if url:
+        try:
+            r = requests.post(f"{url}/storage/v1/object/list/{BUCKET}", headers=h, timeout=20,
+                              json={"prefix": PREFIJO + "/", "limit": 100})
+            if r.status_code == 200:
+                nombres |= {x["name"] for x in r.json() if x.get("name", "").startswith("reporte")}
+        except Exception:
+            pass
+    if CACHE_DIR.exists():
+        nombres |= {p.name for p in CACHE_DIR.glob("reporte*.json")}
+    return sorted(nombres, key=lambda n: (n != "reporte.json", n))
+
+
+def leer_reporte(nombre: str = "reporte.json") -> dict | None:
     """Reporte más reciente: primero Supabase Storage, si no el disco local."""
     url, h = _sb()
     if url:
         try:
-            r = requests.get(f"{url}/storage/v1/object/{BUCKET}/{PREFIJO}/reporte.json", headers=h, timeout=20)
+            r = requests.get(f"{url}/storage/v1/object/{BUCKET}/{PREFIJO}/{nombre}", headers=h, timeout=20)
             if r.status_code == 200:
                 return r.json()
         except Exception:
             pass
-    p = CACHE_DIR / "reporte.json"
+    p = CACHE_DIR / nombre
     return json.loads(p.read_text()) if p.exists() else None

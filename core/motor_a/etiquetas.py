@@ -5,7 +5,8 @@ Para cada día t (entrada al cierre de t) se fijan dos barreras a ±k·σ·√H 
   0 → toca primero la inferior
   si en H sesiones no toca ninguna → se etiqueta por el signo del retorno al final (barrera vertical)
   si ambas se tocan el mismo día → se decide por la dirección del cierre de ese día (no hay dato intradía)
-Se guarda también qué barrera se tocó, para poder entrenar solo con los casos claros si se quiere.
+Se guarda también qué barrera se tocó (1 superior, −1 inferior, 2 ambas el mismo día, 0 ninguna): la etiqueta de
+MOVIMIENTO es «tocó alguna» (barrera ≠ 0), sin importar la dirección.
 """
 from __future__ import annotations
 
@@ -40,5 +41,5 @@ def triple_barrera(df: pd.DataFrame, sigma_d: pd.Series, H: int = 10, k: float =
             y[i], tipo[i], dias[i] = 0.0, -1, td + 1
         else:  # ambas el mismo día
             j = i + 1 + tu
-            y[i], tipo[i], dias[i] = float(c[j] >= c[j - 1]), 0, tu + 1
+            y[i], tipo[i], dias[i] = float(c[j] >= c[j - 1]), 2, tu + 1
     return pd.DataFrame({"y": y, "barrera": tipo, "dias": dias, "ret_h_sigma": ret_h}, index=df.index)

@@ -51,7 +51,17 @@ if res:
                 + "".join(filas) + "</table></div>", unsafe_allow_html=True)
 
 # ------------------------------------------------------------------ reporte del Motor A
-REP = AR.leer_reporte()
+def _etiqueta(n: str) -> str:
+    if n == "reporte.json":
+        return "Dirección · 10 sesiones (principal)"
+    partes = n.removesuffix(".json").split("_")  # reporte_<objetivo>_H<n>
+    obj = {"direccion": "Dirección", "movimiento": "Movimiento"}.get(partes[1], partes[1]) if len(partes) > 2 else n
+    return f"{obj} · {partes[-1][1:]} sesiones" if len(partes) > 2 else n
+
+
+NOMBRES = AR.listar() or ["reporte.json"]
+SEL = st.selectbox("Experimento", NOMBRES, format_func=_etiqueta, key="ma_exp") if len(NOMBRES) > 1 else NOMBRES[0]
+REP = AR.leer_reporte(SEL)
 if not REP:
     st.markdown("<div class='ma-box'><h4>Motor A · acción del precio</h4>Todavía no hay entrenamientos. Se entrena en "
                 "GitHub Actions (flujo «Motor A», los domingos o a mano) y el reporte aparece aquí.</div>",
@@ -59,6 +69,7 @@ if not REP:
     st.stop()
 
 R = REP["resumen"]
+REF = REP.get("referencia", "momentum simple")
 vcol = GREEN if R["veredicto"].startswith("VENTAJA") else AMBER if R["veredicto"].startswith("SEÑAL") else RED
 
 
@@ -71,13 +82,17 @@ st.markdown(
     f"<span class='ma-v' style='color:{vcol};border-color:{vcol}'>{E(R['veredicto'])}</span> "
     f"<span class='muted small'>Entrenado {E(REP['generado_utc'])} UTC · {REP['acciones']} acciones · "
     f"{REP['filas']:,} filas · {E(REP['desde'])} → {E(REP['hasta'])} · {E(REP['fuente'])}</span>"
-    f"<div class='muted small' style='margin-top:6px'>Predice la probabilidad de que el precio toque +{REP['k']:g}σ·√H "
-    f"antes que −{REP['k']:g}σ·√H en H = {REP['H']} sesiones. Todo se mide fuera de muestra: cada año se predice con un "
+    f"<div class='muted small' style='margin-top:6px'>"
+    + (f"Predice si el precio se mueve al menos {REP['k']:g}σ·√H, en cualquier dirección, dentro de H = {REP['H']} "
+       f"sesiones (referencia: volatilidad realizada reciente, no la IV). " if REP.get("objetivo") == "movimiento" else
+       f"Predice la probabilidad de que el precio toque +{REP['k']:g}σ·√H antes que −{REP['k']:g}σ·√H en "
+       f"H = {REP['H']} sesiones. ")
+    + f"Todo se mide fuera de muestra: cada año se predice con un "
     f"modelo entrenado solo con los años anteriores. {E(R['criterio'])}</div></div>", unsafe_allow_html=True)
 
 st.markdown(
     "<div class='ma-g'>"
-    f"<div><span>AUC modelo · momentum · azar</span><b>{_f(R['auc'])} · {_f(R['auc_momentum'])} · 0.500</b></div>"
+    f"<div><span>AUC modelo · {E(REF)} · azar</span><b>{_f(R['auc'])} · {_f(R['auc_momentum'])} · 0.500</b></div>"
     f"<div><span>Brier skill vs tasa base</span><b>{_f(R['bss'], '{:+.4f}')}</b></div>"
     f"<div><span>IC de rango (t-estadístico)</span><b>{_f(R['ic_medio'], '{:+.3f}')} (t={_f(R['ic_t'], '{:.1f}')})</b></div>"
     f"<div><span>Acierto decil alto · bajo · real</span><b>{R['decil_alto']['real'] * 100:.1f}% · "
@@ -121,7 +136,7 @@ if MA:
         f"<div class='ma-box'><h4>En tus acciones ({MA['acciones']})</h4>"
         f"<span class='ma-v' style='color:{mcol};border-color:{mcol}'>{E(MA['veredicto'])}</span>"
         f"<div class='ma-g' style='margin-top:8px'>"
-        f"<div><span>AUC modelo · momentum</span><b>{_f(MA['auc'])} · {_f(MA['auc_momentum'])}</b></div>"
+        f"<div><span>AUC modelo · {E(REF)}</span><b>{_f(MA['auc'])} · {_f(MA['auc_momentum'])}</b></div>"
         f"<div><span>Brier skill</span><b>{_f(MA['bss'], '{:+.4f}')}</b></div>"
         f"<div><span>IC (t)</span><b>{_f(MA['ic_medio'], '{:+.3f}')} ({_f(MA['ic_t'], '{:.1f}')})</b></div>"
         f"<div><span>Acierto decil alto · bajo</span><b>{MA['decil_alto']['real'] * 100:.1f}% · "
@@ -134,7 +149,7 @@ filas = "".join(
     f"<td style='color:{GREEN if d['auc'] > max(0.5, d['auc_momentum']) else RED if d['auc'] < 0.5 else '#E6EDF3'}'>{_f(d['auc'])}</td>"
     f"<td>{_f(d['auc_momentum'])}</td><td>{_f(d['bss'], '{:+.4f}')}</td></tr>" for d in REP["pliegues"])
 st.markdown("<div class='ma-box'><h4>Resultado por año (fuera de muestra)</h4><table class='ma-t'><tr><th>Año</th>"
-            "<th>Muestras</th><th>Tasa base</th><th>AUC modelo</th><th>AUC momentum</th><th>Brier skill</th></tr>"
+            "<th>Muestras</th><th>Tasa base</th><th>AUC modelo</th><th>AUC " + E(REF) + "</th><th>Brier skill</th></tr>"
             + filas + "</table></div>", unsafe_allow_html=True)
 st.markdown("<div class='ma-box'><h4>Limitaciones conocidas</h4>" + "<br>".join(f"· {E(x)}" for x in REP.get("limitaciones", []))
             + "</div>", unsafe_allow_html=True)
