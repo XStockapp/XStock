@@ -1,0 +1,4 @@
+# Solo para entrenar el Motor A fuera de Render (GitHub Actions); la app no lo instala
+-r requirements.txt
+lightgbm>=4.3
+scikit-learn>=1.4

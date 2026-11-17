@@ -55,6 +55,7 @@ _admin = [
     st.Page("views/admin_invitaciones.py", title="Invitaciones", icon=":material/person_add:"),
     st.Page("views/admin_usuarios.py", title="Usuarios y uso", icon=":material/group:"),
     st.Page("views/validacion.py", title="Validación del modelo", icon=":material/query_stats:"),
+    st.Page("views/admin_motor.py", title="Datos y Motor A", icon=":material/neurology:"),
 ]
 _onb = [st.Page("views/onboarding.py", title="Configurar perfil", icon=":material/tune:", default=True)]
 if NEEDS_ONBOARDING:

@@ -106,6 +106,18 @@ def opciones(pg, w):
     return n
 
 
+def admin_motor(pg, w):
+    """Página «Datos y Motor A» (solo si el usuario demo es administrador: ADMIN_EMAILS al arrancar la app)."""
+    pg.goto(U + "/admin_motor"); pg.wait_for_timeout(7000)
+    if pg.get_by_text("Solo el administrador", exact=False).count() or not pg.get_by_text("Datos y Motor A").count():
+        print(f"  [{w} motor A] (omitido: el usuario demo no es administrador)")
+        return 0
+    b = pg.get_by_role("button", name="Ejecutar diagnóstico")
+    if b.count():
+        b.first.click(); pg.wait_for_timeout(4000)
+    return C.check(pg, f"{w} datos y motor A")
+
+
 def main():
     tot = 0
     with sync_playwright() as p:
@@ -117,6 +129,7 @@ def main():
             tot += opciones(pg, w)
             pg.goto(U + "/portafolio"); pg.wait_for_timeout(9000)
             tot += C.check(pg, f"{w} portafolio")
+            tot += admin_motor(pg, w)
             b.close()
     print(f"\n{tot} problema(s) de texto")
     return 1 if tot else 0
