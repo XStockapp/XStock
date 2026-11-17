@@ -46,6 +46,8 @@ def test_rango_y_riesgo_prima():
 def test_iv_relativa_a_vol_real():
     e = {"iv": 45.0, "delta": .5, "prima": 2, "exp_iso": "2026-12-11", "strike": 100, "tipo": "CALL", "dte": 20,
          "spread_pct": 3, "dentro_mov_esperado": True, "bajo_muro_puts": False, "sobre_muro_calls": False, "feriados": 0, "objetivo": 104, "obstaculos": [], "oi": 500, "theta_dia_pct": 1.0}
+    from collections import defaultdict
+    e = defaultdict(int, e)
     caro = OP.riesgos(e, "Alcista", {}, 0, None, 100, None, vol_real=0.30)
     assert any("IV cara" in x for x in caro)
     assert not any("IV" in x and "cara" in x for x in OP.riesgos(e, "Alcista", {}, 0, None, 100, None, vol_real=0.44))
