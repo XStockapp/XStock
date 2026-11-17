@@ -248,3 +248,62 @@ def batch_bars(tickers: list[str], tf: str = "1D", years: float | None = None) -
                 CACHE.put((t, tf, years), df, TTL.get(tf, 600))
     return out
 
+
+
+# ---------------------------------------------------------------- diagnóstico del plan
+def diagnostico() -> list[dict]:
+    """Prueba en vivo qué permite la cuenta de Alpaca (sin exponer claves). Cada prueba:
+    {prueba, ok (True/False/None), detalle}. ok=None = informativo."""
+    out = []
+
+    def add(prueba, ok, detalle):
+        out.append({"prueba": prueba, "ok": ok, "detalle": detalle})
+
+    if not available():
+        add("Claves configuradas", False, "Faltan ALPACA_API_KEY / ALPACA_SECRET_KEY en el servidor.")
+        return out
+    add("Claves configuradas", True, "Presentes en el servidor (no se muestran).")
+    now = datetime.now(timezone.utc)
+
+    def _try(path, params):
+        try:
+            r = requests.get(BASE + path, params=params, headers=_headers(), timeout=20)
+            return r.status_code, r.headers, (r.json() if r.headers.get("content-type", "").startswith("application/json") else {})
+        except Exception as e:  # red
+            return 0, {}, {"message": str(e)[:120]}
+
+    # 1) SIP reciente (prueba la restricción de 15 minutos del plan Basic)
+    st, hd, js = _try("/v2/stocks/bars", {"symbols": "SPY", "timeframe": "1Min", "feed": "sip",
+                                          "start": _iso(now - timedelta(minutes=10)), "limit": 5})
+    lim = hd.get("X-RateLimit-Limit") if hd else None
+    if st == 200:
+        add("SIP en tiempo real (últimos 15 min)", True, "Permitido: la cuenta tiene el plan Algo Trader Plus.")
+    else:
+        add("SIP en tiempo real (últimos 15 min)", False,
+            f"No permitido (HTTP {st}): plan Basic. El histórico SIP sí funciona hasta hace 15 minutos.")
+    # 2) histórico SIP más antiguo
+    st, _, js = _try("/v2/stocks/bars", {"symbols": "SPY", "timeframe": "1Day", "feed": "sip",
+                                         "start": "2015-01-01T00:00:00Z", "limit": 1, "sort": "asc"})
+    rows = (js.get("bars") or {}).get("SPY") or []
+    add("Histórico diario más antiguo (SIP)", bool(rows),
+        f"Desde {rows[0]['t'][:10]}" if rows else f"Sin datos (HTTP {st}).")
+    # 3) límite de llamadas por minuto
+    add("Límite de llamadas por minuto", None, f"{lim} llamadas/min" if lim else "Alpaca no informó el límite.")
+    # 4) opciones: feed OPRA vs indicative
+    st, _, js = _try("/v1beta1/options/snapshots/SPY", {"feed": "opra", "limit": 1})
+    if st == 200:
+        add("Opciones · feed OPRA", True, "Permitido: cotizaciones reales del mercado de opciones.")
+    else:
+        st2, _, _ = _try("/v1beta1/options/snapshots/SPY", {"feed": "indicative", "limit": 1})
+        add("Opciones · feed OPRA", False,
+            "No permitido: se usa el feed indicative (precios derivados, operaciones con 15 min de retraso)."
+            if st2 == 200 else f"Ni OPRA ni indicative respondieron (HTTP {st}/{st2}).")
+    # 5) historia de opciones: barras diarias de un contrato SPY vencido
+    sym = "SPY240315C00510000"
+    st, _, js = _try("/v1beta1/options/bars", {"symbols": sym, "timeframe": "1Day", "start": "2024-01-01T00:00:00Z",
+                                               "limit": 1, "sort": "asc"})
+    rows = (js.get("bars") or {}).get(sym) or []
+    add("Histórico de opciones", bool(rows),
+        f"Disponible desde {rows[0]['t'][:10]} (contrato de prueba {sym})." if rows
+        else f"Sin barras históricas (HTTP {st}). Alpaca documenta historia solo desde feb-2024.")
+    return out

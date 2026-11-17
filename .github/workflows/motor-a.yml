@@ -1,0 +1,48 @@
+# Entrena y valida el Motor A (red de la acción del precio) fuera de Render.
+# Corre los domingos y a mano (pestaña Actions → «Motor A» → Run workflow).
+# Secrets del repositorio necesarios:
+#   ALPACA_API_KEY, ALPACA_SECRET_KEY   → descarga de barras (plan Basic sirve)
+#   SUPABASE_URL, SUPABASE_SERVICE_KEY  → sube el modelo y el reporte a Supabase Storage (ya existen)
+name: Motor A
+
+on:
+  schedule:
+    - cron: "41 7 * * 0"   # domingos 07:41 UTC (mercado cerrado)
+  workflow_dispatch:
+    inputs:
+      max:
+        description: "Máximo de acciones del universo"
+        default: "800"
+      H:
+        description: "Horizonte en sesiones"
+        default: "10"
+
+jobs:
+  entrenar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-ml.txt
+      - run: pip install -r requirements-ml.txt
+      - name: Entrenar y validar
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          if [ -z "$ALPACA_API_KEY" ] || [ -z "$ALPACA_SECRET_KEY" ]; then
+            echo "Faltan los secrets ALPACA_API_KEY / ALPACA_SECRET_KEY del repositorio"; exit 1
+          fi
+          python tools/entrenar_motor_a.py --max "${{ github.event.inputs.max || '800' }}" --H "${{ github.event.inputs.H || '10' }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: motor-a-reporte
+          path: datos/motor_a/reporte.json
+          if-no-files-found: ignore
