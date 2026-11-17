@@ -94,24 +94,67 @@ def descargar(tickers: list[str], desde_anios: float = 11.0, log=print) -> dict[
     return out
 
 
-def universo(nombre: str = "Finviz · Todo el mercado líquido (cap > $2B)", maximo: int = 500, log=print) -> list[str]:
-    """Acciones líquidas actuales (ordenadas por capitalización). Si Finviz falla, S&P 500 + Nasdaq 100."""
-    try:
-        from .. import finviz
-        t = finviz.universe(nombre)
-        if len(t) >= 100:
-            return t[:maximo]
-    except Exception as e:
-        log(f"  Finviz no respondió ({str(e)[:60]}); uso S&P 500 + Nasdaq 100")
+def _candidatos(log=print) -> list[str]:
+    """Acciones comunes listadas en EE. UU. Fuentes que no bloquean servidores: listados oficiales de NASDAQ
+    (incluyen NYSE; sin ETFs); si fallan, el registro de la SEC; si falla, Finviz; último recurso, lista fija."""
+    import re
     from .. import data
-    return data.get_universe("S&P 500 + Nasdaq 100")[:maximo]
+    for nombre, f in (("listados NASDAQ/NYSE", data.all_us_listed), ("SEC", lambda: list(_sec_tickers())),
+                      ("Finviz", lambda: __import__("core.finviz", fromlist=["x"]).universe(
+                          "Finviz · Todo el mercado líquido (cap > $2B)"))):
+        try:
+            t = [x for x in f() if re.fullmatch(r"[A-Z]{1,5}(-[A-Z])?", str(x))]
+            if len(t) >= 300:
+                log(f"  candidatos: {len(t)} ({nombre})")
+                return t
+            log(f"  {nombre}: solo {len(t)} símbolos, se descarta")
+        except Exception as e:
+            log(f"  {nombre} no respondió ({str(e)[:60]})")
+    log("  candidatos: lista fija de grandes empresas")
+    return list(data.FALLBACK_LARGE_CAPS)
+
+
+def _sec_tickers():
+    from . import sec
+    return sec.mapa_cik().keys()
+
+
+def universo(maximo: int = 500, log=print) -> list[str]:
+    """Las `maximo` acciones más líquidas HOY (volumen en dólares mediano de ~60 sesiones, precio > 5 USD), con barras
+    de Alpaca. Sesgo de supervivencia: es el universo actual, declarado en el reporte."""
+    from .. import alpaca
+    cands = _candidatos(log)
+    liq = {}
+
+    def _medir(bloque):
+        for t, df in alpaca.batch_bars(bloque, "1D", 0.3).items():
+            d = df.dropna().tail(60)
+            if len(d) >= 40 and d["Close"].iloc[-1] > 5:
+                liq[t] = float((d["Close"] * d["Volume"]).median())
+
+    for i in range(0, len(cands), 100):
+        b = cands[i:i + 100]
+        try:
+            _medir(b)
+        except Exception:
+            for k in range(0, len(b), 10):  # un símbolo inválido no tumba el bloque entero
+                try:
+                    _medir(b[k:k + 10])
+                except Exception:
+                    pass
+        if (i // 100) % 10 == 9:
+            log(f"  liquidez {min(i + 100, len(cands))}/{len(cands)}")
+    orden = sorted(liq, key=liq.get, reverse=True)
+    log(f"  con liquidez medida: {len(orden)}; se toman {min(maximo, len(orden))}")
+    return orden[:maximo]
 
 
 def mis_acciones(universo_: list[str], n: int = 100) -> list[str]:
     """Acciones del usuario: las de las watchlists guardadas en la app; si no hay, las n más grandes del universo."""
     try:
         from .. import db
-        t = sorted({r["ticker"] for r in db.backend().select("watchlist") if r.get("ticker")})
+        t = sorted({str(r["ticker"]).upper() for r in db.backend().select("watchlist")
+                    if r.get("ticker") and not str(r["ticker"]).upper().endswith(("-USD", "-USDT", "-EUR"))})
         if len(t) >= 10:
             return t
     except Exception:
