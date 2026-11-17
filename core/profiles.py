@@ -36,6 +36,7 @@ BASE_SETTINGS = {
     "ind_sets": {"activo": "default", "sets": {}},
     # portafolio simulado (operaciones registradas desde el Plan de ejecución)
     "portafolio": {"ops": []},
+    "opciones_perfil": {},  # perfil táctico de opciones por acción ("*" = todas): core/perfil_opciones.py
 }
 
 
@@ -131,7 +132,8 @@ def ma_label(settings: dict | None, slot: str) -> str:
 
 def engine_settings(settings: dict) -> dict:
     """Ajustes que usa el motor de cálculo (sin la vista del gráfico, que no cambia los indicadores)."""
-    return {k: v for k, v in settings.items() if k not in ("vista", "indicadores", "ind_sets", "portafolio")}
+    return {k: v for k, v in settings.items() if k not in ("vista", "indicadores", "ind_sets", "portafolio",
+                                                         "opciones_perfil")}
 
 
 def save_user_view(tf: str | None = None, rango: str | None = None, settings: dict | None = None,

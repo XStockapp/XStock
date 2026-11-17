@@ -612,7 +612,9 @@ TIERS = {1: ("Óptimo", "equilibrio entre strike y vencimiento", None),
          3: ("Ultra riesgo", "vencimiento de 0 a 3 días", (0, 3))}
 
 
-def _money_ok(e: dict, money: str, spot: float) -> bool:
+def _money_ok(e: dict, money, spot: float) -> bool:
+    if isinstance(money, (list, tuple, set)):  # clases del perfil (regla maestra), ya anotadas en e["clase"]
+        return e.get("clase") in money and e["delta"] is not None and 0.05 <= abs(e["delta"]) <= 0.95
     lo, hi = MONEY.get(money, (0.15, 0.85))
     if e["delta"] is None or not (lo <= abs(e["delta"]) <= hi):
         return False
@@ -639,22 +641,28 @@ def evaluar_todos(df, spot, tipo: str, walls, gex=None, niveles=None, mtf_fn=Non
     return [e for _, r in d.iterrows() if (e := evaluar(r, spot, df, walls, gex, niveles, _m(int(r["dte"]))))]
 
 
-def opciones_tier(evs: list[dict], spot, money: str, ventana: int, tier: int) -> list[dict]:
-    """Contratos elegibles de un nivel de riesgo, ordenados por valor esperado."""
+def rango_tier(ventana: int, tier: int) -> tuple[int, int]:
     rng = TIERS[tier][2]
     if rng is None:  # OPT1: más de 10 días dentro de la ventana visible (o toda la ventana si es corta)
-        lo = 11 if ventana > 14 else 4
-        rng = (lo, ventana)
-    out = [e for e in evs if rng[0] <= e["dte"] <= rng[1] and _money_ok(e, money, spot) and e["spread_pct"] <= 25]
-    return sorted(out, key=lambda e: e["ve"], reverse=True)
+        rng = (11 if ventana > 14 else 4, ventana)
+    return rng
 
 
-def niveles(evs, spot, money: str, ventana: int, presupuesto: float | None = None) -> dict:
-    """{1: OPT1, 2: OPT2, 3: OPT3}. Cada uno: el mejor por valor esperado, número de contratos que permite el
-    presupuesto y, si no alcanza, la alternativa más cercana dentro del presupuesto y el capital sugerido."""
+def opciones_tier(evs: list[dict], spot, money, ventana: int, tier: int, filtro=None, clave=None) -> list[dict]:
+    """Contratos elegibles de un nivel de riesgo, ordenados por valor esperado (o por `clave`). `money`: "ITM",
+    "ATM", "OTM" o la lista de clases del perfil. `filtro(e)`: condición extra (p. ej. el perfil táctico)."""
+    rng = rango_tier(ventana, tier)
+    out = [e for e in evs if rng[0] <= e["dte"] <= rng[1] and _money_ok(e, money, spot) and e["spread_pct"] <= 25
+           and (filtro is None or filtro(e))]
+    return sorted(out, key=clave) if clave else sorted(out, key=lambda e: e["ve"], reverse=True)
+
+
+def niveles(evs, spot, money, ventana: int, presupuesto: float | None = None, filtro=None, clave=None) -> dict:
+    """{1: OPT1, 2: OPT2, 3: OPT3}. Cada uno: el mejor por valor esperado (o por `clave`), número de contratos que
+    permite el presupuesto y, si no alcanza, la alternativa más cercana dentro del presupuesto y el capital sugerido."""
     out = {}
     for t in (1, 2, 3):
-        lst = opciones_tier(evs, spot, money, ventana, t)
+        lst = opciones_tier(evs, spot, money, ventana, t, filtro, clave)
         if not lst:
             out[t] = None
             continue
@@ -691,7 +699,9 @@ def porcentaje_calls(df: pd.DataFrame) -> float | None:
 
 def contraria(evs_op, spot, money, ventana, disparo: float, tipo_op: str) -> dict | None:
     """Mejor opción del lado contrario y su precio límite estimado si el subyacente llega al nivel de disparo."""
-    lst = opciones_tier(evs_op, spot, money, ventana, 1) or opciones_tier(evs_op, spot, "OTM", ventana, 1)
+    lst = opciones_tier(evs_op, spot, money, ventana, 1)
+    if not lst and not isinstance(money, (list, tuple, set)):  # con clases del perfil no se sale de ellas
+        lst = opciones_tier(evs_op, spot, "OTM", ventana, 1)
     if not lst:
         return None
     e = dict(lst[0])
