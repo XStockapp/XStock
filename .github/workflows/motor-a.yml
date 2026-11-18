@@ -12,6 +12,9 @@ on:
     - cron: "41 7 * * 0"   # domingos 07:41 UTC (mercado cerrado)
   workflow_dispatch:
     inputs:
+      tarea:
+        description: "entrenar (por defecto) o sonda_dolthub (revisa las bases gratuitas de DoltHub)"
+        default: "entrenar"
       max:
         description: "Máximo de acciones del universo"
         default: "500"
@@ -45,6 +48,7 @@ jobs:
           if [ -z "$ALPACA_API_KEY" ] || [ -z "$ALPACA_SECRET_KEY" ]; then
             echo "Faltan los secrets ALPACA_API_KEY / ALPACA_SECRET_KEY del repositorio"; exit 1
           fi
+          if [ "${{ github.event.inputs.tarea }}" = "sonda_dolthub" ]; then python tools/sonda_dolthub.py; exit 0; fi
           python tools/entrenar_motor_a.py --max "${{ github.event.inputs.max || '500' }}" --experimentos "${{ github.event.inputs.experimentos || 'direccion:10' }}" --mis "${{ github.event.inputs.mis }}"
       - uses: actions/upload-artifact@v4
         if: always()
