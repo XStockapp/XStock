@@ -15,9 +15,9 @@ on:
       max:
         description: "Máximo de acciones del universo"
         default: "500"
-      H:
-        description: "Horizonte en sesiones"
-        default: "10"
+      experimentos:
+        description: "objetivo:H separados por coma (direccion / movimiento)"
+        default: "direccion:10"
       mis:
         description: "Tus acciones (coma). Vacío = las de las watchlists de la app"
         default: ""
@@ -45,10 +45,10 @@ jobs:
           if [ -z "$ALPACA_API_KEY" ] || [ -z "$ALPACA_SECRET_KEY" ]; then
             echo "Faltan los secrets ALPACA_API_KEY / ALPACA_SECRET_KEY del repositorio"; exit 1
           fi
-          python tools/entrenar_motor_a.py --max "${{ github.event.inputs.max || '500' }}" --H "${{ github.event.inputs.H || '10' }}" --mis "${{ github.event.inputs.mis }}"
+          python tools/entrenar_motor_a.py --max "${{ github.event.inputs.max || '500' }}" --experimentos "${{ github.event.inputs.experimentos || 'direccion:10' }}" --mis "${{ github.event.inputs.mis }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: motor-a-reporte
-          path: datos/motor_a/reporte.json
+          path: datos/motor_a/reporte*.json
           if-no-files-found: ignore

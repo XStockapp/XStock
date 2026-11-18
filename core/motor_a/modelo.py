@@ -22,6 +22,9 @@ PARAMS = {"objective": "binary", "learning_rate": 0.03, "num_leaves": 31, "min_c
           "verbose": -1, "n_jobs": -1}
 N_ARBOLES = 600
 MOMENTUM = ["ret_5", "ret_20", "ret_60"]
+VOLATILIDAD = ["vol_5_20", "vol_20_60", "rango_dia", "vol_anual"]
+# Referencia simple contra la que se mide el modelo, según el objetivo
+REFERENCIAS = {"direccion": (MOMENTUM, "momentum simple"), "movimiento": (VOLATILIDAD, "volatilidad reciente")}
 UMBRALES = {"auc": 0.52, "bss": 0.0, "ic_t": 2.0}
 
 
@@ -49,9 +52,10 @@ def _entrenar(Xtr, ytr, Xva=None, yva=None):
     return lgb.train(PARAMS, dtr, num_boost_round=N_ARBOLES, **kw)
 
 
-def _momentum(Xtr, ytr, Xte):
+def _momentum(Xtr, ytr, Xte, ref=MOMENTUM):
+    """Regresión logística con pocas variables: la referencia «simple» que el modelo debe superar."""
     from sklearn.linear_model import LogisticRegression
-    a, b = Xtr[MOMENTUM].fillna(0).clip(-6, 6), Xte[MOMENTUM].fillna(0).clip(-6, 6)
+    a, b = Xtr[ref].fillna(0).clip(-6, 6), Xte[ref].fillna(0).clip(-6, 6)
     return LogisticRegression(max_iter=300).fit(a, ytr).predict_proba(b)[:, 1]
 
 
@@ -61,7 +65,7 @@ def _purga(fechas: pd.DatetimeIndex, inicio: pd.Timestamp, H: int) -> pd.Timesta
 
 
 def walk_forward(panel: pd.DataFrame, H: int = 10, primer_anio: int | None = None, log=print,
-                 cols: list[str] | None = None) -> dict:
+                 cols: list[str] | None = None, ref: list[str] | None = None) -> dict:
     P = panel.dropna(subset=["y"])
     cols = cols or columnas_variables(P)
     fechas = P.index.get_level_values("fecha")
@@ -83,7 +87,8 @@ def walk_forward(panel: pd.DataFrame, H: int = 10, primer_anio: int | None = Non
         m = _entrenar(a[cols], a["y"], v[cols], v["y"])
         p = m.predict(te[cols], num_iteration=m.best_iteration or None)
         base = float(tr["y"].mean())
-        pm = _momentum(tr[cols], tr["y"], te[cols])
+        ref_ = ref or MOMENTUM
+        pm = _momentum(tr, tr["y"], te, ref_)
         y = te["y"].to_numpy()
         d = {"anio": Y, "n_test": int(len(te)), "n_train": int(len(tr)), "arboles": int(m.best_iteration or N_ARBOLES),
              "tasa_base": base, "auc": _auc(y, p), "auc_momentum": _auc(y, pm),
