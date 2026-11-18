@@ -77,3 +77,40 @@ def test_macro_fomc():
     assert M.loc["2024-02-01", "mac_fomc_con_proyecciones"] == 1  # la próxima (20-mar) tiene proyecciones
     assert M.loc["2024-01-31", "mac_dias_desde_fomc"] == 0
     assert len(MC.PROGRAMADAS) == 96 and all(a < b for (a, _), (b, _) in zip(MC.PROGRAMADAS, MC.PROGRAMADAS[1:]))
+
+
+def test_iv_historica_occ_y_doble_barrera():
+    from datetime import date
+    from core.motor_a import iv_historica as IV
+    assert IV.occ("AMD", date(2024, 3, 15), True, 172.5) == "AMD240315C00172500"
+    assert IV.viernes_objetivo(date(2024, 3, 4)) == date(2024, 3, 15)  # lunes + 11 días → viernes
+    ks = IV.strikes_candidatos(171.3)
+    assert 170.0 in ks and 172.5 in ks and all(abs(k / 171.3 - 1) <= 0.06 for k in ks)
+    # doble barrera: comparar con Monte Carlo
+    rng = np.random.default_rng(0)
+    pasos, n = 400, 20000
+    w = np.cumsum(rng.normal(0, 1 / np.sqrt(pasos), (n, pasos)), axis=1)
+    mc = (np.abs(w).max(axis=1) >= 1.2).mean()
+    assert abs(IV.prob_toque(np.array([1.0]), np.array([1.2]))[0] - mc) < 0.03
+    assert IV.prob_toque(np.array([0.1]), np.array([1.0]))[0] < 0.01
+
+
+def test_iv_historica_reconstruye(monkeypatch):
+    from core import alpaca
+    from core.motor_a import iv_historica as IV
+    from core.options import bs_price, parse_occ
+    f = pd.bdate_range("2024-03-01", "2024-03-29")
+    barras = {"AMD": pd.DataFrame({"Close": 171.3}, index=f)}
+
+    def fake_get(path, params, session=None):
+        out = {}
+        for sym in params["symbols"].split(","):
+            root, venc, tipo, k = parse_occ(sym)
+            dte = (venc - pd.Timestamp(params["start"][:10]).date()).days
+            out[sym] = [{"c": bs_price(171.3, k, dte / 365, 0.55, tipo == "call", IV.TASA)}]
+        return {"bars": out}
+    monkeypatch.setattr(alpaca, "_get", fake_get)
+    monkeypatch.setattr(IV, "_throttle", lambda *a: None)
+    monkeypatch.setattr(pd.Timestamp, "today", staticmethod(lambda: pd.Timestamp("2024-03-29")))
+    d = IV.descargar_iv(barras, ["AMD"], desde="2024-03-01", log=lambda *_: None)
+    assert len(d) == 4 and np.allclose(d["iv"], 0.55, atol=0.002)
