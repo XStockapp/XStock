@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       tarea:
-        description: "entrenar (por defecto) o sonda_dolthub (revisa las bases gratuitas de DoltHub)"
+        description: "entrenar (Motor A, por defecto) · motor_b_iv (IV futura, DoltHub) · sonda_dolthub"
         default: "entrenar"
       max:
         description: "Máximo de acciones del universo"
@@ -49,10 +49,13 @@ jobs:
             echo "Faltan los secrets ALPACA_API_KEY / ALPACA_SECRET_KEY del repositorio"; exit 1
           fi
           if [ "${{ github.event.inputs.tarea }}" = "sonda_dolthub" ]; then python tools/sonda_dolthub.py; exit 0; fi
+          if [ "${{ github.event.inputs.tarea }}" = "motor_b_iv" ]; then python tools/entrenar_motor_b.py --max "${{ github.event.inputs.max || '500' }}"; exit 0; fi
           python tools/entrenar_motor_a.py --max "${{ github.event.inputs.max || '500' }}" --experimentos "${{ github.event.inputs.experimentos || 'direccion:10' }}" --mis "${{ github.event.inputs.mis }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: motor-a-reporte
-          path: datos/motor_a/reporte*.json
+          path: |
+            datos/motor_a/reporte*.json
+            datos/motor_b/reporte*.json
           if-no-files-found: ignore
