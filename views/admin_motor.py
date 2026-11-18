@@ -54,6 +54,8 @@ if res:
 def _etiqueta(n: str) -> str:
     if n == "reporte.json":
         return "Dirección · 10 sesiones (principal)"
+    if n.startswith("reporte_vs_iv_"):
+        return f"Movimiento vs IV · {n.removesuffix('.json').split('_H')[-1]} sesiones"
     partes = n.removesuffix(".json").split("_")  # reporte_<objetivo>_H<n>
     obj = {"direccion": "Dirección", "movimiento": "Movimiento"}.get(partes[1], partes[1]) if len(partes) > 2 else n
     return f"{obj} · {partes[-1][1:]} sesiones" if len(partes) > 2 else n
@@ -68,13 +70,52 @@ if not REP:
                 unsafe_allow_html=True)
     st.stop()
 
+def _f(v, fmt="{:.3f}"):
+    return "—" if v is None or not np.isfinite(v) else fmt.format(v)
+
+
+if REP.get("objetivo") == "vs_iv":
+    C = REP
+
+    def _p(v):
+        return "—" if v is None or not np.isfinite(v) else f"{v * 100:.1f}%"
+    gana = C["auc_modelo"] > C["auc_iv"] and C["brier_modelo"] < C["brier_iv_cal"]
+    suma = C["auc_combinado"] > C["auc_iv"] + 0.002 and C["brier_combinado"] < C["brier_iv_cal"]
+    vtxt = ("EL MODELO SUPERA A LA IV" if gana else "EL MODELO AÑADE INFORMACIÓN A LA IV" if suma
+            else "LA IV YA DESCUENTA LO QUE VE EL MODELO")
+    vcol2 = GREEN if gana else AMBER if suma else RED
+    st.markdown(
+        f"<div class='ma-box'><h4>Movimiento vs IV · H = {C['H']} sesiones</h4>"
+        f"<span class='ma-v' style='color:{vcol2};border-color:{vcol2}'>{E(vtxt)}</span> "
+        f"<span class='muted small'>Entrenado {E(C['generado_utc'])} UTC · {C['acciones']} acciones · {C['filas']:,} "
+        f"lunes-acción · {E(C['desde'])} → {E(C['hasta'])} · medido desde {E(C['corte'])} ({C['filas_prueba']:,} filas)</span>"
+        f"<div class='muted small' style='margin-top:6px'>IV ATM reconstruida con las barras históricas de opciones de "
+        f"Alpaca (vencimiento ~2 semanas). Probabilidad «IV» = la que implica la IV de tocar ±{C['k']:g}σ√H; se calibra "
+        f"y se combina con datos anteriores al corte y se mide después. IV mediana {_p(C['iv_mediana'])}; IV / vol. real "
+        f"mediana {C['iv_vs_rv_mediana']:.2f}.</div></div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='ma-g'>"
+        f"<div><span>AUC IV · modelo · combinado</span><b>{_f(C['auc_iv'])} · {_f(C['auc_modelo'])} · "
+        f"{_f(C['auc_combinado'])}</b></div>"
+        f"<div><span>Brier IV · modelo · combinado</span><b>{_f(C['brier_iv_cal'], '{:.4f}')} · "
+        f"{_f(C['brier_modelo'], '{:.4f}')} · {_f(C['brier_combinado'], '{:.4f}')}</b></div>"
+        f"<div><span>Peso en la combinación IV · modelo</span><b>{C['coef_iv']:+.2f} · {C['coef_modelo']:+.2f}</b></div>"
+        f"<div><span>Tasa real de movimiento</span><b>{_p(C['tasa_real'])}</b></div></div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='ma-box'><h4>¿Cuándo ve el modelo más movimiento del que cobra la IV?</h4><div class='muted small'>"
+        "Quintiles de la diferencia entre la probabilidad del modelo y la de la IV (calibrada). Si en el quintil más alto "
+        "el movimiento real supera a lo que dice la IV, las opciones estaban baratas para quien compra.</div>"
+        "<table class='ma-t'><tr><th>Quintil</th><th>Diferencia (logit)</th><th>IV dice</th><th>Modelo dice</th>"
+        "<th>Real</th><th>Muestras</th></tr>" + "".join(
+            f"<tr><td class='l'>{i + 1}</td><td>{t['dif']:+.2f}</td><td>{_p(t['p_iv'])}</td><td>{_p(t['p_modelo'])}</td>"
+            f"<td style='color:{GREEN if t['real'] > t['p_iv'] + 0.02 else RED if t['real'] < t['p_iv'] - 0.02 else '#E6EDF3'}'>"
+            f"{_p(t['real'])}</td><td>{t['n']:,}</td></tr>" for i, t in enumerate(C["tramos"]))
+        + "</table></div>", unsafe_allow_html=True)
+    st.stop()
+
 R = REP["resumen"]
 REF = REP.get("referencia", "momentum simple")
 vcol = GREEN if R["veredicto"].startswith("VENTAJA") else AMBER if R["veredicto"].startswith("SEÑAL") else RED
-
-
-def _f(v, fmt="{:.3f}"):
-    return "—" if v is None or not np.isfinite(v) else fmt.format(v)
 
 
 st.markdown(

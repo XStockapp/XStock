@@ -20,7 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import os  # noqa: E402
 
-from core.motor_a import artefactos as AR, dataset as DS, macro as MC, modelo as MO, sec as SE  # noqa: E402
+from core.motor_a import artefactos as AR, dataset as DS, iv_historica as IV, macro as MC, modelo as MO  # noqa: E402
+from core.motor_a import sec as SE  # noqa: E402
 
 
 def main():
@@ -29,6 +30,7 @@ def main():
     ap.add_argument("--mis", default="", help="tus acciones separadas por coma (por defecto: watchlists de la app)")
     ap.add_argument("--experimentos", default="direccion:10",
                     help="lista objetivo:H separada por coma, p. ej. direccion:3,direccion:20,movimiento:10")
+    ap.add_argument("--iv-max", type=int, default=200, help="acciones para reconstruir la IV (vs_iv)")
     ap.add_argument("--k", type=float, default=DS.K_DEF, help="barreras a ±k·σ·√H")
     ap.add_argument("--sintetico", type=float, default=None, help="usar mercado sintético con esta señal")
     ap.add_argument("--sin-subir", action="store_true")
@@ -58,9 +60,15 @@ def main():
             fuente += " + FRED (tasa a 2 años)"
     macro = MC.variables(spy, dgs2)
     resumen = []
+    orden = list(barras) if a.sintetico is not None else tickers  # orden de liquidez del universo
     for exp in [e.strip() for e in a.experimentos.split(",") if e.strip()]:
         obj, H = exp.split(":")
-        R = experimento(barras, spy, sec_datos, macro, obj, int(H), a, fuente, mis, t0)
+        if obj == "vs_iv":
+            R, wf, panel = experimento(barras, spy, sec_datos, macro, "movimiento", int(H), a, fuente, mis, t0)
+            resumen.append(("movimiento", int(H), R))
+            comparar_iv(barras, wf, panel, int(H), a, orden[:a.iv_max] + [t for t in mis if t not in orden[:a.iv_max]])
+            continue
+        R, _, _ = experimento(barras, spy, sec_datos, macro, obj, int(H), a, fuente, mis, t0)
         resumen.append((obj, int(H), R))
     print("\n==================== RESUMEN ====================")
     for obj, H, R in resumen:
@@ -130,7 +138,37 @@ def experimento(barras, spy, sec_datos, macro, obj, H, a, fuente, mis, t0):
     for i in reporte["importancia"][:6]:
         print(f"    {i['variable']:<28}{i['peso'] * 100:5.1f}%")
     print(f"{nombre} subido a Supabase Storage." if subido else f"{nombre} guardado en {DS.CACHE_DIR}/.")
-    return R
+    return R, wf, panel
+
+
+def comparar_iv(barras, wf, panel, H, a, tickers):
+    print(f"\n========== MOVIMIENTO vs IV · H = {H} · {len(tickers)} acciones · desde feb-2024 ==========")
+    if a.sintetico is not None:
+        print("  (omitido en modo sintético: no hay opciones)")
+        return None
+    ivdf = IV.descargar_iv(barras, tickers)
+    print(f"  IV reconstruida: {len(ivdf):,} observaciones")
+    C = IV.comparar(wf["oos"], ivdf, panel, H, a.k)
+    if not C:
+        print("  Datos insuficientes para comparar.")
+        return None
+    rep = {"generado_utc": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"), "objetivo": "vs_iv", "H": H,
+           "k": a.k, **C}
+    nombre = f"reporte_vs_iv_H{H}.json"
+    AR.guardar_local(rep, None, nombre)
+    if not a.sin_subir:
+        AR.subir(rep, None, nombre)
+    print(f"Filas comparables: {C['filas']:,} ({C['acciones']} acciones) · prueba desde {C['corte']}: {C['filas_prueba']:,}")
+    print(f"IV mediana {C['iv_mediana']:.1%} · IV/vol. real mediana {C['iv_vs_rv_mediana']:.2f}")
+    print(f"AUC  IV {C['auc_iv']:.4f} · modelo {C['auc_modelo']:.4f} · combinado {C['auc_combinado']:.4f}")
+    print(f"Brier IV calibrada {C['brier_iv_cal']:.4f} · modelo {C['brier_modelo']:.4f} · "
+          f"combinado {C['brier_combinado']:.4f}")
+    print(f"Pesos de la combinación: IV {C['coef_iv']:+.2f} · modelo {C['coef_modelo']:+.2f}")
+    print("Quintiles de (modelo − IV): ¿el modelo ve más movimiento del que cobra la IV?")
+    for t in C["tramos"]:
+        print(f"   dif {t['dif']:+.2f} · IV dice {t['p_iv']:.1%} · modelo {t['p_modelo']:.1%} · real {t['real']:.1%} · n={t['n']:,}")
+    print(f"{nombre} guardado.")
+    return C
 
 
 if __name__ == "__main__":
