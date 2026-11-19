@@ -35,6 +35,10 @@ class SinCreditos(RuntimeError):
     """El saldo diario de créditos está por agotarse: hay que parar limpiamente."""
 
 
+class SinAcceso(RuntimeError):
+    """El plan no da acceso a ese símbolo o fecha (402 sin relación con los créditos): se salta y se sigue."""
+
+
 class Cliente:
     def __init__(self, token: str | None = None, limite_creditos: int = 95_000, reserva: int = 3_000):
         self.token = (token or os.environ.get("MARKETDATA_TOKEN", "")).strip()
@@ -81,9 +85,10 @@ class Cliente:
             return
         raise RuntimeError("MarketData sigue bloqueando por cambio de IP")
 
-    def cadena(self, symbol: str, fecha: str, dte: str = "1-45", reintentos: int = 5) -> pd.DataFrame:
+    def cadena(self, symbol: str, fecha: str, dte: str = "1-45", reintentos: int = 5) -> pd.DataFrame | None:
         """Cadena de fin de día de `symbol` en `fecha` (AAAA-MM-DD), vencimientos a 1-45 días.
-        Devuelve un DataFrame ligero (float32/int32); vacío si ese día no hay datos (feriado)."""
+        Devuelve un DataFrame ligero (float32/int32); vacío si ese día no hay datos (feriado); None si la sesión aún no
+        está disponible en el plan (el día anterior aparece a las 9:30 ET del día siguiente)."""
         if not self.queda_saldo():
             raise SinCreditos("límite diario de créditos alcanzado")
         params = {"date": fecha, "dte": dte, "columns": COLUMNAS}
@@ -100,7 +105,13 @@ class Cliente:
                 time.sleep(BLOQUEO_IP)
                 continue
             if r.status_code == 402:
-                raise SinCreditos("la API respondió 402: créditos agotados")
+                self._anotar(r, 0)
+                txt = r.text[:200]
+                if "fully-closed" in txt:
+                    return None  # la sesión aún no está disponible en el plan: no se marca, se pide otro día
+                if "credit" in txt.lower() or (self.restantes is not None and self.restantes <= self.reserva):
+                    raise SinCreditos(f"402: {txt}")
+                raise SinAcceso(f"{symbol}: 402 {txt}")
             if r.status_code in (200, 203):
                 js = r.json()
                 if js.get("s") not in (None, "ok") or not js.get("optionSymbol"):

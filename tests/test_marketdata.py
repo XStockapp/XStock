@@ -50,7 +50,7 @@ def test_tabla_filtra_delta_y_usa_tipos_ligeros():
 def test_progreso_no_repite_fechas():
     p = BF.Progreso()
     f = BF.fechas_objetivo(0.1, hoy=pd.Timestamp("2025-06-10").date())
-    assert f[0] == "2025-06-09" and f == sorted(f, reverse=True)
+    assert f[0] == "2025-06-06" and f == sorted(f, reverse=True)
     p.marcar("AAPL", f[:5])
     assert BF.Progreso(__import__("json").loads(p.a_json())).pendientes("AAPL", f) == f[5:]
 
@@ -70,3 +70,26 @@ def test_cliente_para_al_agotar_saldo():
         assert False
     except MD.SinCreditos:
         pass
+
+
+class _R:
+    def __init__(self, code, text):
+        self.status_code, self.text, self.headers = code, text, {}
+
+
+def test_402_sin_relacion_con_creditos_no_detiene_todo(monkeypatch):
+    c = MD.Cliente(token="x")
+    monkeypatch.setattr(c.s, "get", lambda *a, **k: _R(402, '{"s":"error","errmsg":"symbol not available"}'))
+    try:
+        c.cadena("XYZ", "2025-02-19")
+        assert False
+    except MD.SinCreditos:
+        assert False, "no debe tratarse como saldo agotado"
+    except MD.SinAcceso:
+        pass
+
+
+def test_sesion_no_cerrada_no_se_marca(monkeypatch):
+    c = MD.Cliente(token="x")
+    monkeypatch.setattr(c.s, "get", lambda *a, **k: _R(402, '{"s":"error","errmsg":"Your plan can only access fully-closed sessions"}'))
+    assert c.cadena("AMD", "2026-11-18") is None
