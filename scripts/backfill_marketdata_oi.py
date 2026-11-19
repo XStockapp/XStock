@@ -205,6 +205,7 @@ def procesar(cli: MD.Cliente, prog: Progreso, simbolo: str, fechas: list[str], h
 
 def sonda(simbolo: str):
     cli = MD.Cliente()
+    cli.preparar()
     f0 = fechas_objetivo(3)[1]
     for params in ({"date": f0, "dte": "1-45"}, {"date": f0}, {"date": f0, "from": f0, "to": _de_dia(_a_dia(f0) + 45)},
                    {"dte": "1-45"}):
@@ -243,6 +244,7 @@ def main():
 
     t0 = time.time()
     cli = MD.Cliente(limite_creditos=a.limite)
+    cli.preparar()
     prog = Progreso.cargar()
     fechas = fechas_objetivo(a.anios)
     simbolos = prioridad(a.max)

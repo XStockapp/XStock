@@ -9,6 +9,9 @@ Limitaciones del histórico (documentación oficial):
   · El filtro `delta` no se puede combinar con `date` (error 400) → el filtro 0.10 ≤ |Δ| ≤ 0.90 se aplica aquí,
     después de calcular la delta y antes de guardar.
   · Costo: 1 crédito por cada 1000 contratos históricos (en la práctica ~1 crédito por cadena).
+  · Un solo dispositivo: si la IP cambia (cada ejecución de GitHub Actions sale por otra), la API bloquea la cuenta
+    5 minutos (HTTP 403). El cliente espera y reintenta; `preparar()` lo resuelve antes de abrir los hilos.
+    Mientras corre el backfill no conviene usar el mismo token desde otro equipo.
 """
 from __future__ import annotations
 
@@ -25,6 +28,7 @@ BASE = "https://api.marketdata.app/v1/options/chain/{symbol}/"
 TASA = 0.045
 COLUMNAS = "optionSymbol,expiration,side,strike,dte,bid,ask,last,volume,openInterest,underlyingPrice"
 DELTA_MIN, DELTA_MAX = 0.10, 0.90
+BLOQUEO_IP = 330  # segundos: la API bloquea 5 min al detectar una IP nueva
 
 
 class SinCreditos(RuntimeError):
@@ -61,7 +65,23 @@ class Cliente:
             return self.consumidos < self.limite
 
     # ------------------------------------------------------------------ consulta
-    def cadena(self, symbol: str, fecha: str, dte: str = "1-45", reintentos: int = 4) -> pd.DataFrame:
+    def preparar(self, symbol: str = "SPY", fecha: str | None = None, log=print):
+        """Una consulta sola antes de abrir hilos: si la IP es nueva, espera aquí el bloqueo de 5 minutos una vez."""
+        fecha = fecha or (pd.Timestamp.today() - pd.offsets.BDay(3)).date().isoformat()
+        for i in range(3):
+            r = self.s.get(BASE.format(symbol=symbol), params={"date": fecha, "dte": "30", "strikeLimit": 2,
+                                                                "columns": "optionSymbol"}, timeout=60)
+            if r.status_code == 403 and "IP address" in r.text:
+                log(f"MarketData: IP nueva, la cuenta queda bloqueada 5 min; espero ({i + 1}/3)…")
+                time.sleep(BLOQUEO_IP)
+                continue
+            self._anotar(r, 0)
+            if r.status_code >= 400:
+                raise RuntimeError(f"MarketData {r.status_code}: {r.text[:200]}")
+            return
+        raise RuntimeError("MarketData sigue bloqueando por cambio de IP")
+
+    def cadena(self, symbol: str, fecha: str, dte: str = "1-45", reintentos: int = 5) -> pd.DataFrame:
         """Cadena de fin de día de `symbol` en `fecha` (AAAA-MM-DD), vencimientos a 1-45 días.
         Devuelve un DataFrame ligero (float32/int32); vacío si ese día no hay datos (feriado)."""
         if not self.queda_saldo():
@@ -75,6 +95,9 @@ class Cliente:
                 continue
             if r.status_code == 429:
                 time.sleep(float(r.headers.get("Retry-After", 5 * (i + 1))))
+                continue
+            if r.status_code == 403 and "IP address" in r.text:
+                time.sleep(BLOQUEO_IP)
                 continue
             if r.status_code == 402:
                 raise SinCreditos("la API respondió 402: créditos agotados")
