@@ -85,7 +85,7 @@ def vrvp(df: pd.DataFrame, d: pd.DataFrame, idx: np.ndarray, lado: int, n: int =
     tp = ((df["High"] + df["Low"] + df["Close"]) / 3).to_numpy()
     vol = df["Volume"].fillna(0).to_numpy()
     c, atr = df["Close"].to_numpy(), d["atr"].to_numpy()
-    ok, libre = np.zeros(len(df), bool), np.zeros(len(df), bool)
+    ok, libre, nodo = np.zeros(len(df), bool), np.zeros(len(df), bool), np.zeros(len(df), bool)
     for i in idx:
         if i < n or not np.isfinite(atr[i]) or atr[i] <= 0:
             continue
@@ -97,8 +97,9 @@ def vrvp(df: pd.DataFrame, d: pd.DataFrame, idx: np.ndarray, lado: int, n: int =
         hvn, fuerte = h >= np.percentile(h, 70), h >= np.percentile(h, 90)
         soporte = (hvn & (dist <= 0) & (dist >= -atr[i])).any()
         techo = (fuerte & (dist > 0) & (dist <= 1.5 * atr[i])).any()
-        ok[i], libre[i] = soporte, not techo
-    return ok, libre
+        k = min(max(np.searchsorted(bordes, c[i]) - 1, 0), bins - 1)  # nivel donde está el precio
+        ok[i], libre[i], nodo[i] = soporte, not techo, fuerte[k] or (k > 0 and fuerte[k - 1]) or (k < bins - 1 and fuerte[k + 1])
+    return ok, libre, nodo
 
 
 def senales_anexo(df: pd.DataFrame, d: pd.DataFrame) -> pd.DataFrame:
@@ -141,7 +142,7 @@ def senales_anexo(df: pd.DataFrame, d: pd.DataFrame) -> pd.DataFrame:
         ema_mala = cerca_ema & (df["Volume"] < d["vol_ma20"])
         base = [f"{lado}_giro", f"{lado}_giro_rsi_macd", f"{lado}_solo_valle_sube"]
         cand = np.flatnonzero(S[base].any(axis=1).to_numpy())
-        sop, lib = vrvp(df, d, cand, s)
+        sop, lib, _ = vrvp(df, d, cand, s)
         ok_v, sin_techo = pd.Series(sop, index=df.index), pd.Series(lib, index=df.index)
         for b in base:
             S[f"{b}_vrvp"] = S[b] & ok_v
@@ -238,6 +239,50 @@ def resumir(R: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(out).set_index("regla")
 
 
+def a_4h(df: pd.DataFrame) -> pd.DataFrame:
+    """Velas de 4 horas a partir de las de 1 hora (sesión de Nueva York: 9:30-13:30 y 13:30-cierre)."""
+    x = df.copy()
+    if x.index.tz is None:
+        x.index = x.index.tz_localize("UTC")
+    x.index = x.index.tz_convert("America/New_York")
+    g = x.resample("4h", offset="1h30min", label="right", closed="left")
+    out = g.agg({"Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"}).dropna()
+    out.index = out.index.tz_convert(df.index.tz or "UTC")
+    if df.index.tz is None:
+        out.index = out.index.tz_localize(None)
+    return out
+
+
+def contexto_4h(df1: pd.DataFrame) -> pd.DataFrame:
+    """Lectura de 4h llevada a cada vela de 1h usando solo velas de 4h YA CERRADAS (label = cierre del bloque):
+    direccionalidad (pendiente del Squeeze), giro reciente del anexo, y el VRVP de ~6 meses (250 velas de 4h):
+    soporte de volumen debajo y precio sobre un nodo enorme."""
+    d4f = a_4h(df1)
+    d4 = indicadores(d4f)
+    S4 = senales_anexo(d4f, d4)
+    todos = np.arange(len(d4f))
+    C = pd.DataFrame(index=d4f.index)
+    for lado, s in (("L", 1), ("C", -1)):
+        sop, _, nodo = vrvp(d4f, d4, todos, s, n=250)
+        C[f"{lado}_dir4h"] = (s * d4["val"] > s * d4["val"].shift()).to_numpy()
+        C[f"{lado}_giro4h"] = S4[[f"{lado}_giro", f"{lado}_solo_valle_sube"]].any(axis=1).astype(int) \
+            .rolling(3, min_periods=1).max().astype(bool).to_numpy()
+        C[f"{lado}_vol4h"] = sop | nodo
+    # una vela de 4h se conoce al cerrar: se lleva a las velas de 1h posteriores a su cierre
+    return C.reindex(C.index.union(df1.index)).ffill().reindex(df1.index).fillna(False).astype(bool)
+
+
+def senales_mtf(df: pd.DataFrame, d: pd.DataFrame) -> pd.DataFrame:
+    S = senales_anexo(df, d)
+    C = contexto_4h(df)
+    for lado in ("L", "C"):
+        for b in (f"{lado}_giro", f"{lado}_giro_rsi_macd", f"{lado}_solo_valle_sube"):
+            S[f"{b}_dir4h"] = S[b] & C[f"{lado}_dir4h"]
+            S[f"{b}_giro4h"] = S[b] & C[f"{lado}_giro4h"]
+            S[f"{b}_giro4h_vol4h"] = S[b] & C[f"{lado}_giro4h"] & C[f"{lado}_vol4h"]
+    return S
+
+
 def meta_xpulse(barras: dict, R: pd.DataFrame, log=print) -> pd.DataFrame | None:
     """Meta-etiquetado: ¿las señales de la estrategia rinden más cuando X-Pulse (fuera de muestra) espera un
     movimiento fuerte? X-Pulse se reentrena por años (walk-forward) con las mismas variables del modelo publicado,
@@ -280,7 +325,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--max", type=int, default=300)
     ap.add_argument("--marco", default="1D", help="1D, 1W o 1h")
-    ap.add_argument("--reglas", default="checklist", help="checklist (láminas) o anexo (giros)")
+    ap.add_argument("--reglas", default="checklist", help="checklist (láminas), anexo (giros) o mtf (contexto 4h + entrada 1h)")
     ap.add_argument("--meta", action="store_true", help="cruzar las señales con X-Pulse fuera de muestra")
     a = ap.parse_args()
     from core.motor_a import dataset as DS
@@ -303,8 +348,9 @@ def main():
             if len(df) < 150:
                 continue
             d = indicadores(df)
-            anexo = a.reglas == "anexo"
-            filas += resultados(df, d, senales_anexo(df, d) if anexo else senales(df, d), t, anexo)
+            anexo = a.reglas in ("anexo", "mtf")
+            fn = senales_mtf if a.reglas == "mtf" else (senales_anexo if anexo else senales)
+            filas += resultados(df, d, fn(df, d), t, anexo)
         if not filas:
             continue
         R = pd.DataFrame(filas)
@@ -321,7 +367,8 @@ def main():
                 "exceso_r10%"]
         print(T[cols].round(2).to_string())
         # robustez en el tiempo de la regla principal
-        for regla in ("L_estricta", "L_relajada", "C_relajada", "L_giro_rsi_macd", "L_giro", "L_giro_rsi_macd_filtros"):
+        for regla in ("L_estricta", "L_relajada", "C_relajada", "L_giro_rsi_macd", "L_giro", "L_giro_rsi_macd_filtros",
+                      "L_giro_rsi_macd_giro4h_vol4h"):
             g = R[R["regla"] == regla]
             if len(g):
                 anual = g.groupby(g["fecha"].dt.year)["r10"].agg(["count", "mean"])
