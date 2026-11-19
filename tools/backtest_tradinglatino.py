@@ -66,6 +66,8 @@ def indicadores(df: pd.DataFrame) -> pd.DataFrame:
     dx = 100 * (pdi - ndi).abs() / (pdi + ndi).replace(0, np.nan)
     d["adx"] = dx.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean()
     d["pdi"], d["ndi"] = pdi, ndi
+    d["atr"] = tr
+    d["vol_ma20"] = df["Volume"].rolling(20).mean()
     dlt = c.diff()
     g = dlt.clip(lower=0).ewm(alpha=1 / 14, adjust=False).mean()
     p_ = (-dlt.clip(upper=0)).ewm(alpha=1 / 14, adjust=False).mean()
@@ -73,6 +75,30 @@ def indicadores(df: pd.DataFrame) -> pd.DataFrame:
     m = c.ewm(span=12, adjust=False).mean() - c.ewm(span=26, adjust=False).mean()
     d["macd"], d["macd_sig"] = m, m.ewm(span=9, adjust=False).mean()
     return d
+
+
+def vrvp(df: pd.DataFrame, d: pd.DataFrame, idx: np.ndarray, lado: int, n: int = 100, bins: int = 24):
+    """Aproximación del VRVP (perfil de volumen del rango visible) en las velas idx: volumen por nivel de precio de
+    las últimas n velas. Para una compra (espejo para venta) es favorable que haya un nodo de alto volumen (≥ p70 de
+    los niveles) entre el precio y 1 ATR por debajo (soporte), y aparte se mide si NO hay un nodo muy fuerte (≥ p90)
+    hasta 1.5 ATR por encima (sin techo)."""
+    tp = ((df["High"] + df["Low"] + df["Close"]) / 3).to_numpy()
+    vol = df["Volume"].fillna(0).to_numpy()
+    c, atr = df["Close"].to_numpy(), d["atr"].to_numpy()
+    ok, libre = np.zeros(len(df), bool), np.zeros(len(df), bool)
+    for i in idx:
+        if i < n or not np.isfinite(atr[i]) or atr[i] <= 0:
+            continue
+        h, bordes = np.histogram(tp[i - n + 1:i + 1], bins=bins, weights=vol[i - n + 1:i + 1])
+        if h.sum() <= 0:
+            continue
+        centros = (bordes[:-1] + bordes[1:]) / 2
+        dist = lado * (centros - c[i])  # > 0: del lado al que se quiere ir
+        hvn, fuerte = h >= np.percentile(h, 70), h >= np.percentile(h, 90)
+        soporte = (hvn & (dist <= 0) & (dist >= -atr[i])).any()
+        techo = (fuerte & (dist > 0) & (dist <= 1.5 * atr[i])).any()
+        ok[i], libre[i] = soporte, not techo
+    return ok, libre
 
 
 def senales_anexo(df: pd.DataFrame, d: pd.DataFrame) -> pd.DataFrame:
@@ -109,6 +135,19 @@ def senales_anexo(df: pd.DataFrame, d: pd.DataFrame) -> pd.DataFrame:
         S[f"{lado}_continuacion"] = primera((s * v > s * pv) & adx_sube & reciente(a <= 23, 3) & (a > 23))
         # referencia: solo «valle que asciende», sin ADX ni confirmaciones
         S[f"{lado}_solo_valle_sube"] = primera(valle_sube)
+        # filtros discrecionales del anexo: VRVP (soporte de volumen debajo, sin techo fuerte encima) y la regla de
+        # la EMA 55: no operar si el precio está pegado a la EMA 55 en contra y sin volumen
+        cerca_ema = (s * (d["ema55"] - df["Close"]) > 0) & (s * (d["ema55"] - df["Close"]) < 0.5 * d["atr"])
+        ema_mala = cerca_ema & (df["Volume"] < d["vol_ma20"])
+        base = [f"{lado}_giro", f"{lado}_giro_rsi_macd", f"{lado}_solo_valle_sube"]
+        cand = np.flatnonzero(S[base].any(axis=1).to_numpy())
+        sop, lib = vrvp(df, d, cand, s)
+        ok_v, sin_techo = pd.Series(sop, index=df.index), pd.Series(lib, index=df.index)
+        for b in base:
+            S[f"{b}_vrvp"] = S[b] & ok_v
+            S[f"{b}_sintecho"] = S[b] & sin_techo
+            S[f"{b}_ema55"] = S[b] & ~ema_mala
+            S[f"{b}_filtros"] = S[b] & ok_v & ~ema_mala
     S["todas_las_velas"] = True
     return S
 
@@ -150,7 +189,7 @@ def resultados(df: pd.DataFrame, d: pd.DataFrame, S: pd.DataFrame, ticker: str, 
     for col in S.columns:
         lado = -1 if col.startswith("C_") else 1
         idx = np.flatnonzero(S[col].to_numpy())
-        if col in ("todas_las_velas", "L_solo_ema", "C_solo_ema", "L_solo_valle_sube", "C_solo_valle_sube"):
+        if col in ("todas_las_velas", "L_solo_ema", "C_solo_ema"):
             idx = idx[idx % 5 == 0]  # referencias muy frecuentes: 1 de cada 5 velas basta y ahorra memoria
         for i in idx:
             e = i + 1
@@ -199,11 +238,50 @@ def resumir(R: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(out).set_index("regla")
 
 
+def meta_xpulse(barras: dict, R: pd.DataFrame, log=print) -> pd.DataFrame | None:
+    """Meta-etiquetado: ¿las señales de la estrategia rinden más cuando X-Pulse (fuera de muestra) espera un
+    movimiento fuerte? X-Pulse se reentrena por años (walk-forward) con las mismas variables del modelo publicado,
+    así cada señal se cruza con una predicción hecha SIN ver ese año."""
+    import os
+    from core.motor_a import artefactos as AR, dataset as DS, macro as MC, modelo as MO, sec as SE
+    crudo = AR.bajar("reporte_movimiento_H10.json")
+    if not crudo:
+        log("Sin reporte de X-Pulse: se omite el meta-etiquetado.")
+        return None
+    rep = json.loads(crudo)
+    spy = DS.descargar(["SPY"], desde_anios=11)["SPY"]
+    sec_datos = SE.descargar(list(barras)) if os.environ.get(SE.UA_ENV) else None
+    panel = DS.construir(barras, spy, 10, rep["k"], sec_datos, MC.variables(spy, MC.descargar_dgs2()), "movimiento")
+    cols = [c for c in rep["variables"] if c in panel.columns]
+    w = MO.walk_forward(panel, 10, cols=cols, ref=MO.REFERENCIAS["movimiento"][0], log=lambda *_: None)
+    O = w["oos"]
+    rango = O["p"].groupby(level="fecha").rank(pct=True).rename("xp")
+    rango = rango.reset_index()
+    rango["fecha"] = pd.to_datetime(rango["fecha"])
+    M = R.assign(fecha=pd.to_datetime(R["fecha"])).merge(rango, on=["fecha", "ticker"], how="inner")
+    M["tercio"] = pd.cut(M["xp"], [0, 1 / 3, 2 / 3, 1.0001], labels=["X-Pulse bajo", "medio", "X-Pulse alto"])
+    reglas = ["todas_las_velas", "L_solo_valle_sube", "L_giro", "L_giro_rsi_macd", "L_giro_filtros",
+              "L_giro_rsi_macd_filtros", "C_giro", "C_giro_rsi_macd"]
+    filas = []
+    for regla in reglas:
+        g = M[M["regla"] == regla]
+        for t, h in g.groupby("tercio", observed=True):
+            filas.append({"regla": regla, "tercio": t, "senales": len(h), "r10_media%": 100 * h["r10"].mean(),
+                          "r10_acierto%": 100 * (h["r10"] > 0).mean(), "mov_abs10%": 100 * h["r10"].abs().mean(),
+                          "tactica_media%": 100 * h["r_tactica"].mean(),
+                          "tactica_acierto%": 100 * (h["r_tactica"] > 0).mean()})
+    T = pd.DataFrame(filas).set_index(["regla", "tercio"])
+    print(f"\n===== META-ETIQUETADO CON X-PULSE · {M['fecha'].min():%Y} → {M['fecha'].max():%Y} (fuera de muestra) =====")
+    print(T.round(2).to_string())
+    return T
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--max", type=int, default=300)
     ap.add_argument("--marco", default="1D", help="1D, 1W o 1h")
     ap.add_argument("--reglas", default="checklist", help="checklist (láminas) o anexo (giros)")
+    ap.add_argument("--meta", action="store_true", help="cruzar las señales con X-Pulse fuera de muestra")
     a = ap.parse_args()
     from core.motor_a import dataset as DS
     from core import alpaca
@@ -232,6 +310,8 @@ def main():
         R = pd.DataFrame(filas)
         R["grupo"] = grupo
         todas.append(R)
+        if a.meta and grupo == "acciones" and a.marco == "1D":
+            meta_xpulse(B, R)
         T = resumir(R)
         pd.set_option("display.width", 250)
         print(f"\n===== {grupo.upper()} · reglas {a.reglas} · marco {a.marco} · {R['ticker'].nunique()} símbolos · "
@@ -241,7 +321,7 @@ def main():
                 "exceso_r10%"]
         print(T[cols].round(2).to_string())
         # robustez en el tiempo de la regla principal
-        for regla in ("L_estricta", "L_relajada", "C_relajada", "L_giro_rsi_macd", "L_giro", "C_giro_rsi_macd"):
+        for regla in ("L_estricta", "L_relajada", "C_relajada", "L_giro_rsi_macd", "L_giro", "L_giro_rsi_macd_filtros"):
             g = R[R["regla"] == regla]
             if len(g):
                 anual = g.groupby(g["fecha"].dt.year)["r10"].agg(["count", "mean"])
