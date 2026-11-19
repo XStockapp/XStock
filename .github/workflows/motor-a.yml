@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       tarea:
-        description: "entrenar (Motor A, por defecto) · motor_b_iv (IV futura, DoltHub) · sonda_dolthub · sonda_thetadata"
+        description: "entrenar (Motor A, por defecto) · motor_b_iv (IV futura, DoltHub) · sonda_dolthub · sonda_marketdata (usa «mis» como acción)"
         default: "entrenar"
       max:
         description: "Máximo de acciones del universo"
@@ -33,13 +33,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
           cache: pip
           cache-dependency-path: requirements-ml.txt
       - run: pip install -r requirements-ml.txt
-      - name: Librería de ThetaData (solo para tareas de ThetaData)
-        if: startsWith(github.event.inputs.tarea, 'sonda_thetadata') || startsWith(github.event.inputs.tarea, 'thetadata')
-        run: pip install -q "thetadata>=1.0.9" python-dotenv
       - name: Caché de datos descargados (DoltHub)
         uses: actions/cache@v4
         with:
@@ -53,15 +50,13 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
-          THETADATA_API_KEY: ${{ secrets.THETADATA_API_KEY }}
-          THETADATA_EMAIL: ${{ secrets.THETADATA_EMAIL }}
-          THETADATA_PASSWORD: ${{ secrets.THETADATA_PASSWORD }}
+          MARKETDATA_TOKEN: ${{ secrets.MARKETDATA_TOKEN }}
         run: |
           if [ -z "$ALPACA_API_KEY" ] || [ -z "$ALPACA_SECRET_KEY" ]; then
             echo "Faltan los secrets ALPACA_API_KEY / ALPACA_SECRET_KEY del repositorio"; exit 1
           fi
+          if [ "${{ github.event.inputs.tarea }}" = "sonda_marketdata" ]; then python scripts/backfill_marketdata_oi.py --sonda "${{ github.event.inputs.mis || 'AAPL' }}"; exit 0; fi
           if [ "${{ github.event.inputs.tarea }}" = "sonda_dolthub" ]; then python tools/sonda_dolthub.py; exit 0; fi
-          if [ "${{ github.event.inputs.tarea }}" = "sonda_thetadata" ]; then python tools/sonda_thetadata.py; exit 0; fi
           if [ "${{ github.event.inputs.tarea }}" = "motor_b_iv" ]; then python tools/entrenar_motor_b.py --max "${{ github.event.inputs.max || '500' }}"; exit 0; fi
           python tools/entrenar_motor_a.py --max "${{ github.event.inputs.max || '500' }}" --experimentos "${{ github.event.inputs.experimentos || 'direccion:10' }}" --mis "${{ github.event.inputs.mis }}"
       - uses: actions/upload-artifact@v4

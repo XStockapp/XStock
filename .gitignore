@@ -1,5 +1,6 @@
 # Datos locales y secretos: nunca se suben al repositorio
 datos/
+data/
 .streamlit/secrets.toml
 .env
 *.env
