@@ -85,9 +85,10 @@ class Cliente:
             return
         raise RuntimeError("MarketData sigue bloqueando por cambio de IP")
 
-    def cadena(self, symbol: str, fecha: str, dte: str = "1-45", reintentos: int = 5) -> pd.DataFrame:
+    def cadena(self, symbol: str, fecha: str, dte: str = "1-45", reintentos: int = 5) -> pd.DataFrame | None:
         """Cadena de fin de día de `symbol` en `fecha` (AAAA-MM-DD), vencimientos a 1-45 días.
-        Devuelve un DataFrame ligero (float32/int32); vacío si ese día no hay datos (feriado)."""
+        Devuelve un DataFrame ligero (float32/int32); vacío si ese día no hay datos (feriado); None si la sesión aún no
+        está disponible en el plan (el día anterior aparece a las 9:30 ET del día siguiente)."""
         if not self.queda_saldo():
             raise SinCreditos("límite diario de créditos alcanzado")
         params = {"date": fecha, "dte": dte, "columns": COLUMNAS}
@@ -106,6 +107,8 @@ class Cliente:
             if r.status_code == 402:
                 self._anotar(r, 0)
                 txt = r.text[:200]
+                if "fully-closed" in txt:
+                    return None  # la sesión aún no está disponible en el plan: no se marca, se pide otro día
                 if "credit" in txt.lower() or (self.restantes is not None and self.restantes <= self.reserva):
                     raise SinCreditos(f"402: {txt}")
                 raise SinAcceso(f"{symbol}: 402 {txt}")

@@ -104,9 +104,10 @@ class Progreso:
 
 
 def fechas_objetivo(anios: float, hoy: date | None = None) -> list[str]:
-    """Días hábiles desde ayer hacia atrás (los feriados devuelven vacío y quedan marcados como hechos)."""
+    """Días hábiles desde anteayer hacia atrás (el día anterior no está cerrado en el plan hasta las 9:30 ET; los
+    feriados devuelven vacío y quedan marcados como hechos)."""
     hoy = hoy or date.today()
-    fin = pd.Timestamp(hoy) - pd.offsets.BDay(1)
+    fin = pd.Timestamp(hoy) - pd.offsets.BDay(2)
     ini = pd.Timestamp(hoy) - pd.DateOffset(days=int(365.25 * anios))
     return [d.date().isoformat() for d in pd.bdate_range(ini, fin)][::-1]
 
@@ -183,6 +184,8 @@ def procesar(cli: MD.Cliente, prog: Progreso, simbolo: str, fechas: list[str], h
         try:
             with ThreadPoolExecutor(hilos) as ex:
                 for f, df in ex.map(una, bloque):
+                    if df is None:  # sesión aún no disponible: se reintenta en otra ejecución
+                        continue
                     nuevos.append(df)
                     hechas.append(f)
         except MD.SinCreditos as e:
@@ -214,6 +217,9 @@ def sonda(simbolo: str):
         antes = cli.consumidos
         t = time.time()
         df = cli.cadena(simbolo, f)
+        if df is None:
+            print(f"{simbolo} {f}: sesión aún no disponible en el plan")
+            continue
         print(f"{simbolo} {f}: {len(df)} contratos (|Δ| 0.10-0.90, 1-45 días) · créditos {cli.consumidos - antes}"
               f" · saldo {cli.restantes} · {time.time() - t:.1f} s")
         if len(df):
