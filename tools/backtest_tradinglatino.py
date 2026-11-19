@@ -65,7 +65,52 @@ def indicadores(df: pd.DataFrame) -> pd.DataFrame:
     ndi = 100 * ndm.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean() / tr
     dx = 100 * (pdi - ndi).abs() / (pdi + ndi).replace(0, np.nan)
     d["adx"] = dx.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean()
+    d["pdi"], d["ndi"] = pdi, ndi
+    dlt = c.diff()
+    g = dlt.clip(lower=0).ewm(alpha=1 / 14, adjust=False).mean()
+    p_ = (-dlt.clip(upper=0)).ewm(alpha=1 / 14, adjust=False).mean()
+    d["rsi"] = 100 - 100 / (1 + g / p_.replace(0, np.nan))
+    m = c.ewm(span=12, adjust=False).mean() - c.ewm(span=26, adjust=False).mean()
+    d["macd"], d["macd_sig"] = m, m.ewm(span=9, adjust=False).mean()
     return d
+
+
+def senales_anexo(df: pd.DataFrame, d: pd.DataFrame) -> pd.DataFrame:
+    """Lógica de giro del anexo (como la usa el indicador «Multiple strategies [LPWN]»):
+    direccionalidad = pendiente del Squeeze Momentum (sube → alcista); el ADX con pendiente negativa tras un
+    movimiento fuerte indica que ese movimiento pierde fuerza.
+      GIRO ALCISTA: movimiento bajista previo con fuerza (ADX llegó a > 23 con −DI > +DI) · valle rojo que asciende
+                    (momentum < 0 y subiendo) · ADX girando a la baja.
+      + RSI: el RSI(14) estuvo en zona baja (< 35) en las últimas 5 velas.
+      + MACD: la línea MACD cruzó sobre su señal en las últimas 3 velas (confirmación completa del usuario).
+      CONTINUACIÓN (Jaime Merino): direccionalidad alcista y ADX con pendiente positiva cruzando 23.
+    Espejo para el lado bajista."""
+    v, pv, a = d["val"], d["val"].shift(), d["adx"]
+
+    def primera(x):
+        x = x.fillna(False).astype(bool)
+        return x & ~x.shift(fill_value=False)
+
+    def reciente(x, k):
+        return x.fillna(False).astype(int).rolling(k, min_periods=1).max().astype(bool)
+    S = pd.DataFrame(index=df.index)
+    adx_baja, adx_sube = a < a.shift(), a > a.shift()
+    for lado, s in (("L", 1), ("C", -1)):
+        contra_fuerte = (a > 23) & ((d["ndi"] > d["pdi"]) if s == 1 else (d["pdi"] > d["ndi"]))
+        previo = reciente(contra_fuerte, 10)
+        valle_sube = (s * v < 0) & (s * v > s * pv)
+        giro = primera(previo & valle_sube & adx_baja)
+        rsi_ext = reciente((d["rsi"] < 35) if s == 1 else (d["rsi"] > 65), 5)
+        macd_x = (s * (d["macd"] - d["macd_sig"]) > 0) & (s * (d["macd"].shift() - d["macd_sig"].shift()) <= 0)
+        S[f"{lado}_giro"] = giro
+        S[f"{lado}_giro_rsi"] = primera(previo & valle_sube & adx_baja & rsi_ext)
+        S[f"{lado}_giro_rsi_macd"] = primera(reciente(previo & valle_sube & adx_baja, 5) & reciente(rsi_ext, 8)
+                                             & macd_x)
+        S[f"{lado}_continuacion"] = primera((s * v > s * pv) & adx_sube & reciente(a <= 23, 3) & (a > 23))
+        # referencia: solo «valle que asciende», sin ADX ni confirmaciones
+        S[f"{lado}_solo_valle_sube"] = primera(valle_sube)
+    S["todas_las_velas"] = True
+    return S
 
 
 def senales(df: pd.DataFrame, d: pd.DataFrame) -> pd.DataFrame:
@@ -97,7 +142,7 @@ def senales(df: pd.DataFrame, d: pd.DataFrame) -> pd.DataFrame:
     return S
 
 
-def resultados(df: pd.DataFrame, d: pd.DataFrame, S: pd.DataFrame, ticker: str) -> list[dict]:
+def resultados(df: pd.DataFrame, d: pd.DataFrame, S: pd.DataFrame, ticker: str, anexo: bool = False) -> list[dict]:
     o, c = df["Open"].to_numpy(), df["Close"].to_numpy()
     val, ema = d["val"].to_numpy(), d["ema55"].to_numpy()
     n = len(df)
@@ -105,7 +150,7 @@ def resultados(df: pd.DataFrame, d: pd.DataFrame, S: pd.DataFrame, ticker: str) 
     for col in S.columns:
         lado = -1 if col.startswith("C_") else 1
         idx = np.flatnonzero(S[col].to_numpy())
-        if col in ("todas_las_velas", "L_solo_ema", "C_solo_ema"):
+        if col in ("todas_las_velas", "L_solo_ema", "C_solo_ema", "L_solo_valle_sube", "C_solo_valle_sube"):
             idx = idx[idx % 5 == 0]  # referencias muy frecuentes: 1 de cada 5 velas basta y ahorra memoria
         for i in idx:
             e = i + 1
@@ -118,8 +163,11 @@ def resultados(df: pd.DataFrame, d: pd.DataFrame, S: pd.DataFrame, ticker: str) 
             # salida táctica del método: momentum pierde fuerza o cierre al otro lado de la EMA 55 (máx. 40 velas)
             j = e
             while j < min(n - 1, e + 40):
-                pierde = lado * val[j] > 0 and lado * val[j] < lado * val[j - 1]
-                rompe = lado * (c[j] - ema[j]) < 0
+                if anexo:  # el monitor cambia de direccionalidad o toca el punto 0 desde arriba
+                    pierde = lado * val[j] < lado * val[j - 1] and j > e
+                else:
+                    pierde = lado * val[j] > 0 and lado * val[j] < lado * val[j - 1]
+                rompe = (not anexo) and lado * (c[j] - ema[j]) < 0
                 if pierde or rompe:
                     break
                 j += 1
@@ -142,6 +190,9 @@ def resumir(R: pd.DataFrame) -> pd.DataFrame:
             fila[f"{k}_acierto%"] = 100 * (x > 0).mean()
             fila[f"{k}_t"] = t
         fila["velas_tactica"] = g["velas_tactica"].mean()
+        x = g["r_tactica"].dropna()
+        fila["gana_media%"] = 100 * x[x > 0].mean()
+        fila["pierde_media%"] = 100 * x[x <= 0].mean()
         lado = -1 if regla.startswith("C_") else 1
         fila["exceso_r10%"] = 100 * (g["r10"].mean() - lado * ref[10]) if regla != "todas_las_velas" else 0.0
         out.append(fila)
@@ -151,14 +202,15 @@ def resumir(R: pd.DataFrame) -> pd.DataFrame:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--max", type=int, default=300)
-    ap.add_argument("--marco", default="1D", help="1D o 1W")
+    ap.add_argument("--marco", default="1D", help="1D, 1W o 1h")
+    ap.add_argument("--reglas", default="checklist", help="checklist (láminas) o anexo (giros)")
     a = ap.parse_args()
     from core.motor_a import dataset as DS
     from core import alpaca
     tickers = DS.universo(maximo=a.max)
-    barras = DS.descargar(tickers, desde_anios=11)
+    barras = (alpaca.batch_bars(tickers, "1h", 4) if a.marco == "1h" else DS.descargar(tickers, desde_anios=11))
     try:
-        cr = alpaca.batch_bars(CRIPTO, "1D", 6)
+        cr = alpaca.batch_bars(CRIPTO, "1h" if a.marco == "1h" else "1D", 4 if a.marco == "1h" else 6)
     except Exception as e:
         print(f"Cripto no disponible: {e}")
         cr = {}
@@ -173,7 +225,8 @@ def main():
             if len(df) < 150:
                 continue
             d = indicadores(df)
-            filas += resultados(df, d, senales(df, d), t)
+            anexo = a.reglas == "anexo"
+            filas += resultados(df, d, senales_anexo(df, d) if anexo else senales(df, d), t, anexo)
         if not filas:
             continue
         R = pd.DataFrame(filas)
@@ -181,13 +234,14 @@ def main():
         todas.append(R)
         T = resumir(R)
         pd.set_option("display.width", 250)
-        print(f"\n===== {grupo.upper()} · marco {a.marco} · {R['ticker'].nunique()} símbolos · "
+        print(f"\n===== {grupo.upper()} · reglas {a.reglas} · marco {a.marco} · {R['ticker'].nunique()} símbolos · "
               f"{R['fecha'].min():%Y-%m} → {R['fecha'].max():%Y-%m} =====")
         cols = ["senales", "r5_media%", "r10_media%", "r10_acierto%", "r10_t", "r20_media%", "r20_t",
-                "r_tactica_media%", "r_tactica_acierto%", "r_tactica_t", "velas_tactica", "exceso_r10%"]
+                "r_tactica_media%", "r_tactica_acierto%", "gana_media%", "pierde_media%", "r_tactica_t", "velas_tactica",
+                "exceso_r10%"]
         print(T[cols].round(2).to_string())
         # robustez en el tiempo de la regla principal
-        for regla in ("L_estricta", "L_relajada", "C_relajada"):
+        for regla in ("L_estricta", "L_relajada", "C_relajada", "L_giro_rsi_macd", "L_giro", "C_giro_rsi_macd"):
             g = R[R["regla"] == regla]
             if len(g):
                 anual = g.groupby(g["fecha"].dt.year)["r10"].agg(["count", "mean"])
@@ -197,10 +251,10 @@ def main():
     if todas:
         R = pd.concat(todas)
         Path("datos/motor_a").mkdir(parents=True, exist_ok=True)
-        R.to_parquet(f"datos/motor_a/tradinglatino_{a.marco}.parquet")
+        R.to_parquet(f"datos/motor_a/tradinglatino_{a.reglas}_{a.marco}.parquet")
         json.dump({g: resumir(R[R["grupo"] == g]).round(4).reset_index().to_dict("records")
                    for g in R["grupo"].unique()},
-                  open(f"datos/motor_a/reporte_tradinglatino_{a.marco}.json", "w"), default=float, indent=1)
+                  open(f"datos/motor_a/reporte_tradinglatino_{a.reglas}_{a.marco}.json", "w"), default=float, indent=1)
 
 
 if __name__ == "__main__":
