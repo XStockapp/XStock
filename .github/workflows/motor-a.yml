@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       tarea:
-        description: "entrenar (Motor A, por defecto) · motor_b_iv (IV futura, DoltHub) · sonda_dolthub · sonda_marketdata (usa «mis» como acción)"
+        description: "entrenar (Motor A, por defecto) · motor_b_iv (IV futura, DoltHub) · sonda_dolthub · sonda_marketdata (usa «mis» como acción) · estrategia_tl (backtest TradingLatino)"
         default: "entrenar"
       max:
         description: "Máximo de acciones del universo"
@@ -55,6 +55,7 @@ jobs:
           if [ -z "$ALPACA_API_KEY" ] || [ -z "$ALPACA_SECRET_KEY" ]; then
             echo "Faltan los secrets ALPACA_API_KEY / ALPACA_SECRET_KEY del repositorio"; exit 1
           fi
+          if [ "${{ github.event.inputs.tarea }}" = "estrategia_tl" ]; then python tools/backtest_tradinglatino.py --max "${{ github.event.inputs.max || '300' }}" --marco 1D && python tools/backtest_tradinglatino.py --max "${{ github.event.inputs.max || '300' }}" --marco 1W; exit 0; fi
           if [ "${{ github.event.inputs.tarea }}" = "sonda_marketdata" ]; then python scripts/backfill_marketdata_oi.py --sonda "${{ github.event.inputs.mis || 'AAPL' }}"; exit 0; fi
           if [ "${{ github.event.inputs.tarea }}" = "sonda_dolthub" ]; then python tools/sonda_dolthub.py; exit 0; fi
           if [ "${{ github.event.inputs.tarea }}" = "motor_b_iv" ]; then python tools/entrenar_motor_b.py --max "${{ github.event.inputs.max || '500' }}"; exit 0; fi
