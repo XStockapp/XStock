@@ -177,6 +177,9 @@ st.markdown(
        f"{'PREMERCADO' if EXT['sesion'] == 'pre' else 'POSTMERCADO'} <span class='num'>${EXT['precio']:,.2f} "
        f"({EXT['var']:+.2f}%)</span> · {E(EXT['hora'])} NY</span>" if EXT else "")
     + "</div>", unsafe_allow_html=True)
+if not is_crypto(ticker):
+    from core import xpulse
+    xpulse.mostrar(ticker, float(last["Close"]))
 _rec = A["plan"]["modo_recomendado"]
 _opts = {f"Auto · {MODOS[_rec].replace('Entrada ', '')}": "auto", "A mercado": "market", "Proyectada (Limit)": "limit"}
 m1, m2, m3 = st.columns([4.2, 1, 1.25], vertical_alignment="bottom")
