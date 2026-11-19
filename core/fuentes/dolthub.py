@@ -5,6 +5,7 @@ post-no-preference/earnings → calendario de resultados, estimaciones de BPA, e
 """
 from __future__ import annotations
 
+import threading
 import time
 
 import pandas as pd
@@ -12,15 +13,17 @@ import requests
 
 API = "https://www.dolthub.com/api/v1alpha1/post-no-preference/{repo}/master"
 _ULT = [0.0]
+_CERROJO = threading.Lock()
 
 
 def consulta(repo: str, sql: str, reintentos: int = 3) -> pd.DataFrame:
     """Ejecuta una consulta SQL de solo lectura. Devuelve un DataFrame (vacío si no hay filas)."""
     for i in range(reintentos):
-        espera = 0.5 - (time.time() - _ULT[0])
-        if espera > 0:
-            time.sleep(espera)
-        _ULT[0] = time.time()
+        with _CERROJO:  # como mucho ~4 consultas nuevas por segundo, aunque haya varios hilos
+            espera = 0.25 - (time.time() - _ULT[0])
+            if espera > 0:
+                time.sleep(espera)
+            _ULT[0] = time.time()
         try:
             r = requests.get(API.format(repo=repo), params={"q": sql}, timeout=120)
             js = r.json()

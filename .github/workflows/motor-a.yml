@@ -37,6 +37,12 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-ml.txt
       - run: pip install -r requirements-ml.txt
+      - name: Caché de datos descargados (DoltHub)
+        uses: actions/cache@v4
+        with:
+          path: datos/motor_b/iv
+          key: dolthub-iv-${{ github.run_id }}
+          restore-keys: dolthub-iv-
       - name: Entrenar y validar
         env:
           ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}

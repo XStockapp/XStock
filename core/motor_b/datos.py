@@ -6,6 +6,7 @@ earnings_calendar:  fechas de resultados con hora (antes de la apertura / despu�
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -23,29 +24,40 @@ def _num(df: pd.DataFrame, cols) -> pd.DataFrame:
     return df
 
 
-def historia_iv(tickers: list[str], log=print) -> pd.DataFrame:
-    """IV / HV diarias de cada acción (una consulta por acción; caché por acción)."""
+def _bajar_iv(t: str) -> pd.DataFrame:
+    d = D.paginado("options", f"SELECT {COLS_VOL} FROM volatility_history WHERE act_symbol='{t}' ORDER BY date",
+                   por_pagina=1000, max_paginas=5)
+    if d.empty:
+        return d
+    d = _num(d, ["iv_current", "hv_current", "iv_year_high", "iv_year_low"])
+    d["date"] = pd.to_datetime(d["date"])
+    return d
+
+
+def historia_iv(tickers: list[str], log=print, hilos: int = 6) -> pd.DataFrame:
+    """IV / HV diarias de cada acción (una consulta por acción, en paralelo; caché por acción en disco)."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     (DIR / "iv").mkdir(parents=True, exist_ok=True)
-    partes = []
-    for i, t in enumerate(tickers):
+    partes, faltan = [], []
+    for t in tickers:
         f = DIR / "iv" / f"{t}.parquet"
-        if f.exists():
-            partes.append(pd.read_parquet(f))
-            continue
-        try:
-            d = D.paginado("options", f"SELECT {COLS_VOL} FROM volatility_history WHERE act_symbol='{t}' ORDER BY date",
-                           por_pagina=1000, max_paginas=5)
-        except Exception as e:
-            log(f"  IV {t}: {str(e)[:80]}")
-            continue
-        if d.empty:
-            continue
-        d = _num(d, ["iv_current", "hv_current", "iv_year_high", "iv_year_low"])
-        d["date"] = pd.to_datetime(d["date"])
-        d.to_parquet(f, index=False)
-        partes.append(d)
-        if (i + 1) % 50 == 0:
-            log(f"  IV DoltHub {i + 1}/{len(tickers)}")
+        fresco = f.exists() and time.time() - f.stat().st_mtime < 6 * 86400  # se renueva cada semana
+        (partes.append(pd.read_parquet(f)) if fresco else faltan.append(t))
+    log(f"  IV en caché: {len(partes)} · por descargar: {len(faltan)}")
+    with ThreadPoolExecutor(hilos) as ex:
+        fut = {ex.submit(_bajar_iv, t): t for t in faltan}
+        for n, fu in enumerate(as_completed(fut)):
+            t = fut[fu]
+            try:
+                d = fu.result()
+            except Exception as e:
+                log(f"  IV {t}: {str(e)[:80]}")
+                continue
+            if len(d):
+                d.to_parquet(DIR / "iv" / f"{t}.parquet", index=False)
+                partes.append(d)
+            if (n + 1) % 50 == 0:
+                log(f"  IV DoltHub {n + 1}/{len(faltan)}")
     if not partes:
         return pd.DataFrame()
     H = pd.concat(partes, ignore_index=True).rename(columns={"act_symbol": "ticker", "date": "fecha"})
