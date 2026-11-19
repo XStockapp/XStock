@@ -205,6 +205,17 @@ def procesar(cli: MD.Cliente, prog: Progreso, simbolo: str, fechas: list[str], h
 
 def sonda(simbolo: str):
     cli = MD.Cliente()
+    f0 = fechas_objetivo(3)[1]
+    for params in ({"date": f0, "dte": "1-45"}, {"date": f0}, {"date": f0, "from": f0, "to": _de_dia(_a_dia(f0) + 45)},
+                   {"dte": "1-45"}):
+        r = cli.s.get(MD.BASE.format(symbol=simbolo), params={**params, "columns": MD.COLUMNAS}, timeout=60)
+        try:
+            js = r.json()
+        except ValueError:
+            js = {}
+        print(f"diagnóstico {params}: HTTP {r.status_code} · s={js.get('s')} · contratos {len(js.get('optionSymbol') or [])}"
+              f" · {str(js.get('errmsg') or '')[:160]} · cabeceras {[k for k in r.headers if 'ratelimit' in k.lower()]}"
+              f" consumidos={r.headers.get('X-Api-Ratelimit-Consumed')}")
     for f in fechas_objetivo(3)[:2] + fechas_objetivo(3)[-1:]:
         antes = cli.consumidos
         t = time.time()
