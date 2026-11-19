@@ -185,8 +185,12 @@ def procesar(cli: MD.Cliente, prog: Progreso, simbolo: str, fechas: list[str], h
                 for f, df in ex.map(una, bloque):
                     nuevos.append(df)
                     hechas.append(f)
-        except MD.SinCreditos:
+        except MD.SinCreditos as e:
+            log(f"  {simbolo}: {e}")
             sin_saldo = True
+        except MD.SinAcceso as e:
+            log(f"  {e} — se salta esta acción")
+            break
         except RuntimeError as e:
             log(f"  {simbolo}: {e}")
         if sin_saldo or not cli.queda_saldo():

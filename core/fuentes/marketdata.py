@@ -35,6 +35,10 @@ class SinCreditos(RuntimeError):
     """El saldo diario de créditos está por agotarse: hay que parar limpiamente."""
 
 
+class SinAcceso(RuntimeError):
+    """El plan no da acceso a ese símbolo o fecha (402 sin relación con los créditos): se salta y se sigue."""
+
+
 class Cliente:
     def __init__(self, token: str | None = None, limite_creditos: int = 95_000, reserva: int = 3_000):
         self.token = (token or os.environ.get("MARKETDATA_TOKEN", "")).strip()
@@ -100,7 +104,11 @@ class Cliente:
                 time.sleep(BLOQUEO_IP)
                 continue
             if r.status_code == 402:
-                raise SinCreditos("la API respondió 402: créditos agotados")
+                self._anotar(r, 0)
+                txt = r.text[:200]
+                if "credit" in txt.lower() or (self.restantes is not None and self.restantes <= self.reserva):
+                    raise SinCreditos(f"402: {txt}")
+                raise SinAcceso(f"{symbol}: 402 {txt}")
             if r.status_code in (200, 203):
                 js = r.json()
                 if js.get("s") not in (None, "ok") or not js.get("optionSymbol"):
