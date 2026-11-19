@@ -331,9 +331,18 @@ def main():
     from core.motor_a import dataset as DS
     from core import alpaca
     tickers = DS.universo(maximo=a.max)
-    barras = (alpaca.batch_bars(tickers, "1h", 4) if a.marco == "1h" else DS.descargar(tickers, desde_anios=11))
+    def horas(lista, por=5):  # 1h se arma con velas de 30 min: en bloques chicos para no cortar la paginación
+        out = {}
+        for i in range(0, len(lista), por):
+            try:
+                out.update(alpaca.batch_bars(lista[i:i + por], "1h", 4))
+            except Exception as e:
+                print(f"  1h {lista[i:i + por]}: {e}")
+        print(f"  velas de 1h: {len(out)}/{len(lista)} símbolos")
+        return out
+    barras = horas(tickers) if a.marco == "1h" else DS.descargar(tickers, desde_anios=11)
     try:
-        cr = alpaca.batch_bars(CRIPTO, "1h" if a.marco == "1h" else "1D", 4 if a.marco == "1h" else 6)
+        cr = horas(CRIPTO, 1) if a.marco == "1h" else alpaca.batch_bars(CRIPTO, "1D", 6)
     except Exception as e:
         print(f"Cripto no disponible: {e}")
         cr = {}
