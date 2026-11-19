@@ -289,7 +289,11 @@ def meta_xpulse(barras: dict, R: pd.DataFrame, log=print) -> pd.DataFrame | None
     así cada señal se cruza con una predicción hecha SIN ver ese año."""
     import os
     from core.motor_a import artefactos as AR, dataset as DS, macro as MC, modelo as MO, sec as SE
-    crudo = AR.bajar("reporte_movimiento_H10.json")
+    import requests
+    url, h = AR._sb()
+    r = requests.get(f"{url}/storage/v1/object/{AR.BUCKET}/{AR.PREFIJO}/reporte_movimiento_H10.json", headers=h,
+                     timeout=60) if url else None
+    crudo = r.content if r is not None and r.status_code == 200 else None
     if not crudo:
         log("Sin reporte de X-Pulse: se omite el meta-etiquetado.")
         return None
@@ -365,8 +369,6 @@ def main():
         R = pd.DataFrame(filas)
         R["grupo"] = grupo
         todas.append(R)
-        if a.meta and grupo == "acciones" and a.marco == "1D":
-            meta_xpulse(B, R)
         T = resumir(R)
         pd.set_option("display.width", 250)
         print(f"\n===== {grupo.upper()} · reglas {a.reglas} · marco {a.marco} · {R['ticker'].nunique()} símbolos · "
@@ -384,6 +386,8 @@ def main():
                 anual["mean"] *= 100
                 print(f"{regla} por año (n, retorno medio a 10 velas %):",
                       "; ".join(f"{y}: {int(r['count'])}, {r['mean']:+.2f}" for y, r in anual.iterrows()))
+    if a.meta and todas and a.marco == "1D":
+        meta_xpulse(barras, todas[0])
     if todas:
         R = pd.concat(todas)
         Path("datos/motor_a").mkdir(parents=True, exist_ok=True)
