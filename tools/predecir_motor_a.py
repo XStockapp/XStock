@@ -35,9 +35,19 @@ def _json(nombre: str) -> dict | None:
 
 
 def resumen_iv(hoy: str) -> pd.DataFrame:
+    """Resumen de IV del archivo diario: el del mismo job si existe; si no, el último subido a Supabase (≤ 5 días)."""
     p = Path("datos/opciones/diario") / hoy / "resumen.parquet"
     if p.exists():
         return pd.read_parquet(p).set_index("ticker")
+    import io
+    import requests
+    url, h = AR._sb()
+    if url:
+        for d in pd.bdate_range(end=pd.Timestamp(hoy), periods=5)[::-1]:
+            r = requests.get(f"{url}/storage/v1/object/opciones/diario/{d.date()}/resumen.parquet", headers=h, timeout=60)
+            if r.status_code == 200:
+                print(f"Resumen de IV del archivo del {d.date()}")
+                return pd.read_parquet(io.BytesIO(r.content)).set_index("ticker")
     return pd.DataFrame()
 
 
