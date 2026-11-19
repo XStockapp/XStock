@@ -57,7 +57,8 @@ jobs:
           fi
           if [ "${{ github.event.inputs.tarea }}" = "estrategia_tl" ]; then
             for e in $(echo "${{ github.event.inputs.experimentos }}" | tr ',' ' '); do
-              python tools/backtest_tradinglatino.py --max "${{ github.event.inputs.max || '300' }}" --reglas "${e%%:*}" --marco "${e##*:}" || true
+              IFS=':' read -r REG MAR MET <<< "$e"
+              python tools/backtest_tradinglatino.py --max "${{ github.event.inputs.max || '300' }}" --reglas "$REG" --marco "$MAR" ${MET:+--meta} || true
             done; exit 0; fi
           if [ "${{ github.event.inputs.tarea }}" = "sonda_marketdata" ]; then python scripts/backfill_marketdata_oi.py --sonda "${{ github.event.inputs.mis || 'AAPL' }}"; exit 0; fi
           if [ "${{ github.event.inputs.tarea }}" = "sonda_dolthub" ]; then python tools/sonda_dolthub.py; exit 0; fi
