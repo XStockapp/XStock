@@ -80,7 +80,7 @@ class Cliente:
                 raise SinCreditos("la API respondió 402: créditos agotados")
             if r.status_code in (200, 203):
                 js = r.json()
-                if js.get("s") != "ok":
+                if js.get("s") not in (None, "ok") or not js.get("optionSymbol"):
                     self._anotar(r, 0)
                     return vacia()
                 df = a_tabla(js, fecha)
