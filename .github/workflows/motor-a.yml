@@ -39,7 +39,7 @@ jobs:
       - run: pip install -r requirements-ml.txt
       - name: Librería de ThetaData (solo para tareas de ThetaData)
         if: startsWith(github.event.inputs.tarea, 'sonda_thetadata') || startsWith(github.event.inputs.tarea, 'thetadata')
-        run: pip install -q "thetadata>=1.0.9"
+        run: pip install -q "thetadata>=1.0.9" python-dotenv
       - name: Caché de datos descargados (DoltHub)
         uses: actions/cache@v4
         with:
