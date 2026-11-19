@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       tarea:
-        description: "entrenar (Motor A, por defecto) · motor_b_iv (IV futura, DoltHub) · sonda_dolthub"
+        description: "entrenar (Motor A, por defecto) · motor_b_iv (IV futura, DoltHub) · sonda_dolthub · sonda_thetadata"
         default: "entrenar"
       max:
         description: "Máximo de acciones del universo"
@@ -37,6 +37,24 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-ml.txt
       - run: pip install -r requirements-ml.txt
+      - name: Theta Terminal (solo para tareas de ThetaData)
+        if: startsWith(github.event.inputs.tarea, 'sonda_thetadata') || startsWith(github.event.inputs.tarea, 'thetadata')
+        env:
+          THETADATA_EMAIL: ${{ secrets.THETADATA_EMAIL }}
+          THETADATA_PASSWORD: ${{ secrets.THETADATA_PASSWORD }}
+        run: |
+          if [ -z "$THETADATA_EMAIL" ] || [ -z "$THETADATA_PASSWORD" ]; then
+            echo "Faltan los secrets THETADATA_EMAIL / THETADATA_PASSWORD"; exit 1
+          fi
+          sudo apt-get -qq install -y openjdk-21-jre-headless > /dev/null
+          mkdir -p ~/theta && cd ~/theta
+          printf '%s\n%s\n' "$THETADATA_EMAIL" "$THETADATA_PASSWORD" > creds.txt
+          for u in https://download-unstable.thetadata.us/ThetaTerminalv3.jar https://download-latest.thetadata.us/ThetaTerminalv3.jar https://download-stable.thetadata.us/ThetaTerminalv3.jar; do
+            curl -sfL -o ThetaTerminalv3.jar "$u" && echo "Descargado de $u" && break
+          done
+          test -s ThetaTerminalv3.jar || { echo "No se pudo descargar ThetaTerminalv3.jar"; exit 1; }
+          nohup java -jar ThetaTerminalv3.jar --creds-file=creds.txt > terminal.log 2>&1 &
+          sleep 25; tail -n 25 terminal.log | grep -iv "password" || true
       - name: Caché de datos descargados (DoltHub)
         uses: actions/cache@v4
         with:
@@ -55,6 +73,7 @@ jobs:
             echo "Faltan los secrets ALPACA_API_KEY / ALPACA_SECRET_KEY del repositorio"; exit 1
           fi
           if [ "${{ github.event.inputs.tarea }}" = "sonda_dolthub" ]; then python tools/sonda_dolthub.py; exit 0; fi
+          if [ "${{ github.event.inputs.tarea }}" = "sonda_thetadata" ]; then python tools/sonda_thetadata.py; tail -n 30 ~/theta/terminal.log | grep -iv password; exit 0; fi
           if [ "${{ github.event.inputs.tarea }}" = "motor_b_iv" ]; then python tools/entrenar_motor_b.py --max "${{ github.event.inputs.max || '500' }}"; exit 0; fi
           python tools/entrenar_motor_a.py --max "${{ github.event.inputs.max || '500' }}" --experimentos "${{ github.event.inputs.experimentos || 'direccion:10' }}" --mis "${{ github.event.inputs.mis }}"
       - uses: actions/upload-artifact@v4
