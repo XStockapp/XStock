@@ -34,14 +34,16 @@ def nombre_reporte(objetivo: str, H: int) -> str:
     return "reporte.json" if (objetivo, H) == ("direccion", 10) else f"reporte_{objetivo}_H{H}.json"
 
 
-def guardar_local(reporte: dict, modelo_txt: str | None, nombre: str = "reporte.json") -> None:
+def guardar_local(reporte: dict, modelo_txt: str | None, nombre: str = "reporte.json",
+                  nombre_modelo: str = "modelo.txt") -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     (CACHE_DIR / nombre).write_text(json.dumps(reporte, ensure_ascii=False, indent=1, default=float))
     if modelo_txt:
-        (CACHE_DIR / "modelo.txt").write_text(modelo_txt)
+        (CACHE_DIR / nombre_modelo).write_text(modelo_txt)
 
 
-def subir(reporte: dict, modelo_txt: str | None, nombre: str = "reporte.json") -> bool:
+def subir(reporte: dict, modelo_txt: str | None, nombre: str = "reporte.json",
+          nombre_modelo: str = "modelo.txt") -> bool:
     url, h = _sb()
     if not url:
         return False
@@ -49,13 +51,31 @@ def subir(reporte: dict, modelo_txt: str | None, nombre: str = "reporte.json") -
                   timeout=30)  # ya existe → 400/409, no importa
     datos = {nombre: (json.dumps(reporte, ensure_ascii=False, default=float).encode(), "application/json")}
     if modelo_txt:
-        datos["modelo.txt"] = (modelo_txt.encode(), "text/plain")
+        datos[nombre_modelo] = (modelo_txt.encode(), "text/plain")
     ok = True
     for nombre, (cuerpo, tipo) in datos.items():
         r = requests.post(f"{url}/storage/v1/object/{BUCKET}/{PREFIJO}/{nombre}", data=cuerpo, timeout=120,
                           headers={**h, "Content-Type": tipo, "x-upsert": "true"})
         ok = ok and r.status_code < 300
     return ok
+
+
+def nombre_modelo(objetivo: str, H: int) -> str:
+    return "modelo.txt" if (objetivo, H) == ("direccion", 10) else f"modelo_{objetivo}_H{H}.txt"
+
+
+def bajar(nombre: str) -> bytes | None:
+    """Cualquier archivo de modelos/motor_a/ (modelo, reporte o predicciones); None si no existe."""
+    url, h = _sb()
+    if url:
+        try:
+            r = requests.get(f"{url}/storage/v1/object/{BUCKET}/{PREFIJO}/{nombre}", headers=h, timeout=60)
+            if r.status_code == 200:
+                return r.content
+        except Exception:
+            pass
+    p = CACHE_DIR / nombre
+    return p.read_bytes() if p.exists() else None
 
 
 def listar() -> list[str]:

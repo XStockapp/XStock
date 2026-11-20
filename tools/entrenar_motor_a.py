@@ -98,7 +98,7 @@ def experimento(barras, spy, sec_datos, macro, obj, H, a, fuente, mis, t0):
         print(f"  → {'entra' if entra else 'NO entra (no mejora fuera de muestra)'}")
     R = wf["resumen"]
     arboles = int(sorted(d["arboles"] for d in wf["pliegues"])[len(wf["pliegues"]) // 2])
-    principal = (obj, H) == ("direccion", 10)
+    principal = (obj, H) in (("direccion", 10), ("movimiento", 10))  # el de movimiento lo usa la app (predicciones)
     final = MO.modelo_final(panel, wf["columnas"], arboles)
     fechas = panel.index.get_level_values("fecha")
     reporte = {
@@ -123,8 +123,9 @@ def experimento(barras, spy, sec_datos, macro, obj, H, a, fuente, mis, t0):
     }
     nombre = AR.nombre_reporte(obj, H)
     modelo_txt = final.model_to_string() if principal else None
-    AR.guardar_local(reporte, modelo_txt, nombre)
-    subido = False if (a.sin_subir or a.sintetico is not None) else AR.subir(reporte, modelo_txt, nombre)
+    AR.guardar_local(reporte, modelo_txt, nombre, AR.nombre_modelo(obj, H))
+    subido = False if (a.sin_subir or a.sintetico is not None) else AR.subir(reporte, modelo_txt, nombre,
+                                                                             AR.nombre_modelo(obj, H))
     print(f"\nVeredicto: {R['veredicto']}  ·  AUC {R['auc']:.3f} ({ref_nombre} {R['auc_momentum']:.3f}, azar 0.500)"
           f"  ·  Brier skill {R['bss']:+.4f}  ·  IC {R['ic_medio']:+.3f} (t={R['ic_t']:.1f})")
     print(f"Árboles por año: {reporte['arboles_por_anio']}")

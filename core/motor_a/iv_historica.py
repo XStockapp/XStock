@@ -136,6 +136,21 @@ def _auc(y, p):
     return float(roc_auc_score(y, p)) if len(np.unique(y)) > 1 else float("nan")
 
 
+def combinar(p_modelo, iv, sigma_d, H: int, k: float, rep: dict) -> dict:
+    """En vivo: con el reporte vs-IV, probabilidad que cobra la IV, probabilidad combinada y señal IV barata/cara.
+    p_modelo: probabilidad SIN calibrar del modelo de movimiento (la misma escala usada al ajustar la combinación)."""
+    p_modelo, iv, sigma_d = (np.atleast_1d(np.asarray(x, float)) for x in (p_modelo, iv, sigma_d))
+    a = k * sigma_d * math.sqrt(H)
+    p_iv = prob_toque(iv * math.sqrt(H / 252), a)
+    p_iv_cal = np.interp(p_iv, rep["cal_iv"]["x"], rep["cal_iv"]["y"])
+    z = rep["intercepto"] + rep["coef_iv"] * _logit(p_iv) + rep["coef_modelo"] * _logit(p_modelo)
+    p_comb = 1 / (1 + np.exp(-z))
+    dif = _logit(p_modelo) - _logit(p_iv_cal)
+    q = np.searchsorted(rep["cortes_dif"], dif) + 1  # 1..5
+    senal = np.where(q >= 5, "barata", np.where(q <= 1, "cara", "justa"))
+    return {"p_iv": p_iv_cal, "p_comb": p_comb, "dif": dif, "quintil": q, "senal": senal}
+
+
 def _logit(p):
     p = np.clip(p, 1e-4, 1 - 1e-4)
     return np.log(p / (1 - p))
@@ -177,6 +192,9 @@ def comparar(O: pd.DataFrame, ivdf: pd.DataFrame, panel: pd.DataFrame, H: int, k
         "iv_mediana": float(D["iv"].median()), "iv_vs_rv_mediana": float(D["iv_vs_rv"].median()),
         "auc_iv": _auc(y, te["p_iv"]), "auc_modelo": _auc(y, te["p"]), "auc_combinado": _auc(y, te["p_comb"]),
         "brier_iv_cal": brier(te["p_iv_cal"]), "brier_modelo": brier(te["p"]), "brier_combinado": brier(te["p_comb"]),
-        "coef_iv": float(lr.coef_[0][0]), "coef_modelo": float(lr.coef_[0][1]),
+        "coef_iv": float(lr.coef_[0][0]), "coef_modelo": float(lr.coef_[0][1]), "intercepto": float(lr.intercept_[0]),
+        # para usar en vivo: calibración de la probabilidad de la IV y cortes de quintil de la diferencia de logits
+        "cal_iv": {"x": [float(v) for v in iso.X_thresholds_], "y": [float(v) for v in iso.y_thresholds_]},
+        "cortes_dif": [float(v) for v in te["dif"].quantile([0.2, 0.4, 0.6, 0.8])],
         "tasa_real": float(y.mean()), "tramos": tramos.to_dict("records"),
     }

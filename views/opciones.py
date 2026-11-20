@@ -232,6 +232,8 @@ VENT = OP.RANGOS[RNG]
 INV = float(ss.get("opt_inv") or 0)
 BAL = PORT + INV
 rsi = float(r_["RSI"])
+from core import xpulse  # noqa: E402
+xpulse.mostrar(ticker, spot)
 
 # ---- multi-temporalidad: la temporalidad elegida + dos mayores; los pesos dependen del vencimiento
 AN = {TF: A}
