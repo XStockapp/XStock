@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       tarea:
-        description: "entrenar (Motor A, por defecto) · motor_b_iv (IV futura, DoltHub) · sonda_dolthub · sonda_marketdata (usa «mis» como acción) · estrategia_tl (backtest TradingLatino)"
+        description: "entrenar (Motor A, por defecto) · motor_b_iv (IV futura, DoltHub) · sonda_dolthub · sonda_marketdata (usa «mis» como acción) · predecir (X-Pulse del día) · estrategia_tl (backtest TradingLatino)"
         default: "entrenar"
       max:
         description: "Máximo de acciones del universo"
@@ -57,9 +57,11 @@ jobs:
           fi
           if [ "${{ github.event.inputs.tarea }}" = "estrategia_tl" ]; then
             for e in $(echo "${{ github.event.inputs.experimentos }}" | tr ',' ' '); do
-              IFS=':' read -r REG MAR MET <<< "$e"
-              python tools/backtest_tradinglatino.py --max "${{ github.event.inputs.max || '300' }}" --reglas "$REG" --marco "$MAR" ${MET:+--meta} || true
+              IFS=':' read -r REG MAR EXTRA <<< "$e"
+              FLAGS=""; case "$EXTRA" in *meta*) FLAGS="$FLAGS --meta";; esac; case "$EXTRA" in *motor*) FLAGS="$FLAGS --motor";; esac
+              python tools/backtest_tradinglatino.py --max "${{ github.event.inputs.max || '300' }}" --reglas "$REG" --marco "$MAR" $FLAGS || true
             done; exit 0; fi
+          if [ "${{ github.event.inputs.tarea }}" = "predecir" ]; then python tools/predecir_motor_a.py --max "${{ github.event.inputs.max || '200' }}"; exit 0; fi
           if [ "${{ github.event.inputs.tarea }}" = "sonda_marketdata" ]; then python scripts/backfill_marketdata_oi.py --sonda "${{ github.event.inputs.mis || 'AAPL' }}"; exit 0; fi
           if [ "${{ github.event.inputs.tarea }}" = "sonda_dolthub" ]; then python tools/sonda_dolthub.py; exit 0; fi
           if [ "${{ github.event.inputs.tarea }}" = "motor_b_iv" ]; then python tools/entrenar_motor_b.py --max "${{ github.event.inputs.max || '500' }}"; exit 0; fi

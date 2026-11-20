@@ -114,3 +114,12 @@ def test_iv_historica_reconstruye(monkeypatch):
     monkeypatch.setattr(pd.Timestamp, "today", staticmethod(lambda: pd.Timestamp("2024-03-29")))
     d = IV.descargar_iv(barras, ["AMD"], desde="2024-03-01", log=lambda *_: None)
     assert len(d) == 4 and np.allclose(d["iv"], 0.55, atol=0.002)
+
+
+def test_ncdf_sin_scipy():
+    import math
+    import numpy as np
+    from core.perfil_opciones import ncdf
+    x = np.linspace(-6, 6, 241)
+    ref = np.array([0.5 * (1 + math.erf(v / math.sqrt(2))) for v in x])
+    assert np.max(np.abs(ncdf(x) - ref)) < 2e-7

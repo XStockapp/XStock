@@ -239,6 +239,28 @@ def resumir(R: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(out).set_index("regla")
 
 
+def con_motor(S: pd.DataFrame, df: pd.DataFrame) -> pd.DataFrame:
+    """Señales del motor de XStock (puntaje técnico de la app, −100..+100, en la temporalidad operativa) y su cruce
+    con la estrategia. Umbrales = los de la etiqueta MARKET de la app: BUY si (puntaje+100)/2 ≥ 57 → puntaje ≥ +14;
+    STRONG BUY ≥ 70 → ≥ +40 (espejo para venta)."""
+    from core.technical import compute_all, score_series
+    sc = score_series(compute_all(df.copy())).reindex(df.index)
+
+    def primera(x):
+        x = x.fillna(False).astype(bool)
+        return x & ~x.shift(fill_value=False)
+    S["L_motor_compra"] = primera(sc >= 14)
+    S["L_motor_fuerte"] = primera(sc >= 40)
+    S["C_motor_venta"] = primera(sc <= -14)
+    S["C_motor_fuerte"] = primera(sc <= -40)
+    for lado, s in (("L", 1), ("C", -1)):
+        for b in (f"{lado}_giro", f"{lado}_giro_rsi_macd", f"{lado}_solo_valle_sube"):
+            if b in S:
+                S[f"{b}_acuerdo"] = S[b] & (s * sc > 0)
+                S[f"{b}_desacuerdo"] = S[b] & (s * sc < 0)
+    return S
+
+
 def a_4h(df: pd.DataFrame) -> pd.DataFrame:
     """Velas de 4 horas a partir de las de 1 hora (sesión de Nueva York: 9:30-13:30 y 13:30-cierre)."""
     x = df.copy()
@@ -331,6 +353,7 @@ def main():
     ap.add_argument("--marco", default="1D", help="1D, 1W o 1h")
     ap.add_argument("--reglas", default="checklist", help="checklist (láminas), anexo (giros) o mtf (contexto 4h + entrada 1h)")
     ap.add_argument("--meta", action="store_true", help="cruzar las señales con X-Pulse fuera de muestra")
+    ap.add_argument("--motor", action="store_true", help="medir también el motor de XStock y su cruce con la estrategia")
     a = ap.parse_args()
     from core.motor_a import dataset as DS
     from core import alpaca
@@ -363,7 +386,13 @@ def main():
             d = indicadores(df)
             anexo = a.reglas in ("anexo", "mtf")
             fn = senales_mtf if a.reglas == "mtf" else (senales_anexo if anexo else senales)
-            filas += resultados(df, d, fn(df, d), t, anexo)
+            S_ = fn(df, d)
+            if a.motor:
+                try:
+                    S_ = con_motor(S_, df)
+                except Exception as e:
+                    print(f"  motor {t}: {e}")
+            filas += resultados(df, d, S_, t, anexo)
         if not filas:
             continue
         R = pd.DataFrame(filas)
