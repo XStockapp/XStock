@@ -56,6 +56,10 @@ def panel_html(ticker: str, spot: float | None = None) -> str | None:
     mov_txt = f"±{mov * 100:.1f}%" + (f" (±${spot * mov:,.2f})" if spot else "")
     base = P.get("tasa_base")
     s = SENALES.get(x.get("senal") or "")
+    rv_iv = (x.get("sigma_d") or 0) * math.sqrt(252) / x["iv"] if x.get("iv") else None
+    inflada = rv_iv is not None and rv_iv > 1.5  # la vol. real de 20 sesiones viene de un salto puntual
+    if inflada and s:
+        s = (s[0], MUTED, s[2])
     chip = (f"<span class='x-chip' style='border-color:{s[1]}66;color:{s[1]}'>{s[0]}</span>" if s else
             f"<span class='x-chip' style='color:{MUTED}'>SIN IV HOY</span>")
     filas = [("Probabilidad de movimiento fuerte", _pct(x["p"])),
@@ -65,6 +69,9 @@ def panel_html(ticker: str, spot: float | None = None) -> str | None:
     celdas = "".join(f"<div class='xp-c'><div class='xp-l'>{html.escape(a)}</div><div class='xp-v num'>{b}</div></div>"
                      for a, b in filas)
     nota = s[2] if s else "Sin cadena de opciones archivada hoy para esta acción: solo la probabilidad del modelo."
+    if inflada:
+        nota = (f"Volatilidad inflada por un salto reciente: la real de 20 sesiones es {rv_iv:.1f}× la IV, así que el "
+                "movimiento de referencia es exagerado y la señal es menos confiable.")
     return (
         "<style>.xp{background:#161B22;border:1px solid #30363D;border-radius:6px;padding:10px 12px;margin:6px 0 10px}"
         ".xp-h{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px}"
@@ -74,10 +81,11 @@ def panel_html(ticker: str, spot: float | None = None) -> str | None:
         "font-family:'JetBrains Mono','Fira Code',monospace}.xp-n{font-size:12px;color:#8B949E;margin-top:6px}"
         "@media(max-width:640px){.xp-g{grid-template-columns:repeat(2,minmax(0,1fr))}}</style>"
         f"<div class='xp'><div class='xp-h'><b>{NOMBRE}</b>"
-        f"<span class='muted'>próximas {H} sesiones · movimiento {html.escape(mov_txt)} en cualquier dirección</span>"
+        f"<span class='muted'>fuerza esperada en {H} sesiones · movimiento de referencia {html.escape(mov_txt)}</span>"
         f"{chip}<span class='muted num' style='margin-left:auto;font-size:11px'>al cierre {html.escape(P.get('fecha', ''))}</span>"
         f"</div><div class='xp-g'>{celdas}</div>"
-        f"<div class='xp-n'>{html.escape(nota)} X-Pulse mide la fuerza del movimiento, no su dirección.</div></div>")
+        f"<div class='xp-n'>{html.escape(nota)} La dirección la marca el análisis técnico y tus estrategias; X-Pulse "
+        "indica si el movimiento tendrá recorrido y si las opciones lo cobran barato.</div></div>")
 
 
 def mostrar(ticker: str, spot: float | None = None) -> bool:
