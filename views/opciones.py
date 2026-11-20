@@ -62,6 +62,17 @@ st.markdown(f"""<style>
 .ox-box{{background:{PANEL};border:1px solid {BORDER};border-radius:8px;padding:10px 12px;margin-bottom:8px}}
 .ox-box h4{{margin:0 0 6px;font-size:11px;color:#8B949E;text-transform:uppercase;letter-spacing:.05em;font-weight:600}}
 .ox-dt{{display:grid;grid-template-columns:1fr;gap:0}}
+.ox-fold>summary,.ox-sec>summary{{list-style:none;cursor:pointer}}
+.ox-fold>summary::-webkit-details-marker,.ox-sec>summary::-webkit-details-marker{{display:none}}
+.ox-fold>summary .ox-bar{{margin-bottom:6px}}
+.ox-fold>summary .ox-bar::after{{content:'▾';font-size:15px;color:#8B949E;border:1px solid {BORDER};border-radius:4px;
+  width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;flex:none}}
+.ox-fold:not([open])>summary .ox-bar::after{{content:'▸'}}
+.ox-sec{{margin:2px 0 6px}}
+.ox-sec>summary{{font-size:11px;color:#8B949E;text-transform:uppercase;letter-spacing:.05em;padding:4px 0}}
+.ox-sec>summary::before{{content:'▸ ';color:#8B949E}} .ox-sec[open]>summary::before{{content:'▾ '}}
+.ox-al{{border:1px solid {BORDER};border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:12px;background:{PANEL}}}
+.ox-al b.t{{display:block;font-size:12px;margin-bottom:2px}}
 .ox-dt div{{display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #21262D;padding:3px 0;font-size:12px}}
 .ox-dt span{{color:#8B949E;min-width:0;flex:1 1 auto}} .ox-dt b{{font-family:{MONO};font-variant-numeric:tabular-nums;font-weight:600;color:{TXT};text-align:right;min-width:0;overflow-wrap:anywhere}}
 .ox-st{{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}}
@@ -117,7 +128,9 @@ left, right = st.columns([1.05, 3.2], gap="small")
 with left:
     top_a = st.container()
 with right:
-    top_b, top_c = st.columns(2, gap="small")
+    alert_ph = st.container()  # recuadro de estrategias integradas (se rellena tras el análisis)
+    _col_mo, top_ch = st.columns([1, 1.12], gap="small")
+    top_b, top_c = _col_mo.container(), _col_mo.container()
 
 with left:
     with st.container(border=True, key="ox_cfg"):
@@ -128,7 +141,37 @@ with left:
                              help="Hasta qué fecha de vencimiento se buscan las opciones: 2 semanas, 1, 3 o 6 meses")
         inv_ph = st.empty()  # balance + inversión (se rellena tras el análisis para poder destellar)
         perf_ph = st.empty()  # tipo de análisis + perfil táctico (se rellena cuando se conoce la acción)
-        st.button("Analizar Opción", type="primary", icon=":material/bolt:", width="stretch", key="ox_go")
+        _cb, _cm = st.columns([5, 1.2], gap="small", vertical_alignment="bottom")
+        _cb.button("Analizar Opción", type="primary", icon=":material/bolt:", width="stretch", key="ox_go")
+        def _guardar_estrategias():
+            from core import estrategias as _E
+            ss["ox_estrategias"] = [k for k, c in _E.CATALOGO.items() if c["validada"] and ss.get(f"ox_est_{k}")]
+            ss["ox_motor_pop"] = False  # cierra la ventana
+
+        with _cm.popover("", icon=":material/manufacturing:", help="Motor de análisis: Motor A y estrategias guardadas",
+                         width="stretch", key="ox_motor_pop", on_change="rerun"):
+            from core import estrategias as ESTR
+            st.markdown("**Motor de análisis**")
+            st.checkbox("Motor A · activo", value=True, disabled=True, key="ox_motor_a")
+            st.markdown("<div class='muted' style='font-size:11px;margin:-8px 0 10px 28px;line-height:1.5'>Corazón del "
+                        "análisis adaptativo de XStock: puntaje técnico multi-temporalidad, flujo de opciones y X-Pulse, "
+                        "entrenado con 10 años de datos. Siempre encendido.</div>"
+                        "<div class='ox-lbl' style='border-top:1px solid #30363D;padding-top:8px'>Estrategias guardadas</div>",
+                        unsafe_allow_html=True)
+            _act = set(ss.get("ox_estrategias") or [])
+            for _k, _c in ESTR.CATALOGO.items():
+                if _c["validada"]:
+                    _s1 = _c["stats"]["1h"]
+                    ss.setdefault(f"ox_est_{_k}", _k in _act)
+                    st.checkbox(_c["nombre"], key=f"ox_est_{_k}", help=_c["resumen"])
+                    st.markdown(f"<div class='muted' style='font-size:11px;margin:-8px 0 8px 28px'>Validada · 1h "
+                                f"<span class='num'>{_s1['retorno']:+.2f}%</span> por operación (al azar "
+                                f"<span class='num'>{_s1['ref']:+.2f}%</span>)</div>", unsafe_allow_html=True)
+                else:
+                    st.checkbox(f"{_c['nombre']} · sin reglas aún", value=False, disabled=True, key=f"ox_est_{_k}")
+            _g1, _g2 = st.columns(2)
+            _g2.button("Guardar", type="primary", width="stretch", key="ox_est_save", on_click=_guardar_estrategias)
+            _g1.caption(f"{len(_act)} activa(s)" if _act else "Solo Motor A")
 
 ticker = tk_in or "SPY"
 try:  # próxima publicación de resultados (riesgo de gap e IV crush) y vela de evento reciente
@@ -253,6 +296,22 @@ SC_MTF = MT0["puntaje"] if MT0 else COMB
 # lado principal: el del puntaje multi-temporalidad para el horizonte del nivel elegido
 LADO = "CALL" if SC_MTF >= 0 else "PUT"
 OPUESTO = "PUT" if LADO == "CALL" else "CALL"
+# ---- estrategias guardadas integradas al Motor A (botón del motor)
+EST_ACT = ss.get("ox_estrategias") or []
+TLS, TL_CAMBIO, LADO_MOTOR = None, None, LADO
+if "tradinglatino" in EST_ACT:
+    from core import estrategias as ESTR
+    _tf_tl = TF if TF in ("1h", "1D") else "1h"  # validada en 1h y 1D
+    try:
+        TLS = ESTR.senal_tradinglatino(data.history_tf(ticker, _tf_tl))
+        if TLS:
+            TLS["tf"] = _tf_tl
+    except Exception:
+        TLS = None
+    # el giro alcista confirmado rindió MÁS cuando el motor estaba en contra (compra tras una caída): manda el giro.
+    # El giro bajista no tuvo ventaja en acciones: nunca cambia el lado.
+    if TLS and TLS["direccion"] == "alcista" and TLS["confirmada"] and LADO == "PUT":
+        LADO, OPUESTO, TL_CAMBIO = "CALL", "PUT", "PUT → CALL"
 
 
 def _mtf_dte(dte: int):
@@ -495,7 +554,7 @@ def _bar(t, pct, lbl, col):
 FLUJO = OP.flujo_neto(CH)
 with top_b:
     ema_x = "EMA9 > EMA21" if r_["EMA9"] > r_["EMA21"] else "EMA9 < EMA21"
-    filas = [
+    tec = [
         ("Alineación " + " · ".join(f["tf"] for f in MT["filas"]) if MT else "Alineación",
          " ".join("▲" if f["puntaje"] >= 15 else "▼" if f["puntaje"] <= -15 else "◆" for f in MT["filas"]) + f"  {MT['estado']}"
          if MT else "—"),
@@ -507,33 +566,59 @@ with top_b:
         ("ADX 14/14/23", f"{ADX.get('adx', '—')} · {ADX.get('regimen', '')}"),
         ("POC VRVP", _m(VP.get("poc"))),
         ("VAH / VAL", f"{_m(VP.get('vah'), '')} / {_m(VP.get('val'), '')}"),
-        ("Flujo neto opciones", f"{OP._fmt_m(FLUJO)} {'calls' if FLUJO >= 0 else 'puts'}"),
-        ("PCR vol. / OI", f"{SM['pcr_volumen'] or '—'} / {SM['pcr_open_interest'] or '—'}"),
-        (f"IV ATM ({SM.get('iv_atm_dte', 30)}d)", "—" if SM["iv_rank_or_avg_iv"] is None else f"{SM['iv_rank_or_avg_iv']:.1f}%"),
         ("Vol. real 20s · IV/VR", "—" if not RV else f"{RV * 100:.1f}% · "
          + ("—" if SM["iv_rank_or_avg_iv"] is None else f"{SM['iv_rank_or_avg_iv'] / 100 / RV:.2f}×")),
         ("1σ diario", f"±${SIG_D:,.2f} ({SIG_D / spot * 100:.1f}%)"),
+    ]
+    flujo = [
+        ("Flujo neto opciones", f"{OP._fmt_m(FLUJO)} {'calls' if FLUJO >= 0 else 'puts'}"),
+        ("PCR vol. / OI", f"{SM['pcr_volumen'] or '—'} / {SM['pcr_open_interest'] or '—'}"),
+        (f"IV ATM ({SM.get('iv_atm_dte', 30)}d)", "—" if SM["iv_rank_or_avg_iv"] is None else f"{SM['iv_rank_or_avg_iv']:.1f}%"),
         ("GEX / gamma flip", f"{SM['net_gamma_exposure_gex'].split(' ')[0]} / {_m(SM.get('gamma_flip_level'), '')}"),
         ("Max pain", _m(SM.get("max_pain"))),
-        ("P/E forward", "—" if not MX.get("P/E forward") else f"{MX['P/E forward']:.1f}"),
+    ]
+    def _pc(k, signo=False):
+        v = MX.get(k)
+        return None if v is None else (f"{v * 100:+.1f}%" if signo else f"{v * 100:.1f}%")
+    fun = [(k, v) for k, v in (
+        ("Sector", MX.get("Sector") or None),
+        ("Capitalización", None if not MX.get("Market cap") else f"${MX['Market cap'] / 1e9:,.1f} B"),
+        ("P/E TTM / forward", None if not (MX.get("P/E (TTM)") or MX.get("P/E forward")) else
+         f"{MX.get('P/E (TTM)') or 0:.1f} / " + ("—" if not MX.get("P/E forward") else f"{MX['P/E forward']:.1f}")),
+        ("PEG", None if not MX.get("PEG") else f"{MX['PEG']:.2f}"),
+        ("Margen neto", _pc("Margen neto")),
+        ("Crec. ingresos (YoY)", _pc("Crec. ingresos (YoY)", True)),
+        ("Crec. utilidades (YoY)", _pc("Crec. utilidades (YoY)", True)),
+        ("Deuda / patrimonio", None if MX.get("Deuda/Patrimonio") is None else f"{MX['Deuda/Patrimonio']:.2f}"),
+        ("Objetivo analistas", None if not MX.get("Precio objetivo analistas") else _m(MX["Precio objetivo analistas"])),
         ("Próx. resultados", f"{RES_PROX:%d/%m/%y}" if RES_PROX else "—"),
         ("Próximo feriado bolsa", next((f"{d_:%d/%m} {n_[:22]}" for d_, n_ in CAL.proximos(CAL.hoy_ny(), 1)), "—")),
-    ]
-    st.markdown(_bar("MARKET", MK, mk_lbl, mk_col)
-                + "<div class='ox-box'><h4>Datos técnicos y fundamentales</h4><div class='ox-dt'>"
-                + "".join(f"<div><span>{E(a)}</span><b>{E(str(b))}</b></div>" for a, b in filas) + "</div></div>",
-                unsafe_allow_html=True)
+    ) if v is not None]
+
+    def _sec(titulo, filas_, abierto):
+        return (f"<details class='ox-sec'{' open' if abierto else ''}><summary>{E(titulo)}</summary><div class='ox-dt'>"
+                + "".join(f"<div><span>{E(a)}</span><b>{E(str(b))}</b></div>" for a, b in filas_) + "</div></details>")
+    st.markdown("<details class='ox-fold' open><summary>" + _bar("MARKET", MK, mk_lbl, mk_col) + "</summary>"
+                + "<div class='ox-box'>" + _sec("Técnicas", tec, True) + _sec("Flujo de opciones", flujo, False)
+                + _sec("Fundamentales", fun, False) + "</div></details>", unsafe_allow_html=True)
+
+def _opt_txt(t):
+    o = NIV.get(t)
+    return f"OPT{t} · sin contrato" if not o else f"OPT{t} · ${o['strike']:g} {o['tipo'][0]} · {o['vencimiento']} · VE {o['ve']:+.0f}%"
+
 
 with top_c:
-    st.markdown(_bar("OPTIONS", PC or 0, op_lbl, op_col), unsafe_allow_html=True)
-    with st.container(border=True, key="ox_best"):
-        st.markdown("<div class='ox-lbl'>Mejor strike disponible</div>", unsafe_allow_html=True)
-        _vis_opts = [f"OPT{t}" for t in (1, 2, 3)]
-        ss.setdefault("ox_view", f"OPT{ss['opt_sel']}")
-        vis = st.segmented_control("Nivel", _vis_opts, key="ox_view", label_visibility="collapsed") or f"OPT{ss['opt_sel']}"
-        tv = int(vis[-1])
-        O = NIV.get(tv)
-        nom, dsc, _ = OP.TIERS[tv]
+    _vis_opts = [f"OPT{t}" for t in (1, 2, 3)]
+    ss.setdefault("ox_view", f"OPT{ss['opt_sel']}")
+    _ob, _oa = st.columns([11, 1.4], gap="small", vertical_alignment="center")
+    _ob.markdown(_bar("OPTIONS", PC or 0, op_lbl, op_col), unsafe_allow_html=True)
+    with _oa.popover(" ", help="Cambiar entre las 3 opciones para comprar"):
+        st.radio("Opción a revisar", _vis_opts, key="ox_view", format_func=lambda v: _opt_txt(int(v[-1])))
+    vis = ss.get("ox_view") or f"OPT{ss['opt_sel']}"
+    tv = int(vis[-1])
+    O = NIV.get(tv)
+    nom, dsc, _ = OP.TIERS[tv]
+    with st.expander(_opt_txt(tv) + ("  ·  elegida" if tv == ss["opt_sel"] else ""), expanded=True):
         if not O:
             if MODO_PERFIL:
                 _mo = PO.motivos(EVS, MONEY, VENT, tv, spot)
@@ -551,6 +636,12 @@ with top_c:
                             unsafe_allow_html=True)
         else:
             colr = GREEN if O["tipo"] == "CALL" else RED
+            if O["ve"] < 0:  # ningún contrato compensa: se muestra solo como referencia
+                colr = MUTED
+                st.markdown(f"<div class='ox-al' style='border-color:{AMBER}88'><b class='t' style='color:{AMBER}'>"
+                            "ESPERAR · ningún contrato compensa hoy</b><span class='muted'>El mejor de este nivel tiene "
+                            f"valor esperado {O['ve']:+.1f}%: se muestra solo como referencia.</span></div>",
+                            unsafe_allow_html=True)
             cont = (f"{O['contratos']} contrato(s) · ${O['contratos'] * O['costo']:,.0f}" if O.get("contratos")
                     else "fuera de presupuesto" if INV else "")
             st.markdown(
@@ -573,6 +664,78 @@ with top_c:
                          type="primary" if tv != ss["opt_sel"] else "secondary", disabled=tv == ss["opt_sel"]):
                 ss["opt_sel"] = tv
                 st.rerun()
+
+# ---- veredicto único (dirección · fuerza · opciones) y recuadro de estrategias integradas
+def _veredicto_html() -> str:
+    from core import xpulse as XP
+    dir_m = "alcista" if SC_MTF >= 15 else "bajista" if SC_MTF <= -15 else "lateral"
+    dir_txt = f"Motor A {dir_m} ({SC_MTF:+.0f})"
+    if TLS and TLS.get("direccion"):
+        dir_txt += f" · TradingLatino {TLS['direccion']}{'' if TLS['confirmada'] else ' sin confirmar'}"
+    x, P = XP.de(ticker)
+    fuerte = None
+    if x and x.get("p") is not None:
+        base = (P or {}).get("tasa_base") or 0.5
+        fuerte = x["p"] >= base
+        fz = f"X-Pulse {x['p'] * 100:.0f}% ({'sobre' if fuerte else 'bajo'} su promedio {base * 100:.0f}%)"
+        if x.get("senal"):
+            fz += f" · IV {x['senal']}"
+    else:
+        fz = "X-Pulse sin datos hoy"
+    O_ = SEL
+    if not O_:
+        op, concl, col = "sin contrato que cumpla", "Esperar: ningún contrato cumple hoy", MUTED
+    elif O_["ve"] < 0:
+        op, concl, col = f"mejor VE {O_['ve']:+.0f}%", "Esperar: ningún contrato compensa hoy", AMBER
+    elif dir_m == "lateral" and not TL_CAMBIO and fuerte is False:
+        op, concl, col = f"VE {O_['ve']:+.0f}%", "Esperar: sin dirección clara ni movimiento fuerte esperado", AMBER
+    else:
+        op = f"{O_['tipo']} ${O_['strike']:g} · VE {O_['ve']:+.0f}%"
+        favor = fuerte and (x or {}).get("senal") in ("barata", "justa")
+        concl = (f"Condiciones favorables para comprar {LADO}" if favor else f"{LADO} operable con cautela")
+        col = (GREEN if LADO == "CALL" else RED) if favor else AMBER
+    return (f"<div class='ox-al' style='border-color:{col}88'><b class='t' style='color:{col}'>{E(concl)}</b>"
+            f"<span class='muted'>Dirección: {E(dir_txt)} · Fuerza: {E(fz)} · Opciones: {E(op)}</span></div>")
+
+
+def _estrategia_html() -> str | None:
+    if "tradinglatino" not in EST_ACT:
+        return None
+    from core import estrategias as ESTR
+    st1d = ESTR.CATALOGO["tradinglatino"]["stats"]["1D"]
+    if not TLS:
+        return (f"<div class='ox-al'><b class='t'>TradingLatino · sin datos</b><span class='muted'>No se pudo calcular "
+                "la estrategia para esta acción; el análisis sigue solo con Motor A.</span></div>")
+    if not TLS["direccion"]:
+        return (f"<div class='ox-al'><b class='t'>TradingLatino ({TLS['tf']}) · sin señal</b><span class='muted'>"
+                f"{E(TLS['detalle'])}. El análisis sigue solo con Motor A.</span></div>")
+    motor_alc = SC_MTF >= 0
+    if TLS["direccion"] == "alcista":
+        if not motor_alc:
+            tit = ("TradingLatino cambia la dirección: PUT → CALL" if TL_CAMBIO
+                   else "TradingLatino contradice al Motor A (giro sin confirmar: no cambia el lado)")
+            txt = (f"Motor A bajista ({SC_MTF:+.0f}); TradingLatino {TLS['tf']}: {TLS['detalle']}. En el backtest "
+                   f"(296 acciones, 2016-2026) el giro rindió {st1d['desacuerdo']:+.2f}% por operación cuando el motor "
+                   f"estaba en contra y {st1d['acuerdo']:+.2f}% cuando coincidía: en un giro es normal que el motor "
+                   "todavía marque caída.")
+            return f"<div class='ox-al' style='border-color:{AMBER}88'><b class='t' style='color:{AMBER}'>{E(tit)}</b>" \
+                   f"<span class='muted'>{E(txt)}</span></div>"
+        txt = (f"TradingLatino {TLS['tf']}: {TLS['detalle']}. Coincide con Motor A ({SC_MTF:+.0f}); con acuerdo el giro "
+               f"rindió {st1d['acuerdo']:+.2f}% por operación, menos que en contra ({st1d['desacuerdo']:+.2f}%): cuando el "
+               "motor ya está alcista, parte del rebote ya ocurrió.")
+        return f"<div class='ox-al'><b class='t'>TradingLatino coincide con Motor A</b><span class='muted'>{E(txt)}</span></div>"
+    txt = (f"TradingLatino {TLS['tf']}: {TLS['detalle']}. El giro bajista no tuvo ventaja en acciones (perdió en 9 de 11 "
+           "años): no cambia el análisis del Motor A.")
+    return f"<div class='ox-al'><b class='t'>TradingLatino marca giro bajista</b><span class='muted'>{E(txt)}</span></div>"
+
+
+with alert_ph:
+    st.markdown(_veredicto_html() + (_estrategia_html() or ""), unsafe_allow_html=True)
+
+with top_ch:
+    from core import comparativa_widget as CW
+    _obj_cmp = (SEL or next((o for o in NIV.values() if o), None) or {}).get("objetivo")
+    components.html(CW.html(spot, _obj_cmp, NIV, int(ss["opt_sel"]), str(CAL.hoy_ny())), height=470, scrolling=False)
 
 # ================================================================== análisis manual (columna izquierda)
 with left:

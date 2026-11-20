@@ -726,6 +726,11 @@ def opciones_tier(evs: list[dict], spot, money, ventana: int, tier: int, filtro=
     return sorted(out, key=clave) if clave else sorted(out, key=lambda e: e["ve"], reverse=True)
 
 
+def mas_alla_objetivo(e: dict) -> bool:
+    o = e.get("objetivo")
+    return o is not None and ((e["tipo"] == "CALL" and e["strike"] >= o) or (e["tipo"] == "PUT" and e["strike"] <= o))
+
+
 def niveles(evs, spot, money, ventana: int, presupuesto: float | None = None, filtro=None, clave=None) -> dict:
     """{1: OPT1, 2: OPT2, 3: OPT3}. Cada uno: el mejor por valor esperado (o por `clave`), número de contratos que
     permite el presupuesto y, si no alcanza, la alternativa más cercana dentro del presupuesto y el capital sugerido."""
@@ -735,7 +740,11 @@ def niveles(evs, spot, money, ventana: int, presupuesto: float | None = None, fi
         if not lst:
             out[t] = None
             continue
+        # un strike más allá del objetivo realista solo gana por volatilidad: se prefiere uno antes del objetivo
+        antes = [e for e in lst if not mas_alla_objetivo(e)]
+        lst = antes or lst
         best = dict(lst[0])
+        best["mas_alla_objetivo"] = not antes
         best["tier"] = t
         best["contratos"] = int(presupuesto // best["costo"]) if presupuesto else None
         if presupuesto is not None and best["contratos"] == 0:

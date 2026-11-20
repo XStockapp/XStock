@@ -599,13 +599,19 @@ def _menu(profile: dict, admin: bool, cfg: dict, onboarding: bool, extra_admin):
 
 
 def _estrategias():
-    st.caption("Estrategias que el motor evaluará en cada análisis y en el escáner. Las reglas y su backtest llegan "
-               "en una próxima entrega; por ahora el motor usa el puntaje técnico y la probabilidad histórica.")
-    for k, n, dsc in (("pullback", "Pullback a la media en tendencia", "Retroceso a la EMA intermedia con ADX > 25"),
-                      ("breakout", "Ruptura con volumen", "Cierre sobre resistencia con volumen relativo > 1,5"),
-                      ("reversal", "Reversión en sobreventa", "RSI < 30 con divergencia alcista en soporte"),
-                      ("trend", "Seguimiento de tendencia", "Supertrend alcista y precio sobre la MA de 200")):
-        st.checkbox(n, value=k in ("pullback", "breakout"), key=f"usr_est_{k}", help=dsc, disabled=True)
+    from .estrategias import CATALOGO
+    st.caption("Estrategias guardadas que puedes integrar al Motor A desde el botón del motor, junto a «Analizar "
+               "Opción». Solo se activan las que tienen reglas codificadas y backtest; las demás llegan en próximas "
+               "entregas.")
+    act = set(st.session_state.get("ox_estrategias") or [])
+    for k, c in CATALOGO.items():
+        if c["validada"]:
+            s1 = c["stats"]["1h"]
+            st.markdown(f"**{c['nombre']}** · {'activa' if k in act else 'guardada'}")
+            st.caption(f"{c['resumen']}. Validada: 1h {s1['retorno']:+.2f}% por operación frente a {s1['ref']:+.2f}% "
+                       "al azar (91 acciones, 2022-2026).")
+        else:
+            st.checkbox(f"{c['nombre']} · sin reglas aún", value=False, key=f"usr_est_{k}", disabled=True)
 
 
 def _watchlist():
