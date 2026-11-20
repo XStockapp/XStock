@@ -170,6 +170,17 @@ def ruido_normal(n: int = N_SIM, pasos: int = 15 * SUB, seed: int = 7) -> np.nda
     return np.random.default_rng(seed).standard_normal((n, pasos))
 
 
+def ncdf(x):
+    """Distribución normal acumulada, vectorizada y sin scipy (que no está instalado en el servidor).
+    Aproximación de Abramowitz y Stegun 7.1.26 de erf: error absoluto < 1.5e-7."""
+    x = np.asarray(x, dtype=float)
+    z = np.abs(x) / math.sqrt(2)
+    t = 1 / (1 + 0.3275911 * z)
+    poly = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))))
+    erf = 1 - poly * np.exp(-z * z)
+    return 0.5 * (1 + np.sign(x) * erf)
+
+
 def simular(e: dict, spot: float, p: dict, z: np.ndarray) -> dict:
     """Trayectorias sin tendencia con límite de días: % que toca la meta antes que el corte, % que toca el corte
     (el ruido te saca) y % que no toca ninguno. Meta y corte se miden sobre el valor Black-Scholes de la prima."""
@@ -180,13 +191,12 @@ def simular(e: dict, spot: float, p: dict, z: np.ndarray) -> dict:
     S = spot * np.exp(np.cumsum(-0.5 * iv * iv * dt + iv * math.sqrt(dt) * z[:, :pasos], axis=1))
     T = np.maximum(dte / 365 - (7 / 5) / SUB / 365 * np.arange(1, pasos + 1), 1e-6)
     sq = iv * np.sqrt(T)
-    from scipy.stats import norm
     d1 = (np.log(S / K) + (TASA + 0.5 * iv * iv) * T) / sq
     d2 = d1 - sq
     if call:
-        v = S * norm.cdf(d1) - K * np.exp(-TASA * T) * norm.cdf(d2)
+        v = S * ncdf(d1) - K * np.exp(-TASA * T) * ncdf(d2)
     else:
-        v = K * np.exp(-TASA * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
+        v = K * np.exp(-TASA * T) * ncdf(-d2) - S * ncdf(-d1)
     r = v / prima - 1
     hit_m = r >= p["meta"] / 100
     hit_c = (r <= -p["corte"] / 100) if p["corte"] else np.zeros_like(hit_m)
